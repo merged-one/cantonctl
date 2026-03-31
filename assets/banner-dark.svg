@@ -1,0 +1,96 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 640" fill="none">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1280" y2="640" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#0C0C12"/>
+      <stop offset="100%" stop-color="#111118"/>
+    </linearGradient>
+    <linearGradient id="accent" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#818CF8"/>
+      <stop offset="100%" stop-color="#A78BFA"/>
+    </linearGradient>
+    <linearGradient id="edgeGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#818CF8" stop-opacity="0.35"/>
+      <stop offset="100%" stop-color="#A78BFA" stop-opacity="0.12"/>
+    </linearGradient>
+  </defs>
+
+  <rect width="1280" height="640" fill="url(#bg)"/>
+
+  <g stroke="#1E1E2A" stroke-width="0.5" opacity="0.5">
+    <line x1="0" y1="320" x2="1280" y2="320"/>
+    <line x1="640" y1="0" x2="640" y2="640"/>
+  </g>
+
+  <!-- Synchronizer enclosure -->
+  <rect x="880" y="230" width="200" height="180" rx="16" fill="#16161E" stroke="#818CF8" stroke-width="1.5"/>
+  <rect x="880" y="230" width="200" height="180" rx="16" fill="url(#accent)" opacity="0.03"/>
+  <text x="980" y="258" text-anchor="middle" font-family="'Inter', system-ui, sans-serif" font-size="10" font-weight="600" fill="#818CF8" letter-spacing="1.5" opacity="0.7">SYNCHRONIZER</text>
+
+  <!-- Sequencer -->
+  <rect x="902" y="274" width="72" height="36" rx="6" fill="#1C1C26" stroke="#818CF8" stroke-width="1"/>
+  <text x="938" y="296" text-anchor="middle" font-family="'SF Mono', Menlo, monospace" font-size="9" font-weight="500" fill="#818CF8">Sequencer</text>
+
+  <!-- Mediator -->
+  <rect x="986" y="274" width="72" height="36" rx="6" fill="#1C1C26" stroke="#818CF8" stroke-width="1"/>
+  <text x="1022" y="296" text-anchor="middle" font-family="'SF Mono', Menlo, monospace" font-size="9" font-weight="500" fill="#818CF8">Mediator</text>
+
+  <line x1="974" y1="292" x2="986" y2="292" stroke="#818CF8" stroke-width="1" opacity="0.3"/>
+
+  <circle cx="980" cy="380" r="4" fill="#4ADE80" opacity="0.7"/>
+  <text x="980" y="400" text-anchor="middle" font-family="'Inter', system-ui, sans-serif" font-size="9" fill="#64748B">connected</text>
+
+  <!-- Participant nodes -->
+  <g>
+    <g transform="translate(760, 150)">
+      <rect x="-44" y="-22" width="88" height="44" rx="8" fill="#16161E" stroke="#818CF8" stroke-width="1.5"/>
+      <text y="4" text-anchor="middle" font-family="'SF Mono', Menlo, monospace" font-size="10" font-weight="600" fill="#818CF8">Participant</text>
+    </g>
+    <g transform="translate(1160, 150)">
+      <rect x="-44" y="-22" width="88" height="44" rx="8" fill="#16161E" stroke="#818CF8" stroke-width="1.5"/>
+      <text y="4" text-anchor="middle" font-family="'SF Mono', Menlo, monospace" font-size="10" font-weight="600" fill="#818CF8">Participant</text>
+    </g>
+    <g transform="translate(760, 490)">
+      <rect x="-44" y="-22" width="88" height="44" rx="8" fill="#16161E" stroke="#818CF8" stroke-width="1.5"/>
+      <text y="4" text-anchor="middle" font-family="'SF Mono', Menlo, monospace" font-size="10" font-weight="600" fill="#818CF8">Participant</text>
+    </g>
+    <g transform="translate(1160, 490)">
+      <rect x="-44" y="-22" width="88" height="44" rx="8" fill="#16161E" stroke="#818CF8" stroke-width="1.5"/>
+      <text y="4" text-anchor="middle" font-family="'SF Mono', Menlo, monospace" font-size="10" font-weight="600" fill="#818CF8">Participant</text>
+    </g>
+  </g>
+
+  <!-- Edges -->
+  <g stroke="url(#edgeGrad)" stroke-width="1.5">
+    <line x1="804" y1="162" x2="880" y2="260"/>
+    <line x1="1116" y1="162" x2="1080" y2="260"/>
+    <line x1="804" y1="478" x2="880" y2="400"/>
+    <line x1="1116" y1="478" x2="1080" y2="400"/>
+  </g>
+
+  <!-- Transaction dots -->
+  <circle cx="840" cy="210" r="3" fill="#818CF8" opacity="0.5"/>
+  <circle cx="1100" cy="210" r="3" fill="#A78BFA" opacity="0.4"/>
+  <circle cx="840" cy="440" r="3" fill="#A78BFA" opacity="0.4"/>
+  <circle cx="1100" cy="440" r="3" fill="#818CF8" opacity="0.5"/>
+
+  <!-- Terminal prompt icon -->
+  <rect x="80" y="200" width="88" height="88" rx="14" fill="url(#accent)"/>
+  <path d="M101 226 L123 241 L101 256" stroke="#0C0C12" stroke-width="4.5" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+  <line x1="129" y1="256" x2="147" y2="256" stroke="#0C0C12" stroke-width="4.5" stroke-linecap="round"/>
+
+  <!-- Wordmark -->
+  <text x="184" y="264" font-family="'SF Mono', 'Fira Code', 'JetBrains Mono', Menlo, Monaco, Consolas, monospace" font-size="56" font-weight="700" letter-spacing="-1.5">
+    <tspan fill="#E2E8F0">canton</tspan><tspan fill="url(#accent)">ctl</tspan>
+  </text>
+
+  <text x="82" y="330" font-family="'Inter', 'SF Pro', -apple-system, system-ui, sans-serif" font-size="18" fill="#94A3B8" letter-spacing="0.2">
+    Institutional-grade CLI toolchain for Canton Network
+  </text>
+
+  <g font-family="'Inter', system-ui, sans-serif" font-size="15" fill="#64748B">
+    <text x="82" y="388">Scaffold, develop, test, and deploy</text>
+    <text x="82" y="412">Daml smart contracts with a single tool.</text>
+  </g>
+
+  <rect x="0" y="634" width="1280" height="6" fill="url(#accent)" opacity="0.6"/>
+</svg>

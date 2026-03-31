@@ -1,0 +1,115 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 640" fill="none">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1280" y2="640" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#FAFAFB"/>
+      <stop offset="100%" stop-color="#F1F1F6"/>
+    </linearGradient>
+    <linearGradient id="accent" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#4F46E5"/>
+      <stop offset="100%" stop-color="#7C3AED"/>
+    </linearGradient>
+    <linearGradient id="edgeGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#4F46E5" stop-opacity="0.3"/>
+      <stop offset="100%" stop-color="#7C3AED" stop-opacity="0.1"/>
+    </linearGradient>
+  </defs>
+
+  <rect width="1280" height="640" fill="url(#bg)"/>
+
+  <!-- Faint grid -->
+  <g stroke="#D4D4DC" stroke-width="0.5" opacity="0.3">
+    <line x1="0" y1="320" x2="1280" y2="320"/>
+    <line x1="640" y1="0" x2="640" y2="640"/>
+  </g>
+
+  <!-- === Canton Network Topology (right half) === -->
+
+  <!-- Synchronizer enclosure (rounded rect) -->
+  <rect x="880" y="230" width="200" height="180" rx="16" fill="white" stroke="#4F46E5" stroke-width="1.5" stroke-dasharray="0" opacity="0.95"/>
+  <rect x="880" y="230" width="200" height="180" rx="16" fill="url(#accent)" opacity="0.03"/>
+  <!-- Synchronizer label -->
+  <text x="980" y="258" text-anchor="middle" font-family="'Inter', system-ui, sans-serif" font-size="10" font-weight="600" fill="#4F46E5" letter-spacing="1.5" opacity="0.7">SYNCHRONIZER</text>
+
+  <!-- Sequencer (inside synchronizer) -->
+  <rect x="902" y="274" width="72" height="36" rx="6" fill="white" stroke="#4F46E5" stroke-width="1"/>
+  <text x="938" y="296" text-anchor="middle" font-family="'SF Mono', Menlo, monospace" font-size="9" font-weight="500" fill="#4F46E5">Sequencer</text>
+
+  <!-- Mediator (inside synchronizer) -->
+  <rect x="986" y="274" width="72" height="36" rx="6" fill="white" stroke="#4F46E5" stroke-width="1"/>
+  <text x="1022" y="296" text-anchor="middle" font-family="'SF Mono', Menlo, monospace" font-size="9" font-weight="500" fill="#4F46E5">Mediator</text>
+
+  <!-- Internal connection: Sequencer ↔ Mediator -->
+  <line x1="974" y1="292" x2="986" y2="292" stroke="#4F46E5" stroke-width="1" opacity="0.3"/>
+
+  <!-- Sync status indicator -->
+  <circle cx="980" cy="380" r="4" fill="#22C55E" opacity="0.7"/>
+  <text x="980" y="400" text-anchor="middle" font-family="'Inter', system-ui, sans-serif" font-size="9" fill="#94A3B8">connected</text>
+
+  <!-- Participant nodes -->
+  <g>
+    <!-- Participant 1: top-left -->
+    <g transform="translate(760, 150)">
+      <rect x="-44" y="-22" width="88" height="44" rx="8" fill="white" stroke="#4F46E5" stroke-width="1.5"/>
+      <text y="4" text-anchor="middle" font-family="'SF Mono', Menlo, monospace" font-size="10" font-weight="600" fill="#4F46E5">Participant</text>
+    </g>
+    <!-- Participant 2: top-right -->
+    <g transform="translate(1160, 150)">
+      <rect x="-44" y="-22" width="88" height="44" rx="8" fill="white" stroke="#4F46E5" stroke-width="1.5"/>
+      <text y="4" text-anchor="middle" font-family="'SF Mono', Menlo, monospace" font-size="10" font-weight="600" fill="#4F46E5">Participant</text>
+    </g>
+    <!-- Participant 3: bottom-left -->
+    <g transform="translate(760, 490)">
+      <rect x="-44" y="-22" width="88" height="44" rx="8" fill="white" stroke="#4F46E5" stroke-width="1.5"/>
+      <text y="4" text-anchor="middle" font-family="'SF Mono', Menlo, monospace" font-size="10" font-weight="600" fill="#4F46E5">Participant</text>
+    </g>
+    <!-- Participant 4: bottom-right -->
+    <g transform="translate(1160, 490)">
+      <rect x="-44" y="-22" width="88" height="44" rx="8" fill="white" stroke="#4F46E5" stroke-width="1.5"/>
+      <text y="4" text-anchor="middle" font-family="'SF Mono', Menlo, monospace" font-size="10" font-weight="600" fill="#4F46E5">Participant</text>
+    </g>
+  </g>
+
+  <!-- Edges: participants → synchronizer -->
+  <g stroke="url(#edgeGrad)" stroke-width="1.5">
+    <!-- Top-left participant → sync -->
+    <line x1="804" y1="162" x2="880" y2="260"/>
+    <!-- Top-right participant → sync -->
+    <line x1="1116" y1="162" x2="1080" y2="260"/>
+    <!-- Bottom-left participant → sync -->
+    <line x1="804" y1="478" x2="880" y2="400"/>
+    <!-- Bottom-right participant → sync -->
+    <line x1="1116" y1="478" x2="1080" y2="400"/>
+  </g>
+
+  <!-- Transaction dots on edges (privacy indicator — only relevant parties see) -->
+  <circle cx="840" cy="210" r="3" fill="#4F46E5" opacity="0.5"/>
+  <circle cx="1100" cy="210" r="3" fill="#7C3AED" opacity="0.4"/>
+  <circle cx="840" cy="440" r="3" fill="#7C3AED" opacity="0.4"/>
+  <circle cx="1100" cy="440" r="3" fill="#4F46E5" opacity="0.5"/>
+
+  <!-- === Left side: brand === -->
+
+  <!-- Terminal prompt icon -->
+  <rect x="80" y="200" width="88" height="88" rx="14" fill="url(#accent)"/>
+  <path d="M101 226 L123 241 L101 256" stroke="white" stroke-width="4.5" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+  <line x1="129" y1="256" x2="147" y2="256" stroke="white" stroke-width="4.5" stroke-linecap="round"/>
+
+  <!-- Wordmark -->
+  <text x="184" y="264" font-family="'SF Mono', 'Fira Code', 'JetBrains Mono', Menlo, Monaco, Consolas, monospace" font-size="56" font-weight="700" letter-spacing="-1.5">
+    <tspan fill="#1E1E2E">canton</tspan><tspan fill="url(#accent)">ctl</tspan>
+  </text>
+
+  <!-- Tagline -->
+  <text x="82" y="330" font-family="'Inter', 'SF Pro', -apple-system, system-ui, sans-serif" font-size="18" fill="#64748B" letter-spacing="0.2">
+    Institutional-grade CLI toolchain for Canton Network
+  </text>
+
+  <!-- Descriptor -->
+  <g font-family="'Inter', system-ui, sans-serif" font-size="15" fill="#94A3B8">
+    <text x="82" y="388">Scaffold, develop, test, and deploy</text>
+    <text x="82" y="412">Daml smart contracts with a single tool.</text>
+  </g>
+
+  <!-- Bottom accent -->
+  <rect x="0" y="634" width="1280" height="6" fill="url(#accent)" opacity="0.6"/>
+</svg>

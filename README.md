@@ -1,17 +1,8 @@
-<p align="center">
-  <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="assets/cantonctl-logo-dark.svg">
-    <source media="(prefers-color-scheme: light)" srcset="assets/cantonctl-logo.svg">
-    <img alt="cantonctl" src="assets/cantonctl-logo.svg" width="420">
-  </picture>
-</p>
-
-<p align="center">
-  Infrastructure-grade CLI toolchain for building on Canton Network.<br>
-  Scaffold, develop, test, and deploy Daml applications with a single tool.
-</p>
-
----
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="assets/banner-dark.svg">
+  <source media="(prefers-color-scheme: light)" srcset="assets/banner.svg">
+  <img alt="cantonctl — Institutional-grade CLI toolchain for Canton Network" src="assets/banner.svg">
+</picture>
 
 ## Why
 
