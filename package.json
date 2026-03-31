@@ -30,7 +30,7 @@
     "prepack": "oclif manifest && oclif readme",
     "test": "vitest run --exclude 'test/e2e/**'",
     "test:unit": "vitest run --exclude 'test/e2e/**'",
-    "test:e2e": "vitest run --include 'test/e2e/**' --testTimeout 120000",
+    "test:e2e": "vitest run test/e2e/ --testTimeout 120000",
     "test:all": "vitest run --testTimeout 120000",
     "test:watch": "vitest --exclude 'test/e2e/**'",
     "test:coverage": "vitest run --coverage --exclude 'test/e2e/**'"

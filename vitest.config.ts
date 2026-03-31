@@ -6,6 +6,7 @@ export default defineConfig({
     disableConsoleIntercept: true,
     globals: true,
     environment: 'node',
+    setupFiles: ['./vitest.setup.ts'],
     include: ['src/**/*.test.ts', 'test/**/*.test.ts'],
     coverage: {
       provider: 'v8',
