@@ -96,7 +96,7 @@ export function scaffoldProject(opts: ScaffoldOptions): ScaffoldResult {
   const {dir, name, template} = opts
 
   if (fsImpl.existsSync(dir)) {
-    throw new CantonctlError(ErrorCode.CONFIG_SCHEMA_VIOLATION, {
+    throw new CantonctlError(ErrorCode.CONFIG_DIRECTORY_EXISTS, {
       context: {dir},
       suggestion: `Directory "${name}" already exists. Choose a different name or remove the existing directory.`,
     })

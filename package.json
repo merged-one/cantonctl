@@ -1,6 +1,6 @@
 {
   "name": "cantonctl",
-  "description": "Infrastructure-grade CLI toolchain for building on Canton Network",
+  "description": "Institutional-grade CLI toolchain for building on Canton Network",
   "version": "0.1.0",
   "license": "MIT",
   "author": "Merged One",

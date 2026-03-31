@@ -102,7 +102,7 @@ describe('scaffoldProject', () => {
       scaffoldProject({dir: '/projects/my-app', fs, name: 'my-app', template: 'basic'})
     } catch (err) {
       const e = err as CantonctlError
-      expect(e.code).toBe(ErrorCode.CONFIG_SCHEMA_VIOLATION)
+      expect(e.code).toBe(ErrorCode.CONFIG_DIRECTORY_EXISTS)
       expect(e.suggestion).toContain('my-app')
     }
   })

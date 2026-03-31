@@ -38,6 +38,7 @@ export enum ErrorCode {
   CONFIG_NOT_FOUND = 'E1001',
   CONFIG_INVALID_YAML = 'E1002',
   CONFIG_SCHEMA_VIOLATION = 'E1003',
+  CONFIG_DIRECTORY_EXISTS = 'E1004',
 
   // E2xxx: SDK/Tools
   SDK_NOT_INSTALLED = 'E2001',
@@ -77,6 +78,7 @@ const ERROR_MESSAGES: Record<ErrorCode, string> = {
   [ErrorCode.CONFIG_NOT_FOUND]: 'No cantonctl.yaml found in this directory or any parent directory.',
   [ErrorCode.CONFIG_INVALID_YAML]: 'cantonctl.yaml contains invalid YAML syntax.',
   [ErrorCode.CONFIG_SCHEMA_VIOLATION]: 'cantonctl.yaml does not match the expected schema.',
+  [ErrorCode.CONFIG_DIRECTORY_EXISTS]: 'Target directory already exists.',
   [ErrorCode.SDK_NOT_INSTALLED]: 'Neither dpm nor daml CLI found on PATH.',
   [ErrorCode.SDK_VERSION_MISMATCH]: 'Installed SDK version is incompatible with this project.',
   [ErrorCode.SDK_COMMAND_FAILED]: 'SDK command exited with a non-zero status.',

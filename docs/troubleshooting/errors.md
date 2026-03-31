@@ -53,6 +53,19 @@ Every cantonctl error includes a code, human-readable message, actionable sugges
 
 ---
 
+### E1004 — Directory Already Exists
+
+**Message:** Target directory already exists.
+
+**Symptoms:**
+- Running `cantonctl init <name>` when a directory with that name already exists
+
+**Resolution:**
+1. Choose a different project name
+2. Or remove the existing directory: `rm -rf <name>`
+
+---
+
 ## E2xxx: SDK/Tools
 
 ### E2001 — SDK Not Installed

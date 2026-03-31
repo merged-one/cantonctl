@@ -401,7 +401,7 @@ This builds on the Build-on-Canton MCP pattern but is specific to cantonctl and 
 **llms.txt:**
 ```
 # cantonctl
-> Infrastructure-grade CLI for building on Canton Network
+> Institutional-grade CLI for building on Canton Network
 
 ## Docs
 - [Getting Started](https://docs.cantonctl.dev/tasks/getting-started): Install cantonctl and create your first project

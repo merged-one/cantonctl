@@ -107,7 +107,7 @@ cantonctl init my-app --json
 
 | Code | Error | Resolution |
 |------|-------|------------|
-| E1003 | Directory already exists | Choose a different name or remove the existing directory |
+| E1004 | Directory already exists | Choose a different name or remove the existing directory |
 | E2003 | Git clone failed (--from) | Check the URL and your network connection |
 | E1003 | Missing cantonctl-template.yaml (--from) | Community templates must include this manifest file |
 

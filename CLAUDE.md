@@ -2,7 +2,7 @@
 
 ## What is this project?
 
-cantonctl is an infrastructure-grade CLI toolchain for Canton Network — the enterprise blockchain powering $6T+ in tokenized assets. It provides a Hardhat/Foundry-equivalent developer experience for Daml smart contract development.
+cantonctl is an institutional-grade CLI toolchain for Canton Network — the enterprise blockchain powering $6T+ in tokenized assets. It provides a Hardhat/Foundry-equivalent developer experience for Daml smart contract development.
 
 ## Quick reference
 
@@ -75,7 +75,7 @@ vi.spyOn(process.stdout, 'write').mockReturnValue(true)
 
 ## Error code ranges
 
-- E1xxx: Configuration (E1001 not found, E1002 invalid YAML, E1003 schema violation)
+- E1xxx: Configuration (E1001 not found, E1002 invalid YAML, E1003 schema violation, E1004 directory exists)
 - E2xxx: SDK/Tools (E2001 not installed, E2002 version mismatch, E2003 command failed)
 - E3xxx: Sandbox (E3001 start failed, E3002 port in use, E3003 health timeout)
 - E4xxx: Build (E4001 Daml error, E4002 DAR not found)

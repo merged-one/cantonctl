@@ -88,7 +88,7 @@ cantonctl dev --json             # JSON output for CI
 
 ### Core Principles
 
-- **Test-first TDD**: Tests define the contract, implementation follows (134 tests, 97.7% coverage)
+- **Test-first TDD**: Tests define the contract, implementation follows (218 tests, 99.9% coverage)
 - **Dependency injection**: Every I/O module accepts injected dependencies. Zero `vi.mock()`.
 - **AbortSignal everywhere**: All long-running operations support graceful cancellation
 - **Structured errors**: Every error is a `CantonctlError` with code (E1xxx-E8xxx), suggestion, and docs URL
@@ -161,7 +161,7 @@ Every error includes a code, message, suggestion, and link to documentation.
 
 | Range | Subsystem | Examples |
 |-------|-----------|---------|
-| E1xxx | Configuration | `E1001` Config not found, `E1002` Invalid YAML, `E1003` Schema violation |
+| E1xxx | Configuration | `E1001` Config not found, `E1002` Invalid YAML, `E1003` Schema violation, `E1004` Directory exists |
 | E2xxx | SDK/Tools | `E2001` SDK not installed, `E2003` Command failed |
 | E3xxx | Sandbox | `E3001` Start failed, `E3002` Port in use, `E3003` Health timeout |
 | E4xxx | Build | `E4001` Daml compilation error |
@@ -193,9 +193,11 @@ Plugins are auto-discovered from `node_modules` matching `@cantonctl/plugin-*` o
 
 ```bash
 npm install          # Install dependencies
-npm test             # Run all tests (134 tests)
+npm test             # Run unit tests (161 tests)
 npm run test:watch   # Watch mode
-npm run test:coverage # Coverage report (97.7% statements)
+npm run test:e2e     # Run E2E tests (57 tests, requires Daml SDK + Java 21)
+npm run test:all     # Run all 218 tests
+npm run test:coverage # Coverage report (99.9% statements)
 npm run build        # Compile TypeScript
 ```
 

@@ -1,6 +1,6 @@
 # cantonctl
 
-> Infrastructure-grade CLI toolchain for building on Canton Network
+> Institutional-grade CLI toolchain for building on Canton Network
 
 cantonctl provides a Hardhat/Foundry-equivalent developer experience for Daml smart contract development on Canton Network — the enterprise blockchain powering $6T+ in tokenized assets.
 
