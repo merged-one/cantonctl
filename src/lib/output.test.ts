@@ -3,12 +3,12 @@ import {afterEach, beforeEach, describe, expect, it, vi} from 'vitest'
 import {createOutput} from './output.js'
 
 describe('OutputWriter', () => {
-  let stdoutWrite: ReturnType<typeof vi.spyOn>
-  let stderrWrite: ReturnType<typeof vi.spyOn>
+  let stdoutWrite: ReturnType<typeof vi.fn>
+  let stderrWrite: ReturnType<typeof vi.fn>
 
   beforeEach(() => {
-    stdoutWrite = vi.spyOn(process.stdout, 'write').mockReturnValue(true)
-    stderrWrite = vi.spyOn(process.stderr, 'write').mockReturnValue(true)
+    stdoutWrite = vi.spyOn(process.stdout, 'write').mockReturnValue(true) as unknown as ReturnType<typeof vi.fn>
+    stderrWrite = vi.spyOn(process.stderr, 'write').mockReturnValue(true) as unknown as ReturnType<typeof vi.fn>
   })
 
   afterEach(() => {

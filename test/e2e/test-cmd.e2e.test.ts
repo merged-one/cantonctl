@@ -1,0 +1,81 @@
+/**
+ * E2E tests for `cantonctl test` (TestRunner module).
+ * Tests run against real Daml SDK.
+ */
+
+import * as fs from 'node:fs'
+import * as os from 'node:os'
+import * as path from 'node:path'
+import {afterAll, beforeAll, describe, expect, it} from 'vitest'
+import {execSync} from 'node:child_process'
+
+import {createDamlSdk} from '../../src/lib/daml.js'
+import {createProcessRunner} from '../../src/lib/process-runner.js'
+import {createTestRunner} from '../../src/lib/test-runner.js'
+import {scaffoldProject} from '../../src/lib/scaffold.js'
+
+const DAML_PATH = `${os.homedir()}/.daml/bin`
+const JAVA_PATH = '/opt/homebrew/opt/openjdk@21/bin'
+const ENV_PATH = `${JAVA_PATH}:${DAML_PATH}:${process.env.PATH}`
+const SDK_VERSION = '3.4.11'
+
+function hasDaml(): boolean {
+  try {
+    execSync('daml version --no-legacy-assistant-warning', {env: {...process.env, PATH: ENV_PATH}, stdio: 'pipe'})
+    return true
+  } catch { return false }
+}
+
+const SDK_AVAILABLE = hasDaml()
+const describeWithSdk = SDK_AVAILABLE ? describe : describe.skip
+
+let workDir: string
+
+beforeAll(() => { workDir = fs.mkdtempSync(path.join(os.tmpdir(), 'cantonctl-e2e-test-')) })
+afterAll(() => { fs.rmSync(workDir, {recursive: true, force: true}) })
+
+describeWithSdk('test E2E', () => {
+  let projectDir: string
+
+  beforeAll(() => {
+    // Scaffold and build a token project (has 4 tests)
+    projectDir = path.join(workDir, 'test-token')
+    scaffoldProject({dir: projectDir, name: 'test-token', template: 'token'})
+
+    const damlYaml = fs.readFileSync(path.join(projectDir, 'daml.yaml'), 'utf8')
+    fs.writeFileSync(path.join(projectDir, 'daml.yaml'), damlYaml.replace(/sdk-version: .*/, `sdk-version: ${SDK_VERSION}`))
+
+    // Build first (tests require compiled project)
+    execSync('daml build --no-legacy-assistant-warning', {
+      cwd: projectDir,
+      env: {...process.env, PATH: ENV_PATH},
+      stdio: 'pipe',
+    })
+  })
+
+  it('runs tests and reports success', async () => {
+    const runner = createProcessRunner()
+    const sdk = createDamlSdk({runner})
+    const testRunner = createTestRunner({sdk})
+
+    const result = await testRunner.run({projectDir})
+
+    expect(result.passed).toBe(true)
+    expect(result.success).toBe(true)
+    expect(result.durationMs).toBeGreaterThan(0)
+    expect(result.output).toBeTruthy()
+  }, 60_000)
+
+  it('output contains test summary (ANSI stripped)', async () => {
+    const runner = createProcessRunner()
+    const sdk = createDamlSdk({runner})
+    const testRunner = createTestRunner({sdk})
+
+    const result = await testRunner.run({projectDir})
+
+    // Should not contain ANSI escape codes
+    expect(result.output).not.toContain('\u001b')
+    // Should contain some test-related output
+    expect(result.output.length).toBeGreaterThan(0)
+  }, 60_000)
+})

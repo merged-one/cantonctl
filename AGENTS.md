@@ -1,4 +1,4 @@
-# CLAUDE.md — cantonctl Project Guide
+# AGENTS.md — cantonctl Project Guide
 
 ## What is this project?
 

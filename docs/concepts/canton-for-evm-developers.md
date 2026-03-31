@@ -71,7 +71,7 @@ cantonctl init my-app --template token
 cantonctl dev             # Start local sandbox + hot-reload
 cantonctl build           # Compile Daml
 cantonctl test            # Run Daml Script tests
-cantonctl deploy devnet   # Deploy to DevNet
+cantonctl deploy devnet   # Planned for Phase 4
 ```
 
 ## Zenith: EVM on Canton
@@ -94,7 +94,7 @@ Instead of `eth_call` and `eth_sendTransaction`, Canton uses REST endpoints:
 | `eth_sendTransaction` | `POST /v2/commands/submit-and-wait` |
 | Contract deployment | `POST /v2/dars` (upload DAR) |
 | `eth_getBalance` | Query contracts with template filter |
-| Account management | `POST /v2/parties/allocate` |
+| Account management | `POST /v2/parties` |
 | Chain ID | `GET /v2/version` |
 
 All requests require a JWT Bearer token. For local development, `cantonctl dev` generates one automatically.

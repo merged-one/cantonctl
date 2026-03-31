@@ -1,67 +1,137 @@
+/**
+ * @module commands/build
+ *
+ * Compiles Daml contracts and optionally generates TypeScript bindings.
+ * Thin oclif wrapper over {@link createBuilder}.
+ */
+
 import {Command, Flags} from '@oclif/core'
-import {execSync} from 'node:child_process'
+import * as fs from 'node:fs'
+import * as path from 'node:path'
+
+import {createBuilder} from '../lib/builder.js'
+import {createDamlSdk} from '../lib/daml.js'
+import {CantonctlError} from '../lib/errors.js'
+import {createOutput} from '../lib/output.js'
+import {createProcessRunner} from '../lib/process-runner.js'
+
+/** Find the first .dar file in a directory. */
+async function findDarFile(dir: string): Promise<string | null> {
+  try {
+    const entries = await fs.promises.readdir(dir)
+    const darFile = entries.find(e => e.endsWith('.dar'))
+    return darFile ? path.join(dir, darFile) : null
+  } catch {
+    return null
+  }
+}
+
+/** Get file modification time in ms since epoch. */
+async function getFileMtime(filePath: string): Promise<number | null> {
+  try {
+    const stat = await fs.promises.stat(filePath)
+    return stat.mtimeMs
+  } catch {
+    return null
+  }
+}
+
+/** Get the newest mtime among all .daml files in a directory (recursive). */
+async function getDamlSourceMtime(dir: string): Promise<number> {
+  let newest = 0
+  try {
+    const entries = await fs.promises.readdir(dir, {withFileTypes: true})
+    for (const entry of entries) {
+      const fullPath = path.join(dir, entry.name)
+      if (entry.isDirectory()) {
+        const sub = await getDamlSourceMtime(fullPath)
+        if (sub > newest) newest = sub
+      } else if (entry.name.endsWith('.daml')) {
+        const stat = await fs.promises.stat(fullPath)
+        if (stat.mtimeMs > newest) newest = stat.mtimeMs
+      }
+    }
+  } catch {
+    // Directory doesn't exist
+  }
+
+  return newest
+}
 
 export default class Build extends Command {
   static override description = 'Compile Daml contracts and generate TypeScript bindings'
 
   static override examples = [
     '<%= config.bin %> build',
-    '<%= config.bin %> build --codegen',
+    '<%= config.bin %> build --no-codegen',
+    '<%= config.bin %> build --force',
+    '<%= config.bin %> build --json',
   ]
 
   static override flags = {
     codegen: Flags.boolean({
+      allowNo: true,
       char: 'c',
-      default: true,
+      default: false,
       description: 'Generate TypeScript bindings after compilation',
     }),
-    watch: Flags.boolean({
-      char: 'w',
+    force: Flags.boolean({
       default: false,
-      description: 'Watch for changes and rebuild automatically',
+      description: 'Force rebuild even if DAR is up to date',
+    }),
+    json: Flags.boolean({
+      default: false,
+      description: 'Output result as JSON',
     }),
   }
 
   async run(): Promise<void> {
     const {flags} = await this.parse(Build)
-
-    this.log('Compiling Daml contracts...')
+    const out = createOutput({json: flags.json})
 
     try {
-      // Use dpm if available, fall back to daml
-      const buildCmd = this.resolveBuildCommand()
-      execSync(buildCmd, {stdio: 'inherit'})
-      this.log('Compilation successful')
+      const runner = createProcessRunner()
+      const sdk = createDamlSdk({runner})
+      const builder = createBuilder({findDarFile, getDamlSourceMtime, getFileMtime, sdk})
 
-      // Extract package info
-      // TODO: Parse .dar metadata for package ID
-      this.log('Package ID: (extracted from .dar)')
+      out.info('Compiling Daml contracts...')
 
-      if (flags.codegen) {
-        this.log('')
-        this.log('Generating TypeScript bindings...')
-        // TODO: Run daml codegen js or dpm codegen
-        this.log('TypeScript bindings generated -> frontend/src/generated/')
+      const result = flags.codegen
+        ? await builder.buildWithCodegen({force: flags.force, language: 'ts', projectDir: process.cwd()})
+        : await builder.build({force: flags.force, projectDir: process.cwd()})
+
+      if (result.cached) {
+        out.success('Build up to date (cached)')
+      } else {
+        out.success('Build successful')
+        if (flags.codegen) {
+          out.success('TypeScript bindings generated')
+        }
       }
-    } catch {
-      this.error('Compilation failed. Check your Daml source for errors.')
-    }
-  }
 
-  private resolveBuildCommand(): string {
-    try {
-      execSync('which dpm', {stdio: 'ignore'})
-      return 'dpm build'
-    } catch {
-      try {
-        execSync('which daml', {stdio: 'ignore'})
-        return 'daml build'
-      } catch {
-        this.error(
-          'Neither dpm nor daml found. Install the Daml SDK:\n' +
-          '  https://docs.daml.com/getting-started/installation.html',
-        )
+      if (result.darPath) {
+        out.info(`DAR: ${path.relative(process.cwd(), result.darPath)}`)
       }
+
+      out.result({
+        data: {
+          cached: result.cached ?? false,
+          darPath: result.darPath,
+          durationMs: result.durationMs,
+        },
+        success: true,
+        timing: {durationMs: result.durationMs},
+      })
+    } catch (err) {
+      if (err instanceof CantonctlError) {
+        out.result({
+          error: {code: err.code, message: err.message, suggestion: err.suggestion},
+          success: false,
+        })
+        this.exit(1)
+      }
+
+      throw err
     }
   }
 }

@@ -8,11 +8,11 @@ cantonctl provides a Hardhat/Foundry-equivalent developer experience for Daml sm
 
 - `cantonctl init <name>` — Scaffold a project from template (basic, token, defi-amm, api-service, zenith-evm)
 - `cantonctl dev` — Start local Canton sandbox with hot-reload, party provisioning, and JWT auth
-- `cantonctl build` — Compile Daml contracts via dpm/daml
-- `cantonctl test` — Run Daml Script tests with structured output
-- `cantonctl deploy <network>` — Deploy DAR to local/devnet/testnet/mainnet
-- `cantonctl console` — Interactive REPL connected to Canton node
-- `cantonctl status` — Show node health, packages, and parties
+- `cantonctl build` — Compile Daml contracts via dpm/daml with DAR caching and optional TypeScript codegen
+- `cantonctl test` — Run Daml Script tests with structured pass/fail output and ANSI stripping
+- `cantonctl status` — Show node health, version, and active parties for any configured network
+- `cantonctl deploy <network>` — Phase 4 stub for the DAR deployment pipeline
+- `cantonctl console` — Phase 4 stub for the interactive REPL
 
 ## Configuration
 
@@ -29,7 +29,7 @@ Port 7575 (default). Endpoints:
 - POST /v2/dars (upload DAR, binary body)
 - POST /v2/commands/submit-and-wait
 - POST /v2/state/active-contracts
-- POST /v2/parties/allocate
+- POST /v2/parties
 - GET /v2/parties
 
 All require JWT Bearer token. For sandbox: HS256 with well-known secret.

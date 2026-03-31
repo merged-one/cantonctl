@@ -14,7 +14,7 @@ cantonctl dev [flags]
 |------|-------|---------|-------------|
 | `--port` | `-p` | `5001` | Canton participant node port |
 | `--json-api-port` | — | `7575` | JSON Ledger API port |
-| `--full` | — | `false` | Start full multi-node topology (requires Docker). Not yet implemented. |
+| `--full` | — | `false` | Start full multi-node topology (requires Docker). Deferred beyond the v1 core flow. |
 | `--json` | — | `false` | Output result as JSON |
 
 ## Startup Sequence

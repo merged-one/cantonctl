@@ -8,7 +8,7 @@ Hardhat won because of four things: every command works reliably, plugins let th
 
 ## Current State
 
-### Done (Phases 0-2)
+### Done (Phases 0-3)
 
 | Component | Status | Tests | Coverage |
 |-----------|--------|-------|----------|
@@ -21,16 +21,21 @@ Hardhat won because of four things: every command works reliably, plugins let th
 | `src/lib/jwt.ts` | HS256 sandbox JWT generation | 9 | 100% |
 | `src/lib/scaffold.ts` | 5 templates + community template support | 26 | 100% |
 | `src/lib/dev-server.ts` | Sandbox lifecycle + health + parties + hot-reload | 29 | 100% |
+| `src/lib/builder.ts` | Build orchestration: DAR caching, codegen | 11 | 100% |
+| `src/lib/test-runner.ts` | Test execution: structured output, ANSI stripping | 8 | 100% |
 | `src/commands/init.ts` | Fully functional, E2E tested against real SDK | 54 E2E | Verified |
 | `src/commands/dev.ts` | Fully functional, E2E tested against real sandbox | 3 E2E | Verified |
-| Layer 1 docs | Reference, troubleshooting, concepts, tasks, llms.txt, JSON Schema | — | — |
+| `src/commands/build.ts` | Fully functional, E2E tested (5 templates) | 7 E2E | Verified |
+| `src/commands/test.ts` | Fully functional, E2E tested | 2 E2E | Verified |
+| `src/commands/status.ts` | Functional (queries real Ledger API) | — | — |
+| Layer 1 docs | Reference (5 commands), troubleshooting, concepts, tasks, llms.txt, JSON Schema | — | — |
+| ADR system | 13 ADRs (10 converted + 3 new from Phase 3 research) | — | — |
 
-**Total: 161 unit + 57 E2E = 218 tests. 99.9% statement coverage on lib/.**
+**Total: 180 unit + 67 E2E = 247 tests. 99.9% statement coverage on lib/.**
 
 ### Remaining for v1
 
 ```
-Phase 3:  build, test, status commands          — use existing DamlSdk + LedgerClient
 Phase 4a: deploy command (7-step pipeline)      — use existing LedgerClient + JWT
 Phase 4b: console command (REPL)                — use existing LedgerClient
 Phase 4c: plugin hooks + credential store       — new infrastructure
@@ -39,25 +44,25 @@ Phase 5:  E2E tests for all new commands        — against real SDK
 Phase 5:  docs for all new commands             — reference + tasks + troubleshooting
 ```
 
+Detailed sequencing and open decisions live in [docs/PHASE_4_PREP.md](./PHASE_4_PREP.md).
+
 ---
 
-## Phase 3: Simple Commands
+## Phase 3: Delivered Scope
 
 ### 3.1 `build` command
 
-Rewrite stub to use `DamlSdk.build()` with proper lifecycle.
+Shipped in Phase 3:
+- `createBuilder()` wraps `DamlSdk.build()` with DAR caching and `--force`
+- `--codegen` triggers TypeScript generation after successful compilation
+- `--json` output reports `{darPath, cached, durationMs}`
+- 11 unit tests + 7 E2E tests cover the live build path
 
-**Acceptance criteria:**
-- Compiles Daml via `DamlSdk.build({projectDir})`
-- `--codegen` flag triggers `DamlSdk.codegen({language: 'ts', projectDir})`
-- `--watch` mode: chokidar watches `daml/`, rebuilds on `.daml` change (debounced)
-- `--json` output: `{success, data: {darPath, packageId, durationMs}, warnings}`
-- Build caching: skip if `.dar` modification time is newer than all `.daml` source files
-- Reports errors via `CantonctlError` (E4001 BUILD_DAML_ERROR, E4002 BUILD_DAR_NOT_FOUND)
-- E2E test: scaffold basic template → build → assert .dar exists
+Deferred:
+- `build --watch` stays in Phase 5 so `dev` remains the only long-running rebuild loop
 
-**Files:**
-- `src/lib/builder.ts` — Build logic with caching, codegen, watch mode
+Files:
+- `src/lib/builder.ts` — Build logic with caching and codegen
 - `src/lib/builder.test.ts` — Unit tests
 - `src/commands/build.ts` — Thin wrapper
 - `test/e2e/build.e2e.test.ts` — E2E: all 5 templates build successfully
@@ -65,39 +70,36 @@ Rewrite stub to use `DamlSdk.build()` with proper lifecycle.
 
 ### 3.2 `test` command
 
-Rewrite stub to use `DamlSdk.test()` with structured output.
+Shipped in Phase 3:
+- `createTestRunner()` wraps `DamlSdk.test()` and reports pass/fail via exit code
+- `--filter` forwards the test pattern to the SDK
+- ANSI escape codes are stripped before human or JSON output
+- 8 unit tests + 2 E2E tests cover the live SDK path
 
-**Acceptance criteria:**
-- Runs tests via `DamlSdk.test({projectDir, filter})`
-- `--filter <pattern>` passes `--test-pattern` to SDK
-- `--json` output: `{success, data: {passed, failed, total, durationMs, tests: [...]}}`
-- Exit code 1 on any failure
-- Reports errors via `CantonctlError` (E5001 TEST_EXECUTION_FAILED)
-- E2E test: scaffold token template → test → assert all 4 tests pass
+Deferred:
+- Per-test counts and richer structured parsing wait on a stable machine-readable SDK format
 
-**Files:**
+Files:
 - `src/lib/test-runner.ts` — Test logic with output parsing
 - `src/lib/test-runner.test.ts` — Unit tests
 - `src/commands/test.ts` — Thin wrapper
-- `test/e2e/test.e2e.test.ts` — E2E: token template tests pass
+- `test/e2e/test-cmd.e2e.test.ts` — E2E: token template tests pass
 - `docs/reference/test.md` — Reference docs
 
 ### 3.3 `status` command
 
-Query a running Canton node for health, packages, and parties.
+Shipped in Phase 3:
+- `status` loads the selected network from config and queries `LedgerClient.getVersion()`
+- When healthy, it also queries `LedgerClient.getParties()`
+- JWT generation is automatic for sandbox-style local flows
+- `--json` output reports `{healthy, version, parties}`
 
-**Acceptance criteria:**
-- Queries `LedgerClient.getVersion()` for health
-- Queries `LedgerClient.getParties()` for party list
-- Generates JWT automatically from config parties
-- `--json` output: `{success, data: {healthy, version, parties: [...], packages: [...]}}`
-- `--network` flag selects which network config to use (default: `local`)
-- Reports `E7001` if node is not reachable
-- E2E test: start sandbox → status → assert healthy + parties listed
+Deferred:
+- Package listing remains out of scope until the client grows a stable package-query path
+- A dedicated status E2E fixture is still pending
 
-**Files:**
+Files:
 - `src/commands/status.ts` — Rewrite with LedgerClient
-- `test/e2e/status.e2e.test.ts` — E2E against running sandbox
 - `docs/reference/status.md` — Reference docs
 
 ---
@@ -115,8 +117,8 @@ The 7-step deployment pipeline from Design Decision 8.
 - Step 3 — **Auth**: Generate JWT for target network (sandbox secret for local, prompt for remote)
 - Step 4 — **Preflight**: `LedgerClient.getVersion()` to verify connectivity + compatibility
 - Step 5 — **Upload**: `LedgerClient.uploadDar(darBytes)` with progress indication
-- Step 6 — **Vet**: Wait for package vetting (poll status)
-- Step 7 — **Verify**: `LedgerClient.getVersion()` + confirm package appears in deployed list
+- Step 6 — **Vet**: Wait for package vetting on remote networks when required
+- Step 7 — **Verify**: confirm the returned `mainPackageId` and re-check node health
 - `--dar <path>` flag to skip build step and upload specific DAR
 - `--dry-run` flag: execute steps 1-4 only, report what would happen
 - `--json` output for each step: `{step, status, data}`
@@ -193,12 +195,12 @@ Interactive REPL connected to a Canton node, inspired by Foundry's Chisel + Cast
 - `cantonctl auth logout <network>` — Remove stored credentials
 - `cantonctl auth status` — Show which networks have stored credentials
 - Config variable resolution: `auth: {credential}` in network config resolves at runtime
-- Storage: encrypted local file at `~/.cantonctl/credentials.json` (AES-256-GCM via `@noble/ciphers`)
+- Storage: OS keychain-backed credential store (per ADR-0008 / NEAR CLI pattern)
 - Fallback: environment variable `CANTONCTL_JWT_<NETWORK>` overrides stored credential
 - E2E test: auth login → deploy → verify credential was used
 
 **Files:**
-- `src/lib/credential-store.ts` — Encrypted credential storage
+- `src/lib/credential-store.ts` — Keychain-backed credential storage
 - `src/lib/credential-store.test.ts` — Unit tests
 - `src/commands/auth.ts` — Auth management command
 - `docs/reference/auth.md` — Reference docs
@@ -254,7 +256,7 @@ Interactive REPL connected to a Canton node, inspired by Foundry's Chisel + Cast
 | `build` | Compiles Daml, produces .dar, codegen for TypeScript, watch mode, caching. |
 | `test` | Runs Daml Script tests, structured output, filter, exit code on failure. |
 | `deploy` | 7-step pipeline works for local. Auth + connectivity for remote networks. Dry-run. |
-| `status` | Shows health, version, parties, packages for any configured network. |
+| `status` | Shows health, version, and parties for any configured network. |
 | `console` | REPL with parties, query, submit, status, help, tab completion, history. |
 | `clean` | Removes build artifacts. |
 | `auth` | Login, logout, status for network credentials. |
@@ -295,20 +297,18 @@ Interactive REPL connected to a Canton node, inspired by Foundry's Chisel + Cast
 | Homebrew / standalone binary distribution | npm is sufficient for v1 |
 | Centralized plugin registry | Community too small; GitHub URLs sufficient |
 | Multi-SDK version management | Pin in config; version switching is dpm's job |
+| `cantonctl exec` (scripting mode) | Wait until the console grammar stabilizes |
 | Layer 2-5 of agentic docs system | Layer 1 content taxonomy is sufficient for launch |
 
 ---
 
 ## Implementation Order
 
-```
-Week 1-2:  Phase 3 — build, test, status (leverages existing DamlSdk + LedgerClient)
-Week 3-4:  Phase 4a — deploy pipeline (leverages existing LedgerClient + JWT)
-Week 5-6:  Phase 4b — console REPL
-Week 5-6:  Phase 4c — plugin hooks + credential store (parallel with console)
-Week 7:    Phase 5 — polish, interactive init, clean, build --watch
-Week 8:    Phase 5 — comprehensive E2E suite, CI setup, docs completion
-```
+1. Phase 4a — local deploy pipeline (`--dar`, `--dry-run`, upload, verification)
+2. Phase 4c — keychain-backed credential store and `auth` command for remote deploy
+3. Phase 4b — console REPL (`help`, `status`, `parties`, `query`, then submit flows)
+4. Phase 4c — plugin hooks once build/test/deploy surfaces are stable
+5. Phase 5 — polish, `build --watch`, broader E2E coverage, CI, and docs completion
 
 Each phase follows the established pattern:
 1. Write tests defining the contract

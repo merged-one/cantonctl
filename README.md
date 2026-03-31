@@ -23,12 +23,12 @@ cantonctl init my-app --template token
 cd my-app
 cantonctl dev
 
-# Build & test
+# Build, test, and inspect the local node
 cantonctl build
 cantonctl test
+cantonctl status
 
-# Deploy
-cantonctl deploy devnet
+# Deploy + console land in Phase 4
 ```
 
 ## Commands
@@ -37,13 +37,13 @@ cantonctl deploy devnet
 |---------|-------------|--------|
 | `cantonctl init <name>` | Scaffold a new project from a template | Implemented |
 | `cantonctl dev` | Start local Canton sandbox with hot-reload | Implemented |
-| `cantonctl build` | Compile Daml + generate TypeScript bindings | Stub |
-| `cantonctl test` | Run Daml Script tests with structured output | Stub |
-| `cantonctl deploy <network>` | Deploy to local/devnet/testnet/mainnet | Stub |
-| `cantonctl console` | Interactive REPL connected to Canton node | Stub |
-| `cantonctl status` | Show node health, packages, and parties | Stub |
+| `cantonctl build` | Compile Daml + generate TypeScript bindings | Implemented |
+| `cantonctl test` | Run Daml Script tests with structured output | Implemented |
+| `cantonctl deploy <network>` | 7-step DAR deployment pipeline for local and remote networks | Planned (Phase 4) |
+| `cantonctl console` | Interactive REPL for querying and submitting ledger commands | Planned (Phase 4) |
+| `cantonctl status` | Show node health, version, and active parties | Implemented |
 
-All commands support `--json` for CI pipeline integration. All errors include error codes, suggestions, and documentation links.
+All implemented commands support `--json` for CI pipeline integration. All errors include error codes, suggestions, and documentation links.
 
 ## Templates
 
@@ -88,11 +88,11 @@ cantonctl dev --json             # JSON output for CI
 
 ### Core Principles
 
-- **Test-first TDD**: Tests define the contract, implementation follows (218 tests, 99.9% coverage)
+- **Test-first TDD**: Tests define the contract, implementation follows (247 tests, 99.9% coverage)
 - **Dependency injection**: Every I/O module accepts injected dependencies. Zero `vi.mock()`.
 - **AbortSignal everywhere**: All long-running operations support graceful cancellation
 - **Structured errors**: Every error is a `CantonctlError` with code (E1xxx-E8xxx), suggestion, and docs URL
-- **Dual output**: Every command supports `--json` for CI pipelines
+- **Dual output**: Every shipped command supports `--json`; new commands must preserve that contract
 
 ### Foundation Libraries
 
@@ -106,7 +106,9 @@ cantonctl dev --json             # JSON output for CI
 | `src/lib/ledger-client.ts` | HTTP client for Canton JSON Ledger API V2 (6 endpoints) | 100% |
 | `src/lib/jwt.ts` | HS256 JWT generation for sandbox auth (well-known secret) | 100% |
 | `src/lib/scaffold.ts` | Pure scaffolding logic, 5 templates, community template support | 100% |
-| `src/lib/dev-server.ts` | Dev server orchestration: sandbox + health + parties + hot-reload | 94% |
+| `src/lib/dev-server.ts` | Dev server orchestration: sandbox + health + parties + hot-reload | 100% |
+| `src/lib/builder.ts` | Build orchestration with DAR caching and codegen | 100% |
+| `src/lib/test-runner.ts` | Test execution with structured output and ANSI stripping | 100% |
 
 ### Project Structure
 
@@ -116,11 +118,11 @@ cantonctl/
 │   ├── commands/              # CLI commands (thin oclif wrappers)
 │   │   ├── init.ts            # → scaffold.ts
 │   │   ├── dev.ts             # → dev-server.ts
-│   │   ├── build.ts           # → daml.ts (stub)
-│   │   ├── test.ts            # → daml.ts (stub)
-│   │   ├── deploy.ts          # → ledger-client.ts (stub)
-│   │   ├── console.ts         # (stub)
-│   │   └── status.ts          # (stub)
+│   │   ├── build.ts           # → builder.ts
+│   │   ├── test.ts            # → test-runner.ts
+│   │   ├── deploy.ts          # stub for Phase 4 pipeline
+│   │   ├── console.ts         # stub for Phase 4 REPL
+│   │   └── status.ts          # → ledger-client.ts + jwt.ts
 │   ├── hooks/                 # oclif lifecycle hooks
 │   │   ├── init.ts
 │   │   └── prerun.ts
@@ -142,7 +144,11 @@ cantonctl/
 │       ├── process-runner.ts  # Subprocess abstraction
 │       ├── process-runner.test.ts
 │       ├── scaffold.ts        # Project scaffolding + templates
-│       └── scaffold.test.ts
+│       ├── scaffold.test.ts
+│       ├── builder.ts         # Build orchestration + DAR caching
+│       ├── builder.test.ts
+│       ├── test-runner.ts     # Test execution + ANSI stripping
+│       └── test-runner.test.ts
 ├── assets/                    # Logo SVGs
 ├── docs/                      # Design docs & research
 │   ├── DESIGN_DECISIONS.md    # 10 evidence-backed decisions
@@ -185,6 +191,7 @@ Plugins are auto-discovered from `node_modules` matching `@cantonctl/plugin-*` o
 
 - **[Design Decisions](docs/DESIGN_DECISIONS.md)** — 10 evidence-backed architecture decisions
 - **[Agentic Documentation System](docs/AGENTIC_DOCS_SYSTEM.md)** — Beyond-SOTA documentation architecture
+- **[Phase 4 Prep](docs/PHASE_4_PREP.md)** — Concrete execution order for deploy, console, auth, and hooks
 - **[Research: Blockchain CLIs](docs/research/blockchain-cli-toolchain-research.md)** — 16 toolchains analyzed
 - **[Research: Canton Ecosystem](docs/research/CANTON_ECOSYSTEM_RESEARCH.md)** — Full ecosystem deep dive
 - **[Research: Agentic Docs](docs/research/AGENTIC_DOCS_RESEARCH.md)** — AI documentation SOTA survey
@@ -193,10 +200,10 @@ Plugins are auto-discovered from `node_modules` matching `@cantonctl/plugin-*` o
 
 ```bash
 npm install          # Install dependencies
-npm test             # Run unit tests (161 tests)
+npm test             # Run unit tests (180 tests)
 npm run test:watch   # Watch mode
-npm run test:e2e     # Run E2E tests (57 tests, requires Daml SDK + Java 21)
-npm run test:all     # Run all 218 tests
+npm run test:e2e     # Run E2E tests (67 tests, requires Daml SDK + Java 21)
+npm run test:all     # Run all 247 tests
 npm run test:coverage # Coverage report (99.9% statements)
 npm run build        # Compile TypeScript
 ```

@@ -1,5 +1,76 @@
 # cantonctl Worklog
 
+## 2026-03-31 (Session 4) — Documentation Audit + Phase 4 Prep
+
+### Summary
+
+Reviewed the repository documentation after Phase 3, fixed user-facing mismatches, and wrote the concrete Phase 4 execution guide.
+
+### Corrections
+
+- Marked `deploy` and `console` as Phase 4 stubs instead of ready-to-use commands
+- Standardized `status` docs around health, version, and parties (not package listing)
+- Replaced stale `POST /v2/parties/allocate` references with `POST /v2/parties`
+- Reconciled credential storage on the OS keychain path from ADR-0008
+- Explicitly deferred `dev --full` and `cantonctl exec` from the v1 core flow
+
+### Outputs
+
+- Added `docs/PHASE_4_PREP.md`
+- Updated README, llms.txt, V1 plan, project guides, and user-facing concept/task docs
+
+---
+
+## 2026-03-31 (Session 3) — Phase 3: build, test, status + ADR System
+
+### Summary
+
+Completed Phase 3: build, test, and status commands with real DamlSdk/LedgerClient integration. Created ADR system (13 architecture decision records). Build and test are E2E tested against the real SDK; status is wired to the real Ledger API and still needs its own E2E fixture.
+
+### Phase 3 Implementation
+
+**`src/lib/builder.ts`** (11 unit tests, 7 E2E tests, 100% coverage)
+- DAR caching via mtime comparison (ADR-0013): skips rebuild when `.dar` is newer than all `.daml` sources
+- Codegen support: `buildWithCodegen()` generates TypeScript bindings after compilation
+- AbortSignal support, `--force` flag to bypass cache
+
+**`src/lib/test-runner.ts`** (8 unit tests, 2 E2E tests, 100% coverage)
+- Wraps `DamlSdk.test()` with structured output (ADR-0012)
+- Strips ANSI escape codes from SDK output
+- Test failures returned as `{passed: false}` (not thrown) — SDK errors propagated
+
+**Commands rewritten:**
+- `src/commands/build.ts` — Thin wrapper using builder.ts. `--codegen`, `--force`, `--json` flags.
+- `src/commands/test.ts` — Thin wrapper using test-runner.ts. `--filter`, `--json` flags.
+- `src/commands/status.ts` — Queries real Ledger API (getVersion + getParties). `--network`, `--json` flags.
+
+### ADR System
+
+Created `docs/adr/` with 13 architecture decision records:
+- ADR-0001 through ADR-0010: Converted from DESIGN_DECISIONS.md
+- ADR-0011: Build wraps SDK (not reimplements)
+- ADR-0012: Test output parsing strategy (exit code + passthrough)
+- ADR-0013: DAR caching via mtime comparison
+
+### E2E Tests (Phase 3)
+
+- Build: 5 templates compile with real Daml SDK, cache hit on second build, rebuild after source change
+- Test: Token template tests pass, output is ANSI-stripped
+
+### Documentation
+
+- Reference docs: `docs/reference/build.md`, `docs/reference/test.md`, `docs/reference/status.md`
+- Updated: README, CLAUDE.md, V1_PLAN with Phase 3 completion status
+
+### Metrics
+
+- **Unit tests:** 180 (19 new: 11 builder + 8 test-runner)
+- **E2E tests:** 67 (10 new: 7 build + 2 test + 1 cache)
+- **Total:** 247 tests
+- **Coverage:** 99.9% statements, 92.8% branches, 100% functions (lib/)
+
+---
+
 ## 2026-03-31 (Session 2) — E2E Tests, SDK Integration, Layer 1 Docs, Hardening
 
 ### Summary

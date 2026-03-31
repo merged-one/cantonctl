@@ -1,13 +1,25 @@
+/**
+ * @module commands/test
+ *
+ * Runs Daml Script tests with structured output. Thin oclif wrapper
+ * over {@link createTestRunner}.
+ */
+
 import {Command, Flags} from '@oclif/core'
-import {execSync} from 'node:child_process'
+
+import {createDamlSdk} from '../lib/daml.js'
+import {CantonctlError} from '../lib/errors.js'
+import {createOutput} from '../lib/output.js'
+import {createProcessRunner} from '../lib/process-runner.js'
+import {createTestRunner} from '../lib/test-runner.js'
 
 export default class Test extends Command {
   static override description = 'Run Daml Script tests with structured output'
 
   static override examples = [
     '<%= config.bin %> test',
-    '<%= config.bin %> test --json',
     '<%= config.bin %> test --filter testTransfer',
+    '<%= config.bin %> test --json',
   ]
 
   static override flags = {
@@ -23,51 +35,53 @@ export default class Test extends Command {
 
   async run(): Promise<void> {
     const {flags} = await this.parse(Test)
-
-    if (!flags.json) {
-      this.log('Running Daml Script tests...')
-      this.log('')
-    }
+    const out = createOutput({json: flags.json})
 
     try {
-      const testCmd = this.resolveTestCommand(flags.filter)
-      const startTime = Date.now()
+      const runner = createProcessRunner()
+      const sdk = createDamlSdk({runner})
+      const testRunner = createTestRunner({sdk})
 
-      execSync(testCmd, {stdio: flags.json ? 'pipe' : 'inherit'})
+      out.info('Running Daml Script tests...')
 
-      const elapsed = ((Date.now() - startTime) / 1000).toFixed(1)
+      const result = await testRunner.run({
+        filter: flags.filter,
+        projectDir: process.cwd(),
+      })
 
-      if (!flags.json) {
-        this.log('')
-        this.log(`All tests passed in ${elapsed}s`)
+      if (result.passed) {
+        out.success('All tests passed')
+      } else {
+        out.error('Some tests failed')
       }
-    } catch {
-      if (flags.json) {
-        this.log(JSON.stringify({passed: false, error: 'Test execution failed'}))
+
+      if (!flags.json && result.output) {
+        out.log(result.output)
       }
 
-      this.error('Tests failed')
-    }
-  }
+      out.result({
+        data: {
+          durationMs: result.durationMs,
+          output: result.output,
+          passed: result.passed,
+        },
+        success: result.success,
+        timing: {durationMs: result.durationMs},
+      })
 
-  private resolveTestCommand(filter?: string): string {
-    let cmd: string
-    try {
-      execSync('which dpm', {stdio: 'ignore'})
-      cmd = 'dpm test'
-    } catch {
-      try {
-        execSync('which daml', {stdio: 'ignore'})
-        cmd = 'daml test'
-      } catch {
-        this.error('Neither dpm nor daml found. Install the Daml SDK.')
+      if (!result.passed) {
+        this.exit(1)
       }
-    }
+    } catch (err) {
+      if (err instanceof CantonctlError) {
+        out.result({
+          error: {code: err.code, message: err.message, suggestion: err.suggestion},
+          success: false,
+        })
+        this.exit(1)
+      }
 
-    if (filter) {
-      cmd += ` --test-pattern "${filter}"`
+      throw err
     }
-
-    return cmd
   }
 }

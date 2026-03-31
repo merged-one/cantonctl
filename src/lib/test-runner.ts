@@ -1,0 +1,111 @@
+/**
+ * @module test-runner
+ *
+ * Test execution orchestration for cantonctl. Wraps `DamlSdk.test()` with
+ * structured output, ANSI stripping, and timing.
+ *
+ * Follows ADR-0012: capture exit code + passthrough output. We don't parse
+ * individual test results from the SDK's stderr format (fragile). Instead,
+ * we report pass/fail via exit code and forward the full output.
+ *
+ * @example
+ * ```ts
+ * const runner = createTestRunner({ sdk })
+ * const result = await runner.run({ projectDir: '/my-app', filter: 'testMint' })
+ * console.log(result.passed)   // true or false
+ * console.log(result.output)   // SDK output with ANSI stripped
+ * ```
+ */
+
+import type {DamlSdk} from './daml.js'
+import {CantonctlError, ErrorCode} from './errors.js'
+
+// ---------------------------------------------------------------------------
+// Types
+// ---------------------------------------------------------------------------
+
+export interface TestRunnerDeps {
+  /** Daml SDK abstraction. */
+  sdk: DamlSdk
+}
+
+export interface TestOptions {
+  /** Absolute path to the project root. */
+  projectDir: string
+  /** Filter test names by pattern. */
+  filter?: string
+  /** AbortSignal for cancellation. */
+  signal?: AbortSignal
+}
+
+export interface TestResult {
+  /** True if test command completed (even with failures). False on errors. */
+  success: boolean
+  /** True if all tests passed (exit code 0). */
+  passed: boolean
+  /** Combined stdout + stderr output with ANSI codes stripped. */
+  output: string
+  /** Test execution duration in milliseconds. */
+  durationMs: number
+}
+
+export interface TestRunner {
+  /** Run Daml Script tests. */
+  run(opts: TestOptions): Promise<TestResult>
+}
+
+// ---------------------------------------------------------------------------
+// Implementation
+// ---------------------------------------------------------------------------
+
+/** Strip ANSI escape codes from a string. */
+function stripAnsi(str: string): string {
+  // Matches all ANSI escape sequences
+  return str.replace(/\u001b\[[0-9;]*m/g, '')
+}
+
+/**
+ * Create a TestRunner that wraps DamlSdk.test() with structured results.
+ */
+export function createTestRunner(deps: TestRunnerDeps): TestRunner {
+  const {sdk} = deps
+
+  return {
+    async run(opts: TestOptions): Promise<TestResult> {
+      const start = Date.now()
+
+      try {
+        const result = await sdk.test({
+          filter: opts.filter,
+          projectDir: opts.projectDir,
+          signal: opts.signal,
+        })
+
+        const output = stripAnsi([result.stdout, result.stderr].filter(Boolean).join('\n'))
+
+        return {
+          durationMs: Date.now() - start,
+          output,
+          passed: true,
+          success: true,
+        }
+      } catch (err) {
+        // Test failures are E5001 — return as failed result, don't throw
+        if (err instanceof CantonctlError && err.code === ErrorCode.TEST_EXECUTION_FAILED) {
+          const ctx = err.context as {stderr?: string; stdout?: string}
+          const output = stripAnsi([ctx.stdout, ctx.stderr].filter(Boolean).join('\n'))
+
+          return {
+            durationMs: Date.now() - start,
+            output,
+            passed: false,
+            success: false,
+          }
+        }
+
+        // All other errors (SDK_NOT_INSTALLED, AbortError, etc.) propagate
+        throw err
+      }
+    },
+  }
+}
