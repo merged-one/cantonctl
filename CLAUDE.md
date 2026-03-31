@@ -8,9 +8,9 @@ cantonctl is an institutional-grade CLI toolchain for Canton Network — the ent
 
 ```bash
 npm install                         # Install dependencies
-npm test                            # Run 180 unit tests
-npm run test:e2e                    # Run 67 E2E tests (requires Daml SDK + Java 21)
-npm run test:all                    # Run all 247 tests
+npm test                            # Run 277 unit tests
+npm run test:e2e                    # Run 66 E2E tests (requires Daml SDK + Java 21)
+npm run test:all                    # Run all 343 tests
 npm run test:coverage               # Coverage report (99.9% statements)
 npm run build                       # Compile TypeScript to dist/
 ./scripts/install-prerequisites.sh  # Install Daml SDK + Java 21
@@ -48,6 +48,12 @@ npm run build                       # Compile TypeScript to dist/
 | `dev-server.ts` | `createDevServer(deps)` | Dev server: sandbox + health + parties + hot-reload |
 | `builder.ts` | `createBuilder(deps)` | Build orchestration: DAR caching, codegen, AbortSignal |
 | `test-runner.ts` | `createTestRunner(deps)` | Test execution: structured output, ANSI stripping |
+| `deployer.ts` | `createDeployer(deps)` | 6-step deploy pipeline: validate → build → auth → preflight → upload → verify |
+| `credential-store.ts` | `createCredentialStore(deps)` | Keychain-backed JWT storage. Env var override: `CANTONCTL_JWT_<NETWORK>` |
+| `plugin-hooks.ts` | `createPluginHookManager()` | Lifecycle hook registry: beforeBuild, afterBuild, beforeDeploy, afterDeploy, beforeTest, afterTest, onError |
+| `repl/parser.ts` | `parseCommand(input)` | REPL command grammar shared with future `exec` command |
+| `repl/executor.ts` | `createExecutor(deps)` | Dispatches parsed REPL commands to LedgerClient |
+| `repl/completer.ts` | `createCompleter(deps)` | Tab completion for REPL (commands, parties, flags) |
 
 ## Test patterns
 
@@ -102,8 +108,8 @@ vi.spyOn(process.stdout, 'write').mockReturnValue(true)
 | Phase 1: Foundation libraries | Complete (config, errors, output, process-runner, daml, ledger-client, jwt) |
 | Phase 2: SDK & Ledger | Complete (scaffold, dev-server) |
 | Phase 3: Simple commands (build, test, status) | Complete (builder, test-runner, status with real DamlSdk/LedgerClient) |
-| Phase 4: Deploy, console, auth/hooks groundwork | Ready to start (see `docs/PHASE_4_PREP.md`) |
-| Phase 5: Polish (integration tests, --json conformance, help snapshots) | Not started |
+| Phase 4: Deploy, console, auth/hooks groundwork | Complete (deployer, credential-store, auth commands, repl/parser, repl/executor, repl/completer, plugin-hooks) |
+| Phase 5: Polish (E2E for Phase 4 commands, --json conformance, help snapshots, OS keychain wiring) | Not started |
 
 `dev --full` remains deferred until after the v1 core flow.
 

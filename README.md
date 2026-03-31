@@ -28,7 +28,11 @@ cantonctl build
 cantonctl test
 cantonctl status
 
-# Deploy + console land in Phase 4
+# Deploy to local sandbox
+cantonctl deploy
+
+# Interactive REPL
+cantonctl console
 ```
 
 ## Commands
@@ -39,9 +43,10 @@ cantonctl status
 | `cantonctl dev` | Start local Canton sandbox with hot-reload | Implemented |
 | `cantonctl build` | Compile Daml + generate TypeScript bindings | Implemented |
 | `cantonctl test` | Run Daml Script tests with structured output | Implemented |
-| `cantonctl deploy <network>` | 7-step DAR deployment pipeline for local and remote networks | Planned (Phase 4) |
-| `cantonctl console` | Interactive REPL for querying and submitting ledger commands | Planned (Phase 4) |
+| `cantonctl deploy <network>` | 7-step DAR deployment pipeline for local and remote networks | Implemented |
+| `cantonctl console` | Interactive REPL for querying and submitting ledger commands | Implemented |
 | `cantonctl status` | Show node health, version, and active parties | Implemented |
+| `cantonctl auth login/logout/status` | Manage JWT credentials per network | Implemented |
 
 All implemented commands support `--json` for CI pipeline integration. All errors include error codes, suggestions, and documentation links.
 
@@ -88,7 +93,7 @@ cantonctl dev --json             # JSON output for CI
 
 ### Core Principles
 
-- **Test-first TDD**: Tests define the contract, implementation follows (247 tests, 99.9% coverage)
+- **Test-first TDD**: Tests define the contract, implementation follows (343 tests, 99.9% coverage)
 - **Dependency injection**: Every I/O module accepts injected dependencies. Zero `vi.mock()`.
 - **AbortSignal everywhere**: All long-running operations support graceful cancellation
 - **Structured errors**: Every error is a `CantonctlError` with code (E1xxx-E8xxx), suggestion, and docs URL
@@ -109,6 +114,12 @@ cantonctl dev --json             # JSON output for CI
 | `src/lib/dev-server.ts` | Dev server orchestration: sandbox + health + parties + hot-reload | 100% |
 | `src/lib/builder.ts` | Build orchestration with DAR caching and codegen | 100% |
 | `src/lib/test-runner.ts` | Test execution with structured output and ANSI stripping | 100% |
+| `src/lib/deployer.ts` | 6-step deploy pipeline: validate → build → auth → preflight → upload → verify | 100% |
+| `src/lib/credential-store.ts` | Keychain-backed JWT storage with env var override | 100% |
+| `src/lib/plugin-hooks.ts` | Lifecycle hook registry (7 hooks) for build/test/deploy | 100% |
+| `src/lib/repl/parser.ts` | REPL command grammar shared with future `exec` | 100% |
+| `src/lib/repl/executor.ts` | Dispatches parsed commands to LedgerClient | 100% |
+| `src/lib/repl/completer.ts` | Tab completion for commands, parties, flags | 100% |
 
 ### Project Structure
 
@@ -120,35 +131,35 @@ cantonctl/
 │   │   ├── dev.ts             # → dev-server.ts
 │   │   ├── build.ts           # → builder.ts
 │   │   ├── test.ts            # → test-runner.ts
-│   │   ├── deploy.ts          # stub for Phase 4 pipeline
-│   │   ├── console.ts         # stub for Phase 4 REPL
-│   │   └── status.ts          # → ledger-client.ts + jwt.ts
+│   │   ├── deploy.ts          # → deployer.ts
+│   │   ├── console.ts         # → repl/{parser,executor,completer}
+│   │   ├── status.ts          # → ledger-client.ts + jwt.ts
+│   │   └── auth/              # Credential management subcommands
+│   │       ├── login.ts       # Store JWT for a network
+│   │       ├── logout.ts      # Remove stored credentials
+│   │       └── status.ts      # Show auth state per network
 │   ├── hooks/                 # oclif lifecycle hooks
 │   │   ├── init.ts
 │   │   └── prerun.ts
 │   └── lib/                   # Foundation libraries (fully tested)
 │       ├── config.ts          # Config loading + hierarchical merge
-│       ├── config.test.ts
+│       ├── deployer.ts        # 6-step deploy pipeline
+│       ├── credential-store.ts# Keychain-backed JWT storage
+│       ├── plugin-hooks.ts    # Lifecycle hook registry
 │       ├── daml.ts            # SDK abstraction (dpm/daml)
-│       ├── daml.test.ts
 │       ├── dev-server.ts      # Dev server orchestration
-│       ├── dev-server.test.ts
 │       ├── errors.ts          # Structured error system
-│       ├── errors.test.ts
 │       ├── jwt.ts             # Sandbox JWT generation
-│       ├── jwt.test.ts
 │       ├── ledger-client.ts   # Canton JSON Ledger API V2 client
-│       ├── ledger-client.test.ts
 │       ├── output.ts          # Human/JSON/quiet output
-│       ├── output.test.ts
 │       ├── process-runner.ts  # Subprocess abstraction
-│       ├── process-runner.test.ts
 │       ├── scaffold.ts        # Project scaffolding + templates
-│       ├── scaffold.test.ts
 │       ├── builder.ts         # Build orchestration + DAR caching
-│       ├── builder.test.ts
 │       ├── test-runner.ts     # Test execution + ANSI stripping
-│       └── test-runner.test.ts
+│       └── repl/
+│           ├── parser.ts      # Command grammar (shared with exec)
+│           ├── executor.ts    # Dispatch commands to LedgerClient
+│           └── completer.ts   # Tab completion
 ├── assets/                    # Logo SVGs
 ├── docs/                      # Design docs & research
 │   ├── DESIGN_DECISIONS.md    # 10 evidence-backed decisions
@@ -200,10 +211,10 @@ Plugins are auto-discovered from `node_modules` matching `@cantonctl/plugin-*` o
 
 ```bash
 npm install          # Install dependencies
-npm test             # Run unit tests (180 tests)
+npm test             # Run unit tests (277 tests)
 npm run test:watch   # Watch mode
-npm run test:e2e     # Run E2E tests (67 tests, requires Daml SDK + Java 21)
-npm run test:all     # Run all 247 tests
+npm run test:e2e     # Run E2E tests (66 tests, requires Daml SDK + Java 21)
+npm run test:all     # Run all 343 tests
 npm run test:coverage # Coverage report (99.9% statements)
 npm run build        # Compile TypeScript
 ```

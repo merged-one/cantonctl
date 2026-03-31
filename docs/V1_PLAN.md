@@ -31,17 +31,34 @@ Hardhat won because of four things: every command works reliably, plugins let th
 | Layer 1 docs | Reference (5 commands), troubleshooting, concepts, tasks, llms.txt, JSON Schema | — | — |
 | ADR system | 13 ADRs (10 converted + 3 new from Phase 3 research) | — | — |
 
-**Total: 180 unit + 67 E2E = 247 tests. 99.9% statement coverage on lib/.**
+**Total (Phases 0-3): 180 unit + 67 E2E = 247 tests. 99.9% statement coverage on lib/.**
+
+### Done (Phase 4)
+
+| Component | Status | Tests | Coverage |
+|-----------|--------|-------|----------|
+| `src/lib/deployer.ts` | 6-step deploy pipeline (validate/build/auth/preflight/upload/verify) | 20 | 100% |
+| `src/lib/credential-store.ts` | Keychain-backed JWT storage, env var override, in-memory backend | 13 | 100% |
+| `src/lib/plugin-hooks.ts` | Lifecycle hook registry (7 hooks), ordered dispatch, onError swallowing | 11 | 100% |
+| `src/lib/repl/parser.ts` | REPL command grammar shared with future `exec` | 29 | 100% |
+| `src/lib/repl/executor.ts` | Dispatches parsed commands to LedgerClient | 14 | 100% |
+| `src/lib/repl/completer.ts` | Tab completion for commands, parties, flags | 10 | 100% |
+| `src/commands/deploy.ts` | Thin wrapper with `--dar`, `--dry-run`, `--json`, `--party` | — | — |
+| `src/commands/console.ts` | Readline REPL, banner, inline error recovery | — | — |
+| `src/commands/auth/login.ts` | Store JWT per network (validates connectivity first) | — | — |
+| `src/commands/auth/logout.ts` | Remove stored credentials | — | — |
+| `src/commands/auth/status.ts` | Show auth state per network (env var + keychain) | — | — |
+
+**Total (Phases 0-4): 277 unit + 66 E2E = 343 tests.**
 
 ### Remaining for v1
 
 ```
-Phase 4a: deploy command (7-step pipeline)      — use existing LedgerClient + JWT
-Phase 4b: console command (REPL)                — use existing LedgerClient
-Phase 4c: plugin hooks + credential store       — new infrastructure
-Phase 5:  polish (interactive init, clean)      — refinement
-Phase 5:  E2E tests for all new commands        — against real SDK
-Phase 5:  docs for all new commands             — reference + tasks + troubleshooting
+Phase 5a: E2E tests for Phase 4 commands       — deploy.e2e, console.e2e, auth flows
+Phase 5b: OS keychain wiring                   — replace in-memory backend with keytar
+Phase 5c: plugin hooks integration             — emit hooks from build/test/deploy commands
+Phase 5d: polish (interactive init, clean cmd) — refinement
+Phase 5e: docs completion                      — reference + tasks for new commands
 ```
 
 Detailed sequencing and open decisions live in [docs/PHASE_4_PREP.md](./PHASE_4_PREP.md).

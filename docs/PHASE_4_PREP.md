@@ -1,5 +1,7 @@
 # Phase 4 Preparation
 
+> **Status: Complete.** All four workstreams delivered. Two exit-criteria items carry into Phase 5 — see the Exit Criteria section.
+>
 > Concrete execution order for the next delivery phase after Phase 3.
 
 ## Scope
@@ -109,8 +111,11 @@ Deliverables:
 
 ## Exit Criteria
 
-Phase 4 is ready to close when:
-- `deploy local` is real, tested, and documented
-- remote auth can be stored and reused safely
-- `console` supports `help`, `status`, `parties`, `query`, and basic submit flows
-- plugin hooks are documented and exercised in tests
+| Criterion | Status | Notes |
+|-----------|--------|-------|
+| `deploy local` is real, tested, and documented | ✅ | `deployer.ts` (20 unit tests), `docs/reference/deploy.md` |
+| remote auth can be stored and reused safely | ⚠️ | `credential-store.ts` + auth commands exist. OS keychain backend deferred to Phase 5 (currently in-memory with `CANTONCTL_JWT_<NETWORK>` env var override functional). |
+| `console` supports `help`, `status`, `parties`, `query`, and basic submit flows | ✅ | All commands implemented and unit-tested. |
+| plugin hooks are documented and exercised in tests | ⚠️ | `plugin-hooks.ts` (11 tests) + `docs/concepts/plugins.md`. Integration into build/test/deploy commands deferred to Phase 5. |
+
+The two ⚠️ items carry into Phase 5 (OS keychain wiring, hook integration into commands). Core functionality is complete.
