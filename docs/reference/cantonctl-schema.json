@@ -1,0 +1,101 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://cantonctl.dev/schema/cantonctl.yaml.json",
+  "title": "cantonctl.yaml",
+  "description": "Configuration schema for cantonctl projects",
+  "type": "object",
+  "required": ["version", "project"],
+  "properties": {
+    "version": {
+      "type": "number",
+      "description": "Config schema version",
+      "const": 1
+    },
+    "project": {
+      "type": "object",
+      "description": "Project metadata",
+      "required": ["name", "sdk-version"],
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "Project name"
+        },
+        "sdk-version": {
+          "type": "string",
+          "description": "Daml SDK version (e.g., \"3.4.9\")",
+          "pattern": "^\\d+\\.\\d+\\.\\d+$"
+        },
+        "template": {
+          "type": "string",
+          "description": "Template used during scaffolding",
+          "enum": ["basic", "token", "defi-amm", "api-service", "zenith-evm"]
+        }
+      },
+      "additionalProperties": false
+    },
+    "parties": {
+      "type": "array",
+      "description": "Party definitions for auto-provisioning on cantonctl dev",
+      "items": {
+        "type": "object",
+        "required": ["name"],
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Party display name"
+          },
+          "role": {
+            "type": "string",
+            "description": "Party role in the network",
+            "enum": ["operator", "participant", "observer"]
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "networks": {
+      "type": "object",
+      "description": "Network definitions keyed by name",
+      "additionalProperties": {
+        "type": "object",
+        "required": ["type"],
+        "properties": {
+          "type": {
+            "type": "string",
+            "description": "Network type",
+            "enum": ["sandbox", "remote", "docker"]
+          },
+          "port": {
+            "type": "number",
+            "description": "Canton participant port",
+            "default": 5001
+          },
+          "json-api-port": {
+            "type": "number",
+            "description": "JSON Ledger API port",
+            "default": 7575
+          },
+          "url": {
+            "type": "string",
+            "description": "Remote network URL (for type: remote)",
+            "format": "uri"
+          },
+          "auth": {
+            "type": "string",
+            "description": "Authentication method",
+            "enum": ["jwt", "shared-secret", "none"]
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "plugins": {
+      "type": "array",
+      "description": "npm package names for cantonctl plugins",
+      "items": {
+        "type": "string"
+      }
+    }
+  },
+  "additionalProperties": false
+}

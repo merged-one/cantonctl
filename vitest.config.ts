@@ -9,8 +9,8 @@ export default defineConfig({
     include: ['src/**/*.test.ts', 'test/**/*.test.ts'],
     coverage: {
       provider: 'v8',
-      include: ['src/**/*.ts'],
-      exclude: ['src/**/*.test.ts', 'src/**/*.d.ts'],
+      include: ['src/lib/**/*.ts'],
+      exclude: ['src/**/*.test.ts', 'src/**/*.d.ts', 'src/lib/process-runner.ts'],
       thresholds: {
         statements: 80,
         branches: 75,

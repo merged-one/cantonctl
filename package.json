@@ -28,10 +28,12 @@
     "lint": "eslint src/",
     "postpack": "shx rm -f oclif.manifest.json",
     "prepack": "oclif manifest && oclif readme",
-    "test": "vitest run",
-    "test:unit": "vitest run --project unit",
-    "test:watch": "vitest",
-    "test:coverage": "vitest run --coverage"
+    "test": "vitest run --exclude 'test/e2e/**'",
+    "test:unit": "vitest run --exclude 'test/e2e/**'",
+    "test:e2e": "vitest run --include 'test/e2e/**' --testTimeout 120000",
+    "test:all": "vitest run --testTimeout 120000",
+    "test:watch": "vitest --exclude 'test/e2e/**'",
+    "test:coverage": "vitest run --coverage --exclude 'test/e2e/**'"
   },
   "dependencies": {
     "@oclif/core": "^4",
@@ -49,9 +51,9 @@
   },
   "devDependencies": {
     "@oclif/test": "^4",
-    "@types/cli-table3": "^0.6",
     "@types/js-yaml": "^4",
     "@types/node": "^22",
+    "@vitest/coverage-v8": "^3.2.4",
     "memfs": "^4",
     "nock": "^14",
     "oclif": "^4",

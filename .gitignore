@@ -5,3 +5,6 @@ dist/
 *.dar
 oclif.manifest.json
 .DS_Store
+coverage/
+log/
+.claude/

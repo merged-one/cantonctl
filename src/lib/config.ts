@@ -1,7 +1,42 @@
-import * as fs from 'node:fs'
+/**
+ * @module config
+ *
+ * Hierarchical configuration management for cantonctl. Loads, validates,
+ * and merges configuration from multiple sources in priority order:
+ *
+ *   CLI flags > env vars > project config > user config
+ *
+ * Configuration files are YAML (`cantonctl.yaml`) validated against a Zod
+ * schema. The module throws structured {@link CantonctlError} instances with
+ * human-readable messages when validation fails.
+ *
+ * @example
+ * ```ts
+ * import { loadConfig, resolveConfig } from './config.js'
+ *
+ * // Simple: load nearest cantonctl.yaml
+ * const config = await loadConfig()
+ *
+ * // Full resolution with env + flags + user config
+ * const resolved = await resolveConfig({
+ *   dir: process.cwd(),
+ *   env: process.env,
+ *   flags: { 'project.name': 'override' },
+ * })
+ * ```
+ */
+
+import * as nodeFs from 'node:fs'
 import * as path from 'node:path'
+
 import * as yaml from 'js-yaml'
 import {z} from 'zod'
+
+import {CantonctlError, ErrorCode} from './errors.js'
+
+// ---------------------------------------------------------------------------
+// Schema
+// ---------------------------------------------------------------------------
 
 const PartySchema = z.object({
   name: z.string(),
@@ -28,32 +63,291 @@ const ConfigSchema = z.object({
   version: z.number(),
 })
 
+/** Validated cantonctl configuration object. */
 export type CantonctlConfig = z.infer<typeof ConfigSchema>
 
-const CONFIG_FILENAME = 'cantonctl.yaml'
-
-export async function loadConfig(dir?: string): Promise<CantonctlConfig> {
-  const searchDir = dir ?? process.cwd()
-  const configPath = findConfig(searchDir)
-
-  if (!configPath) {
-    throw new Error(
-      `No ${CONFIG_FILENAME} found. Run "cantonctl init" to create a project.`,
-    )
-  }
-
-  const raw = fs.readFileSync(configPath, 'utf8')
-  const parsed = yaml.load(raw)
-  return ConfigSchema.parse(parsed)
+/** Partial config used for user-level overrides and merge layers. */
+export type PartialConfig = {
+  networks?: Record<string, z.infer<typeof NetworkSchema>>
+  parties?: Array<z.infer<typeof PartySchema>>
+  plugins?: string[]
+  project?: Partial<z.infer<typeof ConfigSchema>['project']>
+  version?: number
 }
 
-function findConfig(startDir: string): string | undefined {
+// ---------------------------------------------------------------------------
+// Filesystem abstraction (for testability — no vi.mock needed)
+// ---------------------------------------------------------------------------
+
+/** Minimal filesystem interface for config loading. Inject a mock in tests. */
+export interface ConfigFileSystem {
+  existsSync(path: string): boolean
+  readFileSync(path: string, encoding: BufferEncoding): string
+}
+
+const CONFIG_FILENAME = 'cantonctl.yaml'
+const USER_CONFIG_PATH = '.config/cantonctl/config.yaml'
+const ENV_PREFIX = 'CANTONCTL_'
+
+// ---------------------------------------------------------------------------
+// Core API
+// ---------------------------------------------------------------------------
+
+export interface LoadConfigOptions {
+  /** Directory to start searching from. Defaults to `process.cwd()`. */
+  dir?: string
+  /** Filesystem implementation. Defaults to Node's `fs`. */
+  fs?: ConfigFileSystem
+}
+
+/**
+ * Load and validate the nearest `cantonctl.yaml`.
+ *
+ * Searches upward from `dir` (or cwd) until it finds a config file.
+ * Throws {@link CantonctlError} with appropriate error codes on failure:
+ * - `E1001` CONFIG_NOT_FOUND — no config file in any parent directory
+ * - `E1002` CONFIG_INVALID_YAML — YAML syntax error
+ * - `E1003` CONFIG_SCHEMA_VIOLATION — config doesn't match schema
+ */
+export async function loadConfig(options: LoadConfigOptions = {}): Promise<CantonctlConfig> {
+  const fsImpl = options.fs ?? nodeFs
+  const searchDir = options.dir ?? process.cwd()
+  const configPath = findConfig(searchDir, fsImpl)
+
+  if (!configPath) {
+    throw new CantonctlError(ErrorCode.CONFIG_NOT_FOUND, {
+      suggestion: 'Run "cantonctl init" to create a project.',
+    })
+  }
+
+  return parseAndValidate(fsImpl.readFileSync(configPath, 'utf8'))
+}
+
+export interface ResolveConfigOptions extends LoadConfigOptions {
+  /** Environment variables (defaults to `process.env`). */
+  env?: Record<string, string | undefined>
+  /** CLI flag overrides in dot-notation (e.g., `{ 'project.name': 'foo' }`). */
+  flags?: Record<string, string>
+  /** Home directory for user config lookup. Defaults to `$HOME`. */
+  homeDir?: string
+}
+
+/**
+ * Fully resolve configuration by merging all layers in priority order:
+ *
+ *   1. User config (`~/.config/cantonctl/config.yaml`) — lowest priority
+ *   2. Project config (`cantonctl.yaml`) — searched upward from `dir`
+ *   3. Environment variables (`CANTONCTL_*`)
+ *   4. CLI flags — highest priority
+ *
+ * @returns Merged and validated configuration
+ */
+export async function resolveConfig(options: ResolveConfigOptions = {}): Promise<CantonctlConfig> {
+  const fsImpl = options.fs ?? nodeFs
+  const homeDir = options.homeDir ?? process.env.HOME ?? ''
+
+  // Layer 1: User config (lowest priority)
+  let userPartial: PartialConfig = {}
+  const userConfigPath = path.join(homeDir, USER_CONFIG_PATH)
+  if (fsImpl.existsSync(userConfigPath)) {
+    try {
+      const raw = fsImpl.readFileSync(userConfigPath, 'utf8')
+      userPartial = (yaml.load(raw) as PartialConfig) ?? {}
+    } catch {
+      // Silently ignore malformed user config
+    }
+  }
+
+  // Layer 2: Project config
+  const projectConfig = await loadConfig({dir: options.dir, fs: fsImpl})
+
+  // Merge: project over user
+  let merged = mergeConfigs(
+    // If user config has base fields, apply them under the project config
+    {...projectConfig},
+    {},
+  )
+  if (Object.keys(userPartial).length > 0) {
+    // User is the base, project overrides
+    merged = mergeConfigsRaw(userPartial, projectConfig)
+  }
+
+  // Layer 3: Environment variable overrides
+  const env = options.env ?? {}
+  const envOverrides = parseEnvOverrides(env)
+  if (Object.keys(envOverrides).length > 0) {
+    merged = applyDotOverrides(merged, envOverrides)
+  }
+
+  // Layer 4: CLI flag overrides (highest priority)
+  if (options.flags && Object.keys(options.flags).length > 0) {
+    merged = applyDotOverrides(merged, options.flags)
+  }
+
+  return merged
+}
+
+// ---------------------------------------------------------------------------
+// Merge utilities
+// ---------------------------------------------------------------------------
+
+/**
+ * Merge two validated configs. `overrides` fields take precedence over `base`.
+ * Networks are deep-merged per key. Parties are concatenated. Plugins are
+ * concatenated and deduplicated.
+ */
+export function mergeConfigs(base: CantonctlConfig, overrides: PartialConfig): CantonctlConfig {
+  return mergeConfigsRaw(base, overrides) as CantonctlConfig
+}
+
+/**
+ * Internal merge that works with partial configs on both sides.
+ * Returns a full CantonctlConfig when base is complete.
+ */
+function mergeConfigsRaw(base: PartialConfig | CantonctlConfig, overrides: PartialConfig | CantonctlConfig): CantonctlConfig {
+  const result: Record<string, unknown> = {...base}
+
+  // Merge project (shallow merge)
+  if (overrides.project) {
+    result.project = {...(base.project ?? {}), ...overrides.project}
+  }
+
+  // Merge networks (deep per-network merge)
+  if (overrides.networks || base.networks) {
+    const baseNetworks = (base.networks ?? {}) as Record<string, Record<string, unknown>>
+    const overrideNetworks = (overrides.networks ?? {}) as Record<string, Record<string, unknown>>
+    const mergedNetworks: Record<string, Record<string, unknown>> = {}
+    const allKeys = new Set([...Object.keys(baseNetworks), ...Object.keys(overrideNetworks)])
+    for (const key of allKeys) {
+      mergedNetworks[key] = {...baseNetworks[key], ...overrideNetworks[key]}
+    }
+
+    result.networks = mergedNetworks
+  }
+
+  // Merge parties (concatenate)
+  if (overrides.parties) {
+    result.parties = [...(base.parties ?? []), ...overrides.parties]
+  }
+
+  // Merge plugins (concatenate + deduplicate)
+  if (overrides.plugins) {
+    const all = [...(base.plugins ?? []), ...overrides.plugins]
+    result.plugins = [...new Set(all)]
+  }
+
+  // Carry over version from override if present
+  if (overrides.version !== undefined) {
+    result.version = overrides.version
+  }
+
+  return result as CantonctlConfig
+}
+
+// ---------------------------------------------------------------------------
+// Environment variable parsing
+// ---------------------------------------------------------------------------
+
+/**
+ * Parse `CANTONCTL_*` environment variables into dot-notation overrides.
+ *
+ * `CANTONCTL_PROJECT_NAME=foo` → `{ 'project.name': 'foo' }`
+ * `CANTONCTL_PROJECT_SDK_VERSION=3.5.0` → `{ 'project.sdk-version': '3.5.0' }`
+ */
+function parseEnvOverrides(env: Record<string, string | undefined>): Record<string, string> {
+  const overrides: Record<string, string> = {}
+  for (const [key, value] of Object.entries(env)) {
+    if (!key.startsWith(ENV_PREFIX) || value === undefined) continue
+    const path = key
+      .slice(ENV_PREFIX.length)
+      .toLowerCase()
+      .replace(/_/g, '.')
+      // Handle sdk-version special case: sdk.version → sdk-version
+      .replace('project.sdk.version', 'project.sdk-version')
+    overrides[path] = value
+  }
+
+  return overrides
+}
+
+/**
+ * Apply dot-notation overrides to a config object.
+ * `{ 'project.name': 'foo' }` sets `config.project.name = 'foo'`.
+ */
+function applyDotOverrides(config: CantonctlConfig, overrides: Record<string, string>): CantonctlConfig {
+  const result = structuredClone(config)
+  for (const [dotPath, value] of Object.entries(overrides)) {
+    const parts = dotPath.split('.')
+    let target: Record<string, unknown> = result as unknown as Record<string, unknown>
+    for (let i = 0; i < parts.length - 1; i++) {
+      if (!(parts[i] in target) || typeof target[parts[i]] !== 'object') {
+        target[parts[i]] = {}
+      }
+
+      target = target[parts[i]] as Record<string, unknown>
+    }
+
+    target[parts[parts.length - 1]] = value
+  }
+
+  return result
+}
+
+// ---------------------------------------------------------------------------
+// File search
+// ---------------------------------------------------------------------------
+
+/**
+ * Walk upward from `startDir` looking for `cantonctl.yaml`.
+ * Returns the absolute path if found, undefined otherwise.
+ */
+function findConfig(startDir: string, fsImpl: ConfigFileSystem): string | undefined {
   let current = startDir
   while (true) {
     const candidate = path.join(current, CONFIG_FILENAME)
-    if (fs.existsSync(candidate)) return candidate
+    if (fsImpl.existsSync(candidate)) return candidate
     const parent = path.dirname(current)
     if (parent === current) return undefined
     current = parent
   }
+}
+
+// ---------------------------------------------------------------------------
+// YAML parsing + Zod validation with human-readable errors
+// ---------------------------------------------------------------------------
+
+/**
+ * Parse YAML string and validate against the config schema.
+ * Throws CantonctlError with detailed messages on failure.
+ */
+function parseAndValidate(raw: string): CantonctlConfig {
+  let parsed: unknown
+  try {
+    parsed = yaml.load(raw)
+  } catch (err) {
+    throw new CantonctlError(ErrorCode.CONFIG_INVALID_YAML, {
+      cause: err instanceof Error ? err : undefined,
+      suggestion: 'Check your YAML syntax. Common issues: incorrect indentation, missing colons, or unquoted special characters.',
+    })
+  }
+
+  const result = ConfigSchema.safeParse(parsed)
+  if (!result.success) {
+    const issues = result.error.issues.map(issue => {
+      const path = issue.path.length > 0 ? issue.path.join('.') : '(root)'
+      return `  - ${path}: ${issue.message}`
+    })
+
+    throw new CantonctlError(ErrorCode.CONFIG_SCHEMA_VIOLATION, {
+      context: {
+        issues: result.error.issues.map(i => ({
+          message: i.message,
+          path: i.path.join('.'),
+        })),
+      },
+      suggestion: `Fix the following fields in cantonctl.yaml:\n${issues.join('\n')}`,
+    })
+  }
+
+  return result.data
 }

@@ -152,5 +152,22 @@ describe('OutputWriter', () => {
       expect(spinner).toBeDefined()
       spinner.stop() // Should not throw
     })
+
+    it('returns disabled spinner in quiet mode', () => {
+      const out = createOutput({noColor: true, quiet: true})
+      const spinner = out.spinner('Loading...')
+      expect(spinner).toBeDefined()
+      spinner.stop()
+    })
+  })
+
+  describe('result() edge cases', () => {
+    it('pretty-prints object data in human mode', () => {
+      const out = createOutput({json: false, noColor: true})
+      out.result({data: {id: 'abc', name: 'test'}, success: true})
+      const output = (stdoutWrite.mock.calls[0] as string[])[0]
+      expect(output).toContain('"id"')
+      expect(output).toContain('"abc"')
+    })
   })
 })

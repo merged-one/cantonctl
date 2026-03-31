@@ -1,0 +1,54 @@
+# cantonctl
+
+> Infrastructure-grade CLI toolchain for building on Canton Network
+
+cantonctl provides a Hardhat/Foundry-equivalent developer experience for Daml smart contract development on Canton Network — the enterprise blockchain powering $6T+ in tokenized assets.
+
+## Commands
+
+- `cantonctl init <name>` — Scaffold a project from template (basic, token, defi-amm, api-service, zenith-evm)
+- `cantonctl dev` — Start local Canton sandbox with hot-reload, party provisioning, and JWT auth
+- `cantonctl build` — Compile Daml contracts via dpm/daml
+- `cantonctl test` — Run Daml Script tests with structured output
+- `cantonctl deploy <network>` — Deploy DAR to local/devnet/testnet/mainnet
+- `cantonctl console` — Interactive REPL connected to Canton node
+- `cantonctl status` — Show node health, packages, and parties
+
+## Configuration
+
+Projects use `cantonctl.yaml` (YAML, Zod-validated):
+- `project.name`, `project.sdk-version` (required)
+- `parties` array with name and role (operator/participant/observer)
+- `networks` with type (sandbox/remote/docker), port, url, auth
+- `plugins` array of npm packages
+
+## Canton Ledger API V2
+
+Port 7575 (default). Endpoints:
+- GET /v2/version
+- POST /v2/dars (upload DAR, binary body)
+- POST /v2/commands/submit-and-wait
+- POST /v2/state/active-contracts
+- POST /v2/parties/allocate
+- GET /v2/parties
+
+All require JWT Bearer token. For sandbox: HS256 with well-known secret.
+
+## Key Concepts
+
+- **Party**: Named identity (not a hex address). Authorization via signatory/controller.
+- **Template**: Daml data type + choices. Like a smart contract class.
+- **Choice**: An operation on a contract. Like a contract method.
+- **DAR**: Daml Archive. Compiled package uploaded to participant.
+- **Signatory**: Party that must authorize contract creation/archival.
+- **Controller**: Party that can exercise a choice.
+
+## Error Codes
+
+E1xxx: Configuration, E2xxx: SDK/Tools, E3xxx: Sandbox, E4xxx: Build, E5xxx: Test, E6xxx: Deploy, E7xxx: Ledger API, E8xxx: Console
+
+## Links
+
+- Repository: https://github.com/merged-one/cantonctl
+- Canton Network: https://www.canton.network
+- Daml SDK: https://docs.daml.com

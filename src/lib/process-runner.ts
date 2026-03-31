@@ -139,20 +139,3 @@ export function createProcessRunner(): ProcessRunner {
   }
 }
 
-/**
- * Create a mock ProcessRunner for testing. All methods are vi.fn() stubs
- * that can be configured per test.
- */
-export function createMockProcessRunner(): ProcessRunner & {
-  run: ReturnType<typeof import('vitest')['vi']['fn']>
-  spawn: ReturnType<typeof import('vitest')['vi']['fn']>
-  which: ReturnType<typeof import('vitest')['vi']['fn']>
-} {
-  // Import vi at call time to avoid bundling vitest in production
-  const {vi} = await import('vitest')
-  return {
-    run: vi.fn(),
-    spawn: vi.fn(),
-    which: vi.fn(),
-  }
-}
