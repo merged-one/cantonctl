@@ -1,0 +1,94 @@
+{
+  "name": "cantonctl",
+  "description": "Infrastructure-grade CLI toolchain for building on Canton Network",
+  "version": "0.1.0",
+  "license": "MIT",
+  "author": "Merged One",
+  "homepage": "https://github.com/merged-one/cantonctl",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/merged-one/cantonctl.git"
+  },
+  "bugs": {
+    "url": "https://github.com/merged-one/cantonctl/issues"
+  },
+  "type": "module",
+  "main": "",
+  "bin": {
+    "cantonctl": "./bin/run.js"
+  },
+  "files": [
+    "/bin",
+    "/dist",
+    "/oclif.manifest.json"
+  ],
+  "scripts": {
+    "build": "tsc -b",
+    "clean": "shx rm -rf dist",
+    "lint": "eslint src/",
+    "postpack": "shx rm -f oclif.manifest.json",
+    "prepack": "oclif manifest && oclif readme",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "generate:docs": "tsx scripts/generate-reference-docs.ts",
+    "doctest": "tsx scripts/run-doctests.ts",
+    "lint:docs": "vale docs/"
+  },
+  "dependencies": {
+    "@oclif/core": "^4",
+    "@oclif/plugin-help": "^6",
+    "@oclif/plugin-warn-if-update-available": "^3",
+    "chalk": "^5",
+    "chokidar": "^4",
+    "cli-table3": "^0.6",
+    "inquirer": "^12",
+    "js-yaml": "^4",
+    "ora": "^8",
+    "zod": "^3"
+  },
+  "devDependencies": {
+    "@oclif/test": "^4",
+    "@types/js-yaml": "^4",
+    "@types/node": "^22",
+    "eslint": "^9",
+    "oclif": "^4",
+    "shx": "^0.3",
+    "tsx": "^4",
+    "typescript": "^5",
+    "vitest": "^3"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "oclif": {
+    "bin": "cantonctl",
+    "dirname": "cantonctl",
+    "commands": {
+      "strategy": "pattern",
+      "target": "./dist/commands"
+    },
+    "plugins": [
+      "@oclif/plugin-help",
+      "@oclif/plugin-warn-if-update-available"
+    ],
+    "topicSeparator": " ",
+    "topics": {
+      "dev": {
+        "description": "Local development environment"
+      },
+      "deploy": {
+        "description": "Deploy to Canton networks"
+      },
+      "package": {
+        "description": "Manage Daml packages"
+      },
+      "auth": {
+        "description": "Authentication and JWT management"
+      }
+    },
+    "hooks": {
+      "init": "./dist/hooks/init",
+      "prerun": "./dist/hooks/prerun"
+    }
+  }
+}
