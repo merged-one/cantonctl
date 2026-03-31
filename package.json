@@ -29,30 +29,34 @@
     "postpack": "shx rm -f oclif.manifest.json",
     "prepack": "oclif manifest && oclif readme",
     "test": "vitest run",
+    "test:unit": "vitest run --project unit",
     "test:watch": "vitest",
-    "generate:docs": "tsx scripts/generate-reference-docs.ts",
-    "doctest": "tsx scripts/run-doctests.ts",
-    "lint:docs": "vale docs/"
+    "test:coverage": "vitest run --coverage"
   },
   "dependencies": {
     "@oclif/core": "^4",
     "@oclif/plugin-help": "^6",
     "@oclif/plugin-warn-if-update-available": "^3",
-    "chalk": "^5",
     "chokidar": "^4",
     "cli-table3": "^0.6",
+    "execa": "^9",
     "inquirer": "^12",
+    "jose": "^6",
     "js-yaml": "^4",
     "ora": "^8",
+    "picocolors": "^1",
     "zod": "^3"
   },
   "devDependencies": {
     "@oclif/test": "^4",
+    "@types/cli-table3": "^0.6",
     "@types/js-yaml": "^4",
     "@types/node": "^22",
-    "eslint": "^9",
+    "memfs": "^4",
+    "nock": "^14",
     "oclif": "^4",
     "shx": "^0.3",
+    "strip-ansi": "^7",
     "tsx": "^4",
     "typescript": "^5",
     "vitest": "^3"
@@ -78,12 +82,6 @@
       },
       "deploy": {
         "description": "Deploy to Canton networks"
-      },
-      "package": {
-        "description": "Manage Daml packages"
-      },
-      "auth": {
-        "description": "Authentication and JWT management"
       }
     },
     "hooks": {
