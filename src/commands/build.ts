@@ -13,6 +13,7 @@ import {createBuilder} from '../lib/builder.js'
 import {createDamlSdk} from '../lib/daml.js'
 import {CantonctlError} from '../lib/errors.js'
 import {createOutput} from '../lib/output.js'
+import {createPluginHookManager} from '../lib/plugin-hooks.js'
 import {createProcessRunner} from '../lib/process-runner.js'
 
 /** Find the first .dar file in a directory. */
@@ -92,7 +93,8 @@ export default class Build extends Command {
     try {
       const runner = createProcessRunner()
       const sdk = createDamlSdk({runner})
-      const builder = createBuilder({findDarFile, getDamlSourceMtime, getFileMtime, sdk})
+      const hooks = createPluginHookManager()
+      const builder = createBuilder({findDarFile, getDamlSourceMtime, getFileMtime, hooks, sdk})
 
       out.info('Compiling Daml contracts...')
 

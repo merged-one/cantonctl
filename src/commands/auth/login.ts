@@ -9,8 +9,9 @@ import {Args, Command, Flags} from '@oclif/core'
 import * as readline from 'node:readline'
 
 import {loadConfig} from '../../lib/config.js'
-import {createCredentialStore, createInMemoryBackend} from '../../lib/credential-store.js'
+import {createCredentialStore} from '../../lib/credential-store.js'
 import {CantonctlError, ErrorCode} from '../../lib/errors.js'
+import {createBackendWithFallback} from '../../lib/keytar-backend.js'
 import {createLedgerClient} from '../../lib/ledger-client.js'
 import {createOutput} from '../../lib/output.js'
 
@@ -82,9 +83,13 @@ export default class AuthLogin extends Command {
         out.warn(`Could not verify connectivity to ${networkName}. Token stored anyway.`)
       }
 
-      // Store in credential store
-      // TODO: Replace with OS keychain backend when keytar is added
-      const store = createCredentialStore({backend: createInMemoryBackend()})
+      // Store in credential store (OS keychain with in-memory fallback)
+      const {backend, isKeychain} = await createBackendWithFallback()
+      if (!isKeychain) {
+        out.warn('OS keychain unavailable — credentials stored in memory only (install keytar for persistence)')
+      }
+
+      const store = createCredentialStore({backend})
       await store.store(networkName, token)
 
       out.success(`Authenticated with ${networkName}`)

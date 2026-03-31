@@ -10,6 +10,7 @@ import {Command, Flags} from '@oclif/core'
 import {createDamlSdk} from '../lib/daml.js'
 import {CantonctlError} from '../lib/errors.js'
 import {createOutput} from '../lib/output.js'
+import {createPluginHookManager} from '../lib/plugin-hooks.js'
 import {createProcessRunner} from '../lib/process-runner.js'
 import {createTestRunner} from '../lib/test-runner.js'
 
@@ -40,7 +41,8 @@ export default class Test extends Command {
     try {
       const runner = createProcessRunner()
       const sdk = createDamlSdk({runner})
-      const testRunner = createTestRunner({sdk})
+      const hooks = createPluginHookManager()
+      const testRunner = createTestRunner({hooks, sdk})
 
       out.info('Running Daml Script tests...')
 

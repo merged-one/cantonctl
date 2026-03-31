@@ -90,5 +90,8 @@
       "init": "./dist/hooks/init",
       "prerun": "./dist/hooks/prerun"
     }
+  },
+  "optionalDependencies": {
+    "keytar": "^7.9.0"
   }
 }

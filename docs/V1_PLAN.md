@@ -51,14 +51,27 @@ Hardhat won because of four things: every command works reliably, plugins let th
 
 **Total (Phases 0-4): 277 unit + 66 E2E = 343 tests.**
 
+### Done (Phase 5)
+
+| Component | Status | Tests |
+|-----------|--------|-------|
+| Plugin hook integration | builder, test-runner, deployer emit before/after hooks | +9 unit |
+| OS keychain wiring | keytar-backend.ts with fallback, auth commands updated | +2 unit |
+| `cantonctl clean` | cleaner.ts + clean.ts command + docs/reference/clean.md | +9 unit |
+| Deploy E2E | scaffold → build → deploy pipeline (3 tests) | +3 E2E |
+| Status E2E | health check, unreachable, parties query (3 tests) | +3 E2E |
+| CI workflow | .github/workflows/ci.yml — unit on PR, E2E on main | — |
+| Task docs | deploy-to-devnet, use-the-console, write-and-run-tests | — |
+| Concept docs | authentication.md (JWT, token lifecycle, credential resolution) | — |
+
+**Total (Phases 0-5): 297 unit + 72 E2E = 369 tests.**
+
 ### Remaining for v1
 
 ```
-Phase 5a: E2E tests for Phase 4 commands       — deploy.e2e, console.e2e, auth flows
-Phase 5b: OS keychain wiring                   — replace in-memory backend with keytar
-Phase 5c: plugin hooks integration             — emit hooks from build/test/deploy commands
-Phase 5d: polish (interactive init, clean cmd) — refinement
-Phase 5e: docs completion                      — reference + tasks for new commands
+Interactive init (inquirer prompts)             — Phase 5 polish, deferred
+build --watch mode                              — Phase 5 polish, deferred
+--json conformance audit                        — verify every command's JSON output
 ```
 
 Detailed sequencing and open decisions live in [docs/PHASE_4_PREP.md](./PHASE_4_PREP.md).

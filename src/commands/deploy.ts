@@ -17,6 +17,7 @@ import {CantonctlError} from '../lib/errors.js'
 import {createSandboxToken} from '../lib/jwt.js'
 import {createLedgerClient} from '../lib/ledger-client.js'
 import {createOutput} from '../lib/output.js'
+import {createPluginHookManager} from '../lib/plugin-hooks.js'
 import {createProcessRunner} from '../lib/process-runner.js'
 
 const NETWORKS = ['local', 'devnet', 'testnet', 'mainnet'] as const
@@ -108,7 +109,8 @@ export default class Deploy extends Command {
       const config = await loadConfig()
       const runner = createProcessRunner()
       const sdk = createDamlSdk({runner})
-      const builder = createBuilder({findDarFile, getDamlSourceMtime, getFileMtime, sdk})
+      const hooks = createPluginHookManager()
+      const builder = createBuilder({findDarFile, getDamlSourceMtime, getFileMtime, hooks, sdk})
 
       const deployer = createDeployer({
         builder,
@@ -116,6 +118,7 @@ export default class Deploy extends Command {
         createLedgerClient,
         createToken: createSandboxToken,
         fs: {readFile: (p: string) => fs.promises.readFile(p)},
+        hooks,
         output: out,
       })
 

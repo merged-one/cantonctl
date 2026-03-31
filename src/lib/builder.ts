@@ -18,6 +18,7 @@
 
 import type {DamlSdk} from './daml.js'
 import {CantonctlError, ErrorCode} from './errors.js'
+import type {PluginHookManager} from './plugin-hooks.js'
 
 // ---------------------------------------------------------------------------
 // Types
@@ -32,6 +33,8 @@ export interface BuilderDeps {
   getFileMtime: (path: string) => Promise<number | null>
   /** Get the newest mtime among all .daml source files. Returns 0 if no sources. */
   getDamlSourceMtime: (sourceDir: string) => Promise<number>
+  /** Plugin hook manager for lifecycle events. */
+  hooks?: PluginHookManager
 }
 
 export interface BuildOptions {
@@ -76,7 +79,7 @@ const SOURCE_DIR = 'daml'
  * Create a Builder that wraps DamlSdk with caching and codegen.
  */
 export function createBuilder(deps: BuilderDeps): Builder {
-  const {findDarFile, getDamlSourceMtime, getFileMtime, sdk} = deps
+  const {findDarFile, getDamlSourceMtime, getFileMtime, hooks, sdk} = deps
 
   async function runBuild(opts: BuildOptions): Promise<BuildResult> {
     const start = Date.now()
@@ -87,6 +90,8 @@ export function createBuilder(deps: BuilderDeps): Builder {
       throw new DOMException('Aborted', 'AbortError')
     }
 
+    await hooks?.emit('beforeBuild', {force: opts.force, projectDir: opts.projectDir})
+
     // Check cache: skip build if DAR is newer than all sources
     if (!opts.force) {
       const existingDar = await findDarFile(darDir)
@@ -94,12 +99,14 @@ export function createBuilder(deps: BuilderDeps): Builder {
         const darMtime = await getFileMtime(existingDar)
         const sourceMtime = await getDamlSourceMtime(sourceDir)
         if (darMtime !== null && darMtime > sourceMtime) {
-          return {
+          const result: BuildResult = {
             cached: true,
             darPath: existingDar,
             durationMs: Date.now() - start,
             success: true,
           }
+          await hooks?.emit('afterBuild', {cached: true, darPath: existingDar, durationMs: result.durationMs, projectDir: opts.projectDir})
+          return result
         }
       }
     }
@@ -116,9 +123,12 @@ export function createBuilder(deps: BuilderDeps): Builder {
       })
     }
 
+    const durationMs = Date.now() - start
+    await hooks?.emit('afterBuild', {cached: false, darPath, durationMs, projectDir: opts.projectDir})
+
     return {
       darPath,
-      durationMs: Date.now() - start,
+      durationMs,
       success: true,
     }
   }

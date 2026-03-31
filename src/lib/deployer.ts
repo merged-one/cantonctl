@@ -26,6 +26,7 @@ import type {CantonctlConfig} from './config.js'
 import {CantonctlError, ErrorCode} from './errors.js'
 import type {LedgerClient, LedgerClientOptions} from './ledger-client.js'
 import type {OutputWriter} from './output.js'
+import type {PluginHookManager} from './plugin-hooks.js'
 
 // ---------------------------------------------------------------------------
 // Types
@@ -44,6 +45,8 @@ export interface DeployerDeps {
   fs: {readFile: (path: string) => Promise<Uint8Array>}
   /** Output writer for progress messages. */
   output: OutputWriter
+  /** Plugin hook manager for lifecycle events. */
+  hooks?: PluginHookManager
 }
 
 export interface DeployOptions {
@@ -88,13 +91,15 @@ export interface Deployer {
  * Create a Deployer that orchestrates the DAR deployment pipeline.
  */
 export function createDeployer(deps: DeployerDeps): Deployer {
-  const {builder, config, createLedgerClient, createToken, fs, output} = deps
+  const {builder, config, createLedgerClient, createToken, fs, hooks, output} = deps
 
   return {
     async deploy(opts: DeployOptions): Promise<DeployResult> {
       const start = Date.now()
       const networkName = opts.network
       const projectDir = opts.projectDir ?? process.cwd()
+
+      await hooks?.emit('beforeDeploy', {darPath: opts.darPath, dryRun: opts.dryRun, network: networkName, projectDir})
 
       // Step 1: Validate configuration
       output.info(`[1/6] Validating configuration...`)
@@ -225,10 +230,13 @@ export function createDeployer(deps: DeployerDeps): Deployer {
       output.success(`Deployed successfully to ${networkName}`)
       output.info(`  Package ID: ${mainPackageId}`)
 
+      const durationMs = Date.now() - start
+      await hooks?.emit('afterDeploy', {darPath, durationMs, mainPackageId, network: networkName})
+
       return {
         darPath,
         dryRun: false,
-        durationMs: Date.now() - start,
+        durationMs,
         mainPackageId,
         network: networkName,
         success: true,

@@ -6,6 +6,7 @@ import {createDeployer, type DeployerDeps, type DeployOptions} from './deployer.
 import {CantonctlError, ErrorCode} from './errors.js'
 import type {LedgerClient} from './ledger-client.js'
 import type {OutputWriter} from './output.js'
+import {createPluginHookManager} from './plugin-hooks.js'
 
 // ---------------------------------------------------------------------------
 // Mock factories
@@ -381,6 +382,55 @@ describe('Deployer', () => {
       expect(deps.createToken).toHaveBeenCalledWith(
         expect.objectContaining({actAs: ['admin']}),
       )
+    })
+  })
+
+  describe('plugin hooks', () => {
+    it('emits beforeDeploy and afterDeploy hooks', async () => {
+      const hooks = createPluginHookManager()
+      const events: string[] = []
+      hooks.register('beforeDeploy', async () => { events.push('before') })
+      hooks.register('afterDeploy', async () => { events.push('after') })
+
+      const deps = createDefaultDeps({hooks})
+      const deployer = createDeployer(deps)
+      await deployer.deploy(defaultOpts)
+
+      expect(events).toEqual(['before', 'after'])
+    })
+
+    it('emits afterDeploy with context', async () => {
+      const hooks = createPluginHookManager()
+      let ctx: Record<string, unknown> = {}
+      hooks.register('afterDeploy', async (c) => { ctx = c })
+
+      const deps = createDefaultDeps({hooks})
+      const deployer = createDeployer(deps)
+      await deployer.deploy(defaultOpts)
+
+      expect(ctx.network).toBe('local')
+      expect(ctx.mainPackageId).toBe('pkg-abc123')
+      expect(ctx.darPath).toBe('/project/.daml/dist/my-app-1.0.0.dar')
+    })
+
+    it('does not emit afterDeploy on dry run', async () => {
+      const hooks = createPluginHookManager()
+      const events: string[] = []
+      hooks.register('beforeDeploy', async () => { events.push('before') })
+      hooks.register('afterDeploy', async () => { events.push('after') })
+
+      const deps = createDefaultDeps({hooks})
+      const deployer = createDeployer(deps)
+      await deployer.deploy({...defaultOpts, dryRun: true})
+
+      expect(events).toEqual(['before'])
+    })
+
+    it('works without hooks (optional)', async () => {
+      const deps = createDefaultDeps()
+      const deployer = createDeployer(deps)
+      const result = await deployer.deploy(defaultOpts)
+      expect(result.success).toBe(true)
     })
   })
 })

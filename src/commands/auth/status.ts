@@ -8,8 +8,9 @@
 import {Command, Flags} from '@oclif/core'
 
 import {loadConfig} from '../../lib/config.js'
-import {createCredentialStore, createInMemoryBackend} from '../../lib/credential-store.js'
+import {createCredentialStore} from '../../lib/credential-store.js'
 import {CantonctlError} from '../../lib/errors.js'
+import {createBackendWithFallback} from '../../lib/keytar-backend.js'
 import {createOutput} from '../../lib/output.js'
 
 export default class AuthStatus extends Command {
@@ -35,8 +36,8 @@ export default class AuthStatus extends Command {
       const config = await loadConfig()
       const networks = Object.keys(config.networks ?? {})
 
-      // TODO: Replace with OS keychain backend when keytar is added
-      const store = createCredentialStore({backend: createInMemoryBackend(), env: process.env})
+      const {backend} = await createBackendWithFallback()
+      const store = createCredentialStore({backend, env: process.env})
 
       const statuses: Array<{authenticated: boolean; network: string; source: string | null}> = []
 

@@ -8,9 +8,9 @@ cantonctl is an institutional-grade CLI toolchain for Canton Network — the ent
 
 ```bash
 npm install                         # Install dependencies
-npm test                            # Run 277 unit tests
-npm run test:e2e                    # Run 66 E2E tests (requires Daml SDK + Java 21)
-npm run test:all                    # Run all 343 tests
+npm test                            # Run 297 unit tests
+npm run test:e2e                    # Run 72 E2E tests (requires Daml SDK + Java 21)
+npm run test:all                    # Run all 369 tests
 npm run test:coverage               # Coverage report (99.9% statements)
 npm run build                       # Compile TypeScript to dist/
 ./scripts/install-prerequisites.sh  # Install Daml SDK + Java 21
@@ -54,6 +54,8 @@ npm run build                       # Compile TypeScript to dist/
 | `repl/parser.ts` | `parseCommand(input)` | REPL command grammar shared with future `exec` command |
 | `repl/executor.ts` | `createExecutor(deps)` | Dispatches parsed REPL commands to LedgerClient |
 | `repl/completer.ts` | `createCompleter(deps)` | Tab completion for REPL (commands, parties, flags) |
+| `cleaner.ts` | `createCleaner(deps)` | Build artifact cleanup (.daml/, dist/, node_modules/) |
+| `keytar-backend.ts` | `createBackendWithFallback()` | OS keychain backend via keytar with in-memory fallback |
 
 ## Test patterns
 
@@ -109,7 +111,7 @@ vi.spyOn(process.stdout, 'write').mockReturnValue(true)
 | Phase 2: SDK & Ledger | Complete (scaffold, dev-server) |
 | Phase 3: Simple commands (build, test, status) | Complete (builder, test-runner, status with real DamlSdk/LedgerClient) |
 | Phase 4: Deploy, console, auth/hooks groundwork | Complete (deployer, credential-store, auth commands, repl/parser, repl/executor, repl/completer, plugin-hooks) |
-| Phase 5: Polish (E2E for Phase 4 commands, --json conformance, help snapshots, OS keychain wiring) | Not started |
+| Phase 5: Polish (E2E, hooks integration, keychain, clean, CI, docs) | Complete (hook integration into commands, keytar backend, clean command, deploy/status E2E, CI workflow, task/concept docs) |
 
 `dev --full` remains deferred until after the v1 core flow.
 

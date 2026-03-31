@@ -3,6 +3,7 @@ import {describe, expect, it, vi} from 'vitest'
 import type {DamlSdk, SdkCommandResult} from './daml.js'
 import {type TestResult, type TestRunner, type TestRunnerDeps, createTestRunner} from './test-runner.js'
 import {CantonctlError, ErrorCode} from './errors.js'
+import {createPluginHookManager} from './plugin-hooks.js'
 
 // ---------------------------------------------------------------------------
 // Mock factories
@@ -131,6 +132,35 @@ describe('TestRunner', () => {
       } catch (err) {
         expect((err as CantonctlError).code).toBe(ErrorCode.SDK_NOT_INSTALLED)
       }
+    })
+
+    it('emits beforeTest and afterTest hooks', async () => {
+      const hooks = createPluginHookManager()
+      const events: string[] = []
+      hooks.register('beforeTest', async () => { events.push('before') })
+      hooks.register('afterTest', async () => { events.push('after') })
+
+      const deps = createDefaultDeps()
+      const runner = createTestRunner({...deps, hooks})
+      await runner.run({projectDir: '/project'})
+
+      expect(events).toEqual(['before', 'after'])
+    })
+
+    it('emits afterTest with success=false on test failure', async () => {
+      const hooks = createPluginHookManager()
+      let ctx: Record<string, unknown> = {}
+      hooks.register('afterTest', async (c) => { ctx = c })
+
+      const sdk = createMockSdk()
+      sdk.test.mockRejectedValue(new CantonctlError(ErrorCode.TEST_EXECUTION_FAILED, {
+        context: {stderr: 'fail', stdout: ''},
+      }))
+
+      const runner = createTestRunner({hooks, sdk})
+      await runner.run({projectDir: '/project'})
+
+      expect(ctx.success).toBe(false)
     })
 
     it('combines stdout and stderr in output', async () => {

@@ -7,8 +7,9 @@
 
 import {Args, Command, Flags} from '@oclif/core'
 
-import {createCredentialStore, createInMemoryBackend} from '../../lib/credential-store.js'
+import {createCredentialStore} from '../../lib/credential-store.js'
 import {CantonctlError} from '../../lib/errors.js'
+import {createBackendWithFallback} from '../../lib/keytar-backend.js'
 import {createOutput} from '../../lib/output.js'
 
 export default class AuthLogout extends Command {
@@ -38,8 +39,8 @@ export default class AuthLogout extends Command {
     const out = createOutput({json: flags.json})
 
     try {
-      // TODO: Replace with OS keychain backend when keytar is added
-      const store = createCredentialStore({backend: createInMemoryBackend()})
+      const {backend} = await createBackendWithFallback()
+      const store = createCredentialStore({backend})
       const removed = await store.remove(args.network)
 
       if (removed) {

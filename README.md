@@ -47,6 +47,7 @@ cantonctl console
 | `cantonctl console` | Interactive REPL for querying and submitting ledger commands | Implemented |
 | `cantonctl status` | Show node health, version, and active parties | Implemented |
 | `cantonctl auth login/logout/status` | Manage JWT credentials per network | Implemented |
+| `cantonctl clean` | Remove build artifacts (.daml/, dist/) | Implemented |
 
 All implemented commands support `--json` for CI pipeline integration. All errors include error codes, suggestions, and documentation links.
 
@@ -93,7 +94,7 @@ cantonctl dev --json             # JSON output for CI
 
 ### Core Principles
 
-- **Test-first TDD**: Tests define the contract, implementation follows (343 tests, 99.9% coverage)
+- **Test-first TDD**: Tests define the contract, implementation follows (369 tests, 99.9% coverage)
 - **Dependency injection**: Every I/O module accepts injected dependencies. Zero `vi.mock()`.
 - **AbortSignal everywhere**: All long-running operations support graceful cancellation
 - **Structured errors**: Every error is a `CantonctlError` with code (E1xxx-E8xxx), suggestion, and docs URL
@@ -120,6 +121,8 @@ cantonctl dev --json             # JSON output for CI
 | `src/lib/repl/parser.ts` | REPL command grammar shared with future `exec` | 100% |
 | `src/lib/repl/executor.ts` | Dispatches parsed commands to LedgerClient | 100% |
 | `src/lib/repl/completer.ts` | Tab completion for commands, parties, flags | 100% |
+| `src/lib/cleaner.ts` | Build artifact cleanup (.daml/, dist/, node_modules/) | 100% |
+| `src/lib/keytar-backend.ts` | OS keychain backend via keytar with in-memory fallback | 100% |
 
 ### Project Structure
 
@@ -156,6 +159,8 @@ cantonctl/
 │       ├── scaffold.ts        # Project scaffolding + templates
 │       ├── builder.ts         # Build orchestration + DAR caching
 │       ├── test-runner.ts     # Test execution + ANSI stripping
+│       ├── cleaner.ts         # Build artifact cleanup
+│       ├── keytar-backend.ts  # OS keychain backend for credentials
 │       └── repl/
 │           ├── parser.ts      # Command grammar (shared with exec)
 │           ├── executor.ts    # Dispatch commands to LedgerClient
@@ -211,10 +216,10 @@ Plugins are auto-discovered from `node_modules` matching `@cantonctl/plugin-*` o
 
 ```bash
 npm install          # Install dependencies
-npm test             # Run unit tests (277 tests)
+npm test             # Run unit tests (297 tests)
 npm run test:watch   # Watch mode
-npm run test:e2e     # Run E2E tests (66 tests, requires Daml SDK + Java 21)
-npm run test:all     # Run all 343 tests
+npm run test:e2e     # Run E2E tests (72 tests, requires Daml SDK + Java 21)
+npm run test:all     # Run all 369 tests
 npm run test:coverage # Coverage report (99.9% statements)
 npm run build        # Compile TypeScript
 ```

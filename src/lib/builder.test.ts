@@ -3,6 +3,7 @@ import {describe, expect, it, vi} from 'vitest'
 import type {DamlSdk, SdkCommandResult} from './daml.js'
 import {type BuildOptions, type BuildResult, type Builder, type BuilderDeps, createBuilder} from './builder.js'
 import {CantonctlError, ErrorCode} from './errors.js'
+import {createPluginHookManager} from './plugin-hooks.js'
 
 // ---------------------------------------------------------------------------
 // Mock factories
@@ -145,6 +146,44 @@ describe('Builder', () => {
 
       const builder = createBuilder(deps)
       await expect(builder.build({...defaultOpts, signal: controller.signal})).rejects.toThrow()
+    })
+  })
+
+  describe('plugin hooks', () => {
+    it('emits beforeBuild and afterBuild hooks', async () => {
+      const hooks = createPluginHookManager()
+      const events: string[] = []
+      hooks.register('beforeBuild', async () => { events.push('before') })
+      hooks.register('afterBuild', async () => { events.push('after') })
+
+      const deps = createDefaultDeps({
+        getFileMtime: vi.fn().mockResolvedValue(null),
+        hooks,
+      })
+      const builder = createBuilder(deps)
+      await builder.build(defaultOpts)
+
+      expect(events).toEqual(['before', 'after'])
+    })
+
+    it('emits afterBuild with context on cache hit', async () => {
+      const hooks = createPluginHookManager()
+      let ctx: Record<string, unknown> = {}
+      hooks.register('afterBuild', async (c) => { ctx = c })
+
+      const deps = createDefaultDeps({hooks})
+      const builder = createBuilder(deps)
+      await builder.build(defaultOpts)
+
+      expect(ctx.cached).toBe(true)
+      expect(ctx.darPath).toBe('/project/.daml/dist/my-app-1.0.0.dar')
+    })
+
+    it('works without hooks (optional)', async () => {
+      const deps = createDefaultDeps({getFileMtime: vi.fn().mockResolvedValue(null)})
+      const builder = createBuilder(deps)
+      const result = await builder.build(defaultOpts)
+      expect(result.success).toBe(true)
     })
   })
 

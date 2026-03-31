@@ -114,8 +114,8 @@ Deliverables:
 | Criterion | Status | Notes |
 |-----------|--------|-------|
 | `deploy local` is real, tested, and documented | ✅ | `deployer.ts` (20 unit tests), `docs/reference/deploy.md` |
-| remote auth can be stored and reused safely | ⚠️ | `credential-store.ts` + auth commands exist. OS keychain backend deferred to Phase 5 (currently in-memory with `CANTONCTL_JWT_<NETWORK>` env var override functional). |
+| remote auth can be stored and reused safely | ✅ | `credential-store.ts` + auth commands + keytar backend with fallback (Phase 5). Env var override: `CANTONCTL_JWT_<NETWORK>`. |
 | `console` supports `help`, `status`, `parties`, `query`, and basic submit flows | ✅ | All commands implemented and unit-tested. |
-| plugin hooks are documented and exercised in tests | ⚠️ | `plugin-hooks.ts` (11 tests) + `docs/concepts/plugins.md`. Integration into build/test/deploy commands deferred to Phase 5. |
+| plugin hooks are documented and exercised in tests | ✅ | `plugin-hooks.ts` (11 tests) + `docs/concepts/plugins.md` + integrated into build/test/deploy commands (Phase 5). |
 
-The two ⚠️ items carry into Phase 5 (OS keychain wiring, hook integration into commands). Core functionality is complete.
+All exit criteria met. Phase 4 carry-overs (keychain wiring, hook integration) were completed in Phase 5.

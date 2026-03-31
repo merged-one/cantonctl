@@ -19,6 +19,7 @@
 
 import type {DamlSdk} from './daml.js'
 import {CantonctlError, ErrorCode} from './errors.js'
+import type {PluginHookManager} from './plugin-hooks.js'
 
 // ---------------------------------------------------------------------------
 // Types
@@ -27,6 +28,8 @@ import {CantonctlError, ErrorCode} from './errors.js'
 export interface TestRunnerDeps {
   /** Daml SDK abstraction. */
   sdk: DamlSdk
+  /** Plugin hook manager for lifecycle events. */
+  hooks?: PluginHookManager
 }
 
 export interface TestOptions {
@@ -68,11 +71,13 @@ function stripAnsi(str: string): string {
  * Create a TestRunner that wraps DamlSdk.test() with structured results.
  */
 export function createTestRunner(deps: TestRunnerDeps): TestRunner {
-  const {sdk} = deps
+  const {hooks, sdk} = deps
 
   return {
     async run(opts: TestOptions): Promise<TestResult> {
       const start = Date.now()
+
+      await hooks?.emit('beforeTest', {filter: opts.filter, projectDir: opts.projectDir})
 
       try {
         const result = await sdk.test({
@@ -82,9 +87,12 @@ export function createTestRunner(deps: TestRunnerDeps): TestRunner {
         })
 
         const output = stripAnsi([result.stdout, result.stderr].filter(Boolean).join('\n'))
+        const durationMs = Date.now() - start
+
+        await hooks?.emit('afterTest', {durationMs, projectDir: opts.projectDir, success: true})
 
         return {
-          durationMs: Date.now() - start,
+          durationMs,
           output,
           passed: true,
           success: true,
@@ -94,9 +102,12 @@ export function createTestRunner(deps: TestRunnerDeps): TestRunner {
         if (err instanceof CantonctlError && err.code === ErrorCode.TEST_EXECUTION_FAILED) {
           const ctx = err.context as {stderr?: string; stdout?: string}
           const output = stripAnsi([ctx.stdout, ctx.stderr].filter(Boolean).join('\n'))
+          const durationMs = Date.now() - start
+
+          await hooks?.emit('afterTest', {durationMs, projectDir: opts.projectDir, success: false})
 
           return {
-            durationMs: Date.now() - start,
+            durationMs,
             output,
             passed: false,
             success: false,
