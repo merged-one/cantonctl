@@ -30,6 +30,7 @@ import {WebSocketServer, type WebSocket} from 'ws'
 
 import type {Builder} from './builder.js'
 import {parseDamlSource, type DamlTemplate} from './daml-parser.js'
+import {detectTopology} from './topology.js'
 import type {OutputWriter} from './output.js'
 import type {TestRunner} from './test-runner.js'
 
@@ -160,7 +161,32 @@ export function createServeServer(deps: ServeServerDeps): ServeServer {
         readAs: ['Alice', 'Bob'],
       })
 
-      const client = createLedgerClient({baseUrl: ledgerUrl, token})
+      // Detect multi-node topology
+      const topology = await detectTopology(projectDir)
+      const isMultiNode = topology !== null && topology.participants.length > 0
+
+      // Create ledger clients — one per participant in multi-node, or single
+      const participantClients: Array<{client: LedgerClientLike; name: string; port: number}> = []
+
+      if (isMultiNode) {
+        for (const participant of topology!.participants) {
+          const baseUrl = `http://localhost:${participant.ports.jsonApi}`
+          participantClients.push({
+            client: createLedgerClient({baseUrl, token}),
+            name: participant.name,
+            port: participant.ports.jsonApi,
+          })
+        }
+      } else {
+        participantClients.push({
+          client: createLedgerClient({baseUrl: ledgerUrl, token}),
+          name: 'sandbox',
+          port: Number.parseInt(new URL(ledgerUrl).port, 10) || 7575,
+        })
+      }
+
+      // Default client (first participant or single sandbox)
+      const client = participantClients[0].client
 
       // Express app
       const app = express()
@@ -168,6 +194,70 @@ export function createServeServer(deps: ServeServerDeps): ServeServer {
       app.use(express.json())
 
       // ── REST API ────────────────────────────────────────────────
+
+      // ── Topology ─────────────────────────────────────────────
+
+      app.get('/api/topology', async (_req: Request, res: Response) => {
+        res.json({
+          mode: isMultiNode ? 'multi' : 'single',
+          participants: participantClients.map(pc => ({name: pc.name, port: pc.port})),
+          synchronizer: isMultiNode ? topology!.synchronizer : null,
+          topology: isMultiNode ? {
+            participants: topology!.participants.map(p => ({
+              name: p.name,
+              parties: p.parties,
+              ports: p.ports,
+            })),
+            synchronizer: topology!.synchronizer,
+          } : null,
+        })
+      })
+
+      app.get('/api/topology/status', async (_req: Request, res: Response) => {
+        const statuses = await Promise.all(
+          participantClients.map(async (pc) => {
+            let healthy = false
+            let version: string | undefined
+            let parties: Array<Record<string, unknown>> = []
+            let contractCount = 0
+
+            try {
+              const v = await pc.client.getVersion()
+              healthy = true
+              version = v.version as string
+            } catch { /* unhealthy */ }
+
+            if (healthy) {
+              try {
+                const p = await pc.client.getParties()
+                parties = p.partyDetails
+              } catch { /* no parties */ }
+
+              // Count contracts for each party
+              for (const party of parties) {
+                try {
+                  const partyId = String(party.party ?? party.identifier ?? '')
+                  if (partyId) {
+                    const contracts = await pc.client.getActiveContracts({filter: {party: partyId}})
+                    contractCount += contracts.activeContracts.length
+                  }
+                } catch { /* skip */ }
+              }
+            }
+
+            return {
+              contractCount,
+              healthy,
+              name: pc.name,
+              parties,
+              port: pc.port,
+              version,
+            }
+          }),
+        )
+
+        res.json({participants: statuses})
+      })
 
       // Read daml.yaml for project metadata (package name for template IDs)
       app.get('/api/project', async (_req: Request, res: Response) => {
@@ -247,13 +337,16 @@ export function createServeServer(deps: ServeServerDeps): ServeServer {
                   durationMs: result.durationMs,
                   type: result.cached ? 'build:cached' : 'build:success',
                 })
-                // Auto-upload DAR to sandbox after successful build
+                // Auto-upload DAR to ALL participants after successful build
                 if (result.darPath && !result.cached) {
-                  try {
-                    const darBytes = await fs.promises.readFile(result.darPath)
-                    await client.uploadDar(new Uint8Array(darBytes))
-                    broadcast({type: 'dar:uploaded', dar: result.darPath})
-                  } catch (uploadErr) { output.warn(`DAR upload failed: ${uploadErr}`) }
+                  const darBytes = await fs.promises.readFile(result.darPath)
+                  for (const pc of participantClients) {
+                    try {
+                      await pc.client.uploadDar(new Uint8Array(darBytes))
+                    } catch (uploadErr) { output.warn(`DAR upload to ${pc.name} failed: ${uploadErr}`) }
+                  }
+
+                  broadcast({type: 'dar:uploaded', dar: result.darPath, participants: participantClients.map(pc => pc.name)})
                 }
               } catch (err) {
                 broadcast({output: String(err), type: 'build:error'})
@@ -387,13 +480,16 @@ export function createServeServer(deps: ServeServerDeps): ServeServer {
         try {
           const result = await builder.build({force: true, projectDir})
           broadcast({dar: result.darPath, durationMs: result.durationMs, type: 'build:success'})
-          // Auto-upload DAR to sandbox
+          // Auto-upload DAR to ALL participants
           if (result.darPath) {
-            try {
-              const darBytes = await fs.promises.readFile(result.darPath)
-              await client.uploadDar(new Uint8Array(darBytes))
-              broadcast({type: 'dar:uploaded', dar: result.darPath})
-            } catch (uploadErr) { output.warn(`DAR upload failed: ${uploadErr}`) }
+            const darBytes = await fs.promises.readFile(result.darPath)
+            for (const pc of participantClients) {
+              try {
+                await pc.client.uploadDar(new Uint8Array(darBytes))
+              } catch (uploadErr) { output.warn(`DAR upload to ${pc.name} failed: ${uploadErr}`) }
+            }
+
+            broadcast({type: 'dar:uploaded', dar: result.darPath, participants: participantClients.map(pc => pc.name)})
           }
 
           res.json(result)

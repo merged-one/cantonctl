@@ -26,7 +26,9 @@ import {fileURLToPath} from 'node:url'
 import {createBuilder} from '../lib/builder.js'
 import {loadConfig} from '../lib/config.js'
 import {createDamlSdk} from '../lib/daml.js'
+import {createFullDevServer, type FullDevServer} from '../lib/dev-server-full.js'
 import {createDevServer} from '../lib/dev-server.js'
+import {createDockerManager} from '../lib/docker.js'
 import {CantonctlError, ErrorCode} from '../lib/errors.js'
 import {createSandboxToken} from '../lib/jwt.js'
 import {createLedgerClient} from '../lib/ledger-client.js'
@@ -63,14 +65,27 @@ export default class Playground extends Command {
 
   static override examples = [
     '<%= config.bin %> playground',
+    '<%= config.bin %> playground --full',
     '<%= config.bin %> playground --port 8080',
     '<%= config.bin %> playground --no-open',
   ]
 
   static override flags = {
+    'base-port': Flags.integer({
+      default: 10_000,
+      description: 'Base port for multi-node topology (--full mode only)',
+    }),
+    'canton-image': Flags.string({
+      default: 'ghcr.io/digital-asset/decentralized-canton-sync/docker/canton:0.5.3',
+      description: 'Canton Docker image (--full mode only)',
+    }),
+    full: Flags.boolean({
+      default: false,
+      description: 'Start multi-node Docker topology instead of single sandbox',
+    }),
     'json-api-port': Flags.integer({
       default: 7575,
-      description: 'Canton JSON Ledger API port',
+      description: 'Canton JSON Ledger API port (single sandbox mode)',
     }),
     'no-open': Flags.boolean({
       default: false,
@@ -87,7 +102,7 @@ export default class Playground extends Command {
     }),
     'sandbox-port': Flags.integer({
       default: 5001,
-      description: 'Canton sandbox port',
+      description: 'Canton sandbox port (single sandbox mode)',
     }),
   }
 
@@ -114,9 +129,46 @@ export default class Playground extends Command {
     const sdk = createDamlSdk({runner})
     const ledgerUrl = `http://localhost:${flags['json-api-port']}`
 
-    // Start sandbox if needed
+    // Start sandbox or multi-node topology
     let devServer: Awaited<ReturnType<typeof createDevServer>> | null = null
-    if (!flags['no-sandbox']) {
+    let fullDevServer: FullDevServer | null = null
+
+    const findDarFile = async (dir: string) => {
+      try {
+        const entries = await fs.promises.readdir(dir)
+        const dar = entries.find(e => e.endsWith('.dar'))
+        return dar ? path.join(dir, dar) : null
+      } catch { return null }
+    }
+
+    if (!flags['no-sandbox'] && flags.full) {
+      out.log('')
+      out.info('Starting multi-node Canton topology via Docker...')
+
+      const docker = createDockerManager({output: out, runner})
+      fullDevServer = createFullDevServer({
+        build: async (pd: string): Promise<void> => { await sdk.build({projectDir: pd}) },
+        cantonImage: flags['canton-image'],
+        config,
+        createClient: createLedgerClient,
+        createToken: createSandboxToken,
+        docker,
+        findDarFile,
+        mkdir: async (dir: string): Promise<void> => { await fs.promises.mkdir(dir, {recursive: true}) },
+        output: out,
+        readFile: (p) => fs.promises.readFile(p),
+        rmdir: (dir) => fs.promises.rm(dir, {force: true, recursive: true}),
+        watch: (paths, opts) => watch(paths, opts),
+        writeFile: (p, content) => fs.promises.writeFile(p, content, 'utf8'),
+      })
+
+      await fullDevServer.start({
+        basePort: flags['base-port'],
+        projectDir,
+      })
+
+      out.success('Multi-node topology ready')
+    } else if (!flags['no-sandbox']) {
       out.log('')
       out.info('Starting Canton sandbox...')
 
@@ -124,13 +176,7 @@ export default class Playground extends Command {
         config,
         createClient: createLedgerClient,
         createToken: createSandboxToken,
-        findDarFile: async (dir: string) => {
-          try {
-            const entries = await fs.promises.readdir(dir)
-            const dar = entries.find(e => e.endsWith('.dar'))
-            return dar ? path.join(dir, dar) : null
-          } catch { return null }
-        },
+        findDarFile,
         isPortInUse,
         output: out,
         readFile: (p) => fs.promises.readFile(p),
@@ -210,6 +256,7 @@ export default class Playground extends Command {
         out.info('Shutting down...')
         await server.stop()
         if (devServer) await devServer.stop()
+        if (fullDevServer) await fullDevServer.stop()
         resolve()
       }
 
