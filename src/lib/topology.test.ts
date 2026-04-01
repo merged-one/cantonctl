@@ -158,10 +158,13 @@ describe('generateTopology', () => {
       expect(cantonConf).toContain('canton {')
     })
 
-    it('contains domain definition', () => {
+    it('contains sequencer and mediator definitions (Canton 3.4.x schema)', () => {
       const {cantonConf} = generateTopology(createOpts())
-      expect(cantonConf).toContain('local-domain')
-      expect(cantonConf).toContain('domains {')
+      expect(cantonConf).toContain('sequencers {')
+      expect(cantonConf).toContain('sequencer1')
+      expect(cantonConf).toContain('sequencer.type = BFT')
+      expect(cantonConf).toContain('mediators {')
+      expect(cantonConf).toContain('mediator1')
     })
 
     it('uses in-memory storage for all nodes', () => {
@@ -193,18 +196,42 @@ describe('generateTopology', () => {
       expect(cantonConf).toContain('non-standard-config = yes')
     })
 
-    it('includes auto-start (manual-start = no)', () => {
+    it('binds all APIs to 0.0.0.0 for Docker port forwarding', () => {
       const {cantonConf} = generateTopology(createOpts())
-      expect(cantonConf).toContain('manual-start = no')
+      // All API blocks (ledger-api, admin-api, http-ledger-api, public-api)
+      // must bind to 0.0.0.0 so Docker port forwarding works from the host.
+      const addressMatches = cantonConf.match(/address = "0\.0\.0\.0"/g)
+      // 2 participants × 3 APIs each + sequencer (public-api + admin-api) + mediator (admin-api) = 9
+      expect(addressMatches?.length).toBe(9)
+    })
+
+    it('does not include manual-start (nodes started by bootstrap script)', () => {
+      const {cantonConf} = generateTopology(createOpts())
+      expect(cantonConf).not.toContain('manual-start')
     })
   })
 
   describe('bootstrap script generation', () => {
-    it('connects each participant to the local domain', () => {
+    it('starts nodes and bootstraps synchronizer', () => {
+      const {bootstrapScript} = generateTopology(createOpts())
+      expect(bootstrapScript).toContain('nodes.local.start()')
+      expect(bootstrapScript).toContain('bootstrap.synchronizer_local()')
+    })
+
+    it('connects each participant to the sequencer', () => {
       const topology = generateTopology(createOpts())
       for (const p of topology.participants) {
         expect(topology.bootstrapScript).toContain(
-          `${p.name}.domains.connect_local(local_domain)`,
+          `${p.name}.synchronizers.connect_local(sequencer1, alias = "da")`,
+        )
+      }
+    })
+
+    it('waits for each participant to be active', () => {
+      const topology = generateTopology(createOpts())
+      for (const p of topology.participants) {
+        expect(topology.bootstrapScript).toContain(
+          `${p.name}.synchronizers.active("da")`,
         )
       }
     })
@@ -230,12 +257,16 @@ describe('generateTopology', () => {
 
     it('mounts canton.conf and bootstrap.canton as volumes', () => {
       const {dockerCompose} = generateTopology(createOpts())
-      expect(dockerCompose).toContain('canton.conf:/canton/canton.conf')
+      expect(dockerCompose).toContain('canton.conf:/app/app.conf')
       expect(dockerCompose).toContain('bootstrap.canton:/canton/bootstrap.canton')
     })
 
-    it('runs canton in daemon mode with config and bootstrap', () => {
+    it('uses custom entrypoint to bypass image wrapper script', () => {
       const {dockerCompose} = generateTopology(createOpts())
+      // Custom entrypoint avoids the bootstrap-entrypoint.sc wrapper which
+      // causes Ammonite name collisions with the Canton bootstrap DSL object.
+      expect(dockerCompose).toContain('entrypoint:')
+      expect(dockerCompose).toContain('/app/bin/canton')
       expect(dockerCompose).toContain('daemon')
       expect(dockerCompose).toContain('--config')
       expect(dockerCompose).toContain('--bootstrap')

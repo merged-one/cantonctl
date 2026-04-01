@@ -33,6 +33,7 @@
     "test:e2e": "vitest run --project e2e-sdk --project e2e-sandbox",
     "test:e2e:sdk": "vitest run --project e2e-sdk",
     "test:e2e:sandbox": "vitest run --project e2e-sandbox",
+    "test:e2e:docker": "vitest run --project e2e-docker",
     "test:all": "vitest run",
     "test:watch": "vitest --project unit",
     "test:coverage": "vitest run --project unit --coverage",

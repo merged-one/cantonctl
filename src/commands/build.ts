@@ -8,6 +8,7 @@
 import {Command, Flags} from '@oclif/core'
 import * as fs from 'node:fs'
 import * as path from 'node:path'
+import {watch} from 'chokidar'
 
 import {createBuilder} from '../lib/builder.js'
 import {createDamlSdk} from '../lib/daml.js'
@@ -64,8 +65,9 @@ export default class Build extends Command {
 
   static override examples = [
     '<%= config.bin %> build',
-    '<%= config.bin %> build --no-codegen',
+    '<%= config.bin %> build --codegen',
     '<%= config.bin %> build --force',
+    '<%= config.bin %> build --watch',
     '<%= config.bin %> build --json',
   ]
 
@@ -84,6 +86,11 @@ export default class Build extends Command {
       default: false,
       description: 'Output result as JSON',
     }),
+    watch: Flags.boolean({
+      char: 'w',
+      default: false,
+      description: 'Watch for changes and rebuild automatically',
+    }),
   }
 
   async run(): Promise<void> {
@@ -96,6 +103,62 @@ export default class Build extends Command {
       const hooks = createPluginHookManager()
       const builder = createBuilder({findDarFile, getDamlSourceMtime, getFileMtime, hooks, sdk})
 
+      if (flags.watch) {
+        // Watch mode: continuous compilation
+        out.info('Starting watch mode...')
+
+        const controller = new AbortController()
+        let shutdownResolve: (() => void) | null = null
+        const shutdownPromise = new Promise<void>(resolve => { shutdownResolve = resolve })
+
+        const {stop} = await builder.watch({
+          output: out,
+          projectDir: process.cwd(),
+          signal: controller.signal,
+          watch: (paths, opts) => watch(paths, opts),
+        })
+
+        const shutdown = async () => {
+          out.info('\nStopping watch mode...')
+          controller.abort()
+          await stop()
+          out.success('Watch mode stopped')
+          out.result({data: {status: 'stopped'}, success: true})
+          shutdownResolve?.()
+        }
+
+        process.on('SIGINT', shutdown)
+        process.on('SIGTERM', shutdown)
+
+        if (process.stdin.isTTY && !flags.json) {
+          process.stdin.setRawMode(true)
+          process.stdin.resume()
+          process.stdin.on('data', async (data) => {
+            const key = data.toString()
+            if (key === 'q' || key === '\u0003') await shutdown()
+          })
+        }
+
+        // Do an initial build
+        const result = await builder.build({force: flags.force, projectDir: process.cwd()})
+        if (result.cached) {
+          out.success('Build up to date (cached)')
+        } else {
+          out.success('Build successful')
+        }
+
+        out.log('\nPress Ctrl+C or q to stop watching')
+        await shutdownPromise
+
+        if (process.stdin.isTTY && !flags.json) {
+          process.stdin.setRawMode(false)
+          process.stdin.pause()
+        }
+
+        return
+      }
+
+      // Single build mode
       out.info('Compiling Daml contracts...')
 
       const result = flags.codegen

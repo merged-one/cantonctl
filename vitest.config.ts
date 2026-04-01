@@ -1,12 +1,14 @@
 import {defineConfig} from 'vitest/config'
 
 /**
- * Vitest configuration with three test projects:
+ * Vitest configuration with four test projects:
  *
  * - unit: Fast, no external dependencies, parallel execution.
  * - e2e-sdk: Requires Daml SDK + Java, parallel execution OK.
  * - e2e-sandbox: Requires running Canton sandbox (JVM). Sequential file
  *   execution to avoid resource contention from concurrent JVM processes.
+ * - e2e-docker: Requires Docker + Canton image + Daml SDK + Java. Sequential
+ *   execution for Docker resource isolation. Tests `dev --full` topology.
  */
 export default defineConfig({
   test: {
@@ -29,6 +31,7 @@ export default defineConfig({
           include: [
             'test/e2e/init.e2e.test.ts',
             'test/e2e/build.e2e.test.ts',
+            'test/e2e/build-watch.e2e.test.ts',
             'test/e2e/test-cmd.e2e.test.ts',
           ],
           environment: 'node',
@@ -54,6 +57,23 @@ export default defineConfig({
           // Each sandbox test file runs in its own forked process. This
           // prevents vitest's worker cleanup from killing JVM child processes
           // spawned by prior test files.
+          pool: 'forks',
+          poolOptions: {forks: {singleFork: true}},
+          retry: 1,
+        },
+      },
+      {
+        test: {
+          name: 'e2e-docker',
+          include: [
+            'test/e2e/dev-full.e2e.test.ts',
+          ],
+          environment: 'node',
+          setupFiles: ['./vitest.setup.ts'],
+          disableConsoleIntercept: true,
+          globals: true,
+          testTimeout: 300_000, // 5 min — accounts for container startup + health polling
+          // Sequential: Docker containers need exclusive port access.
           pool: 'forks',
           poolOptions: {forks: {singleFork: true}},
           retry: 1,

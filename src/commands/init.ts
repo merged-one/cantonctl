@@ -4,27 +4,57 @@
  * Scaffolds a new Canton project from a built-in or community template.
  * Thin oclif wrapper over {@link scaffoldProject} and {@link scaffoldFromUrl}.
  *
+ * When called without arguments, launches an interactive wizard using inquirer.
+ *
  * @example
  * ```bash
  * cantonctl init my-app
  * cantonctl init my-defi-app --template token
  * cantonctl init my-app --from https://github.com/user/template
+ * cantonctl init                # Interactive mode
  * ```
  */
 
 import {Args, Command, Flags} from '@oclif/core'
 import * as path from 'node:path'
 
-import {CantonctlError} from '../lib/errors.js'
+import {CantonctlError, ErrorCode} from '../lib/errors.js'
 import {createOutput} from '../lib/output.js'
 import {createProcessRunner} from '../lib/process-runner.js'
 import {TEMPLATES, type Template, scaffoldFromUrl, scaffoldProject} from '../lib/scaffold.js'
 
+/** Prompt the user for project name and template selection. */
+async function promptInteractive(): Promise<{name: string; template: Template}> {
+  const {input, select} = await import('@inquirer/prompts')
+
+  const name = await input({
+    message: 'Project name:',
+    validate: (value: string) => {
+      if (!value.trim()) return 'Project name is required'
+      if (/[^a-zA-Z0-9_-]/.test(value)) return 'Use only letters, numbers, hyphens, and underscores'
+      return true
+    },
+  })
+
+  const template = await select({
+    choices: [
+      {description: 'Minimal Hello contract with UpdateMessage choice', name: 'basic', value: 'basic'},
+      {description: 'Token with Mint/Transfer/Burn choices', name: 'token', value: 'token'},
+      {description: 'Liquidity pool with AddLiquidity/Swap', name: 'defi-amm', value: 'defi-amm'},
+      {description: 'Express.js backend consuming Canton JSON Ledger API', name: 'api-service', value: 'api-service'},
+      {description: 'Solidity + Hardhat for EVM developers via Zenith', name: 'zenith-evm', value: 'zenith-evm'},
+    ],
+    message: 'Select a template:',
+  }) as Template
+
+  return {name, template}
+}
+
 export default class Init extends Command {
   static override args = {
     name: Args.string({
-      description: 'Project name',
-      required: true,
+      description: 'Project name (omit for interactive mode)',
+      required: false,
     }),
   }
 
@@ -34,6 +64,7 @@ export default class Init extends Command {
     '<%= config.bin %> init my-app',
     '<%= config.bin %> init my-defi-app --template token',
     '<%= config.bin %> init my-app --from https://github.com/user/template',
+    '<%= config.bin %> init',
   ]
 
   static override flags = {
@@ -57,10 +88,17 @@ export default class Init extends Command {
   async run(): Promise<void> {
     const {args, flags} = await this.parse(Init)
     const out = createOutput({json: flags.json})
-    const projectDir = path.resolve(args.name)
 
     try {
       if (flags.from) {
+        const projectName = args.name
+        if (!projectName) {
+          throw new CantonctlError(ErrorCode.CONFIG_SCHEMA_VIOLATION, {
+            suggestion: 'Provide a project name: cantonctl init my-app --from <url>',
+          })
+        }
+
+        const projectDir = path.resolve(projectName)
         out.info(`Scaffolding from community template: ${flags.from}`)
         const runner = createProcessRunner()
         await scaffoldFromUrl({dir: projectDir, runner, url: flags.from})
@@ -69,16 +107,31 @@ export default class Init extends Command {
         return
       }
 
-      const template = flags.template as Template
-      out.info(`Creating new Canton project: ${args.name}`)
+      let projectName: string
+      let template: Template
+
+      if (args.name) {
+        // Non-interactive: use flags
+        projectName = args.name
+        template = flags.template as Template
+      } else {
+        // Interactive mode
+        const answers = await promptInteractive()
+        projectName = answers.name
+        template = answers.template
+      }
+
+      const projectDir = path.resolve(projectName)
+
+      out.info(`Creating new Canton project: ${projectName}`)
       out.info(`Template: ${template}`)
 
-      const result = scaffoldProject({dir: projectDir, name: args.name, template})
+      const result = scaffoldProject({dir: projectDir, name: projectName, template})
 
-      out.success(`Project created at ./${args.name}`)
+      out.success(`Project created at ./${projectName}`)
       out.log('')
       out.log('Next steps:')
-      out.log(`  cd ${args.name}`)
+      out.log(`  cd ${projectName}`)
       out.log('  cantonctl dev        # Start local Canton node')
       out.log('  cantonctl build      # Compile Daml contracts')
       out.log('  cantonctl test       # Run tests')

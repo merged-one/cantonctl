@@ -16,7 +16,7 @@ cantonctl eliminates the "infrastructure engineer before product builder" proble
 # Install
 npm install -g cantonctl
 
-# Create a new project
+# Create a new project (or run `cantonctl init` for interactive prompts)
 cantonctl init my-app --template token
 
 # Start local development (sandbox + hot-reload + party provisioning)
@@ -25,8 +25,9 @@ cantonctl dev
 
 # Build, test, and inspect the local node
 cantonctl build
+cantonctl build --watch   # Continuous compilation on .daml changes
 cantonctl test
-cantonctl status
+cantonctl status          # Multi-node aware via .cantonctl/ directory
 
 # Deploy to local sandbox
 cantonctl deploy
@@ -39,14 +40,15 @@ cantonctl console
 
 | Command | Description | Status |
 |---------|-------------|--------|
-| `cantonctl init <name>` | Scaffold a new project from a template | Implemented |
+| `cantonctl init [name]` | Scaffold a new project (interactive prompts when no args) | Implemented |
 | `cantonctl dev` | Start local Canton sandbox with hot-reload | Implemented |
 | `cantonctl dev --full` | Multi-node Docker topology (synchronizer + N participants) | Implemented |
 | `cantonctl build` | Compile Daml + generate TypeScript bindings | Implemented |
+| `cantonctl build --watch` | Continuous compilation on `.daml` file changes (chokidar) | Implemented |
 | `cantonctl test` | Run Daml Script tests with structured output | Implemented |
 | `cantonctl deploy <network>` | 7-step DAR deployment pipeline for local and remote networks | Implemented |
 | `cantonctl console` | Interactive REPL for querying and submitting ledger commands | Implemented |
-| `cantonctl status` | Show node health, version, and active parties | Implemented |
+| `cantonctl status` | Show node health, version, and active parties (multi-node aware) | Implemented |
 | `cantonctl auth login/logout/status` | Manage JWT credentials per network | Implemented |
 | `cantonctl clean` | Remove build artifacts (.daml/, dist/) | Implemented |
 
@@ -115,7 +117,7 @@ See [ADR-0014](docs/adr/0014-dev-full-multi-node-topology.md) for architecture d
 
 ### Core Principles
 
-- **Test-first TDD**: Tests define the contract, implementation follows (433 tests, 99.9% coverage)
+- **Test-first TDD**: Tests define the contract, implementation follows (443 tests, 98.18% statement coverage)
 - **Dependency injection**: Every I/O module accepts injected dependencies. Zero `vi.mock()`.
 - **AbortSignal everywhere**: All long-running operations support graceful cancellation
 - **Structured errors**: Every error is a `CantonctlError` with code (E1xxx-E8xxx), suggestion, and docs URL
@@ -132,9 +134,9 @@ See [ADR-0014](docs/adr/0014-dev-full-multi-node-topology.md) for architecture d
 | `src/lib/daml.ts` | DamlSdk: detect, build, test, codegen, startSandbox | 95% |
 | `src/lib/ledger-client.ts` | HTTP client for Canton JSON Ledger API V2 (6 endpoints) | 100% |
 | `src/lib/jwt.ts` | HS256 JWT generation for sandbox auth (well-known secret) | 100% |
-| `src/lib/scaffold.ts` | Pure scaffolding logic, 5 templates, community template support | 100% |
+| `src/lib/scaffold.ts` | Pure scaffolding logic, 5 templates, community template support, interactive mode | 100% |
 | `src/lib/dev-server.ts` | Dev server orchestration: sandbox + health + parties + hot-reload | 100% |
-| `src/lib/builder.ts` | Build orchestration with DAR caching and codegen | 100% |
+| `src/lib/builder.ts` | Build orchestration with DAR caching, codegen, and --watch mode (chokidar) | 100% |
 | `src/lib/test-runner.ts` | Test execution with structured output and ANSI stripping | 100% |
 | `src/lib/deployer.ts` | 6-step deploy pipeline: validate → build → auth → preflight → upload → verify | 100% |
 | `src/lib/credential-store.ts` | Keychain-backed JWT storage with env var override | 100% |
@@ -244,11 +246,11 @@ Plugins are auto-discovered from `node_modules` matching `@cantonctl/plugin-*` o
 
 ```bash
 npm install          # Install dependencies
-npm test             # Run unit tests (361 tests)
+npm test             # Run unit tests (371 tests)
 npm run test:watch   # Watch mode
-npm run test:e2e     # Run E2E tests (72 tests, requires Daml SDK + Java 21)
-npm run test:all     # Run all 433 tests
-npm run test:coverage # Coverage report (99.9% statements)
+npm run test:e2e     # Run E2E tests (75 tests, requires Daml SDK + Java 21)
+npm run test:all     # Run all 446 tests
+npm run test:coverage # Coverage report (98.18% statements)
 npm run build        # Compile TypeScript
 ```
 

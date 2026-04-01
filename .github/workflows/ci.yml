@@ -93,8 +93,73 @@ jobs:
             /tmp/cantonctl-e2e-*/
           retention-days: 7
 
+  e2e-docker-tests:
+    name: e2e-tests (docker)
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+      - name: Cache Daml SDK
+        uses: actions/cache@v4
+        with:
+          path: ~/.daml
+          key: daml-sdk-3.4.11-${{ runner.os }}
+      - name: Install Daml SDK
+        run: |
+          if [ ! -f "$HOME/.daml/bin/daml" ]; then
+            curl -sSL https://get.daml.com/ | sh -s 3.4.11
+          fi
+          echo "$HOME/.daml/bin" >> $GITHUB_PATH
+      - name: Cache Canton Docker image
+        uses: actions/cache@v4
+        with:
+          path: /tmp/docker-images
+          key: docker-canton-0.5.3-${{ runner.os }}
+      - name: Load or pull Canton Docker image
+        run: |
+          if [ -f /tmp/docker-images/canton.tar ]; then
+            echo "Loading cached Canton image..."
+            docker load < /tmp/docker-images/canton.tar
+          else
+            echo "Pulling Canton image..."
+            docker pull ghcr.io/digital-asset/decentralized-canton-sync/docker/canton:0.5.3
+            mkdir -p /tmp/docker-images
+            docker save ghcr.io/digital-asset/decentralized-canton-sync/docker/canton:0.5.3 > /tmp/docker-images/canton.tar
+          fi
+      - run: npm ci
+      - run: npm run build
+      - name: Run Docker E2E tests
+        run: npm run test:e2e:docker
+        timeout-minutes: 10
+      - name: Cleanup Docker resources
+        if: always()
+        run: |
+          # Find and tear down any compose projects left behind
+          for f in $(find /tmp/cantonctl-e2e-dev-full-* -name 'docker-compose.yml' 2>/dev/null); do
+            docker compose -f "$f" down --remove-orphans --timeout 10 2>/dev/null || true
+          done
+          # Kill any remaining canton containers by name pattern
+          docker ps -q --filter "name=canton" | xargs -r docker stop 2>/dev/null || true
+          docker ps -aq --filter "name=canton" | xargs -r docker rm -f 2>/dev/null || true
+      - name: Upload test artifacts on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: docker-e2e-failure-logs
+          path: |
+            /tmp/cantonctl-e2e-dev-full-*/
+          retention-days: 7
+
   # Single gate job — the only required status check in branch protection.
-  # Sandbox tests are informational: failures are visible but don't block merge.
+  # Sandbox and Docker tests are informational: failures are visible but don't block merge.
   all-green:
     if: always()
     needs: [unit-tests, e2e-sdk-tests]

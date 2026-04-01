@@ -67,9 +67,6 @@ export function createProcessRunner(): ProcessRunner {
     path.join(os.homedir(), '.daml', 'bin'),
     // JAVA_HOME/bin is set by actions/setup-java on CI and sdkman/asdf locally
     ...(process.env.JAVA_HOME ? [path.join(process.env.JAVA_HOME, 'bin')] : []),
-    // macOS Homebrew paths
-    '/opt/homebrew/opt/openjdk@21/bin',
-    '/usr/local/opt/openjdk@21/bin',
   ]
 
   function resolveEnv(overrides?: Record<string, string>): Record<string, string> {

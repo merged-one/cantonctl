@@ -8,11 +8,11 @@ cantonctl is an institutional-grade CLI toolchain for Canton Network — the ent
 
 ```bash
 npm install                         # Install dependencies
-npm test                            # Run 361 unit tests (project: unit)
+npm test                            # Run 371 unit tests (project: unit)
 npm run test:e2e:sdk                # Run 63 SDK E2E tests (project: e2e-sdk)
 npm run test:e2e:sandbox            # Run 9 sandbox E2E tests (project: e2e-sandbox)
 npm run test:e2e                    # Run all 72 E2E tests
-npm run test:all                    # Run all 433 tests
+npm run test:all                    # Run all 443 tests
 npm run test:coverage               # Coverage report
 npm run build                       # Compile TypeScript to dist/
 npm run ci                          # Local CI check (native)
@@ -52,7 +52,7 @@ Tests are organized into three vitest projects in `vitest.config.ts`:
 | Project | Files | Isolation | Purpose |
 |---------|-------|-----------|---------|
 | `unit` | `src/**/*.test.ts` | Default (threads) | Fast, no external deps |
-| `e2e-sdk` | `test/e2e/{init,build,test-cmd}.e2e.test.ts` | Default (threads) | Requires Daml SDK + Java |
+| `e2e-sdk` | `test/e2e/{init,build,test-cmd}.e2e.test.ts` (includes build --watch E2E) | Default (threads) | Requires Daml SDK + Java |
 | `e2e-sandbox` | `test/e2e/{dev,deploy,status}.e2e.test.ts` | `pool: 'forks'`, `singleFork: true` | Requires Canton sandbox (JVM) |
 
 **Why forks for sandbox tests**: Vitest's default thread pool kills JVM child processes when a test file completes. The `forks` pool isolates each file in its own Node.js process, preventing cross-file interference between Canton sandbox JVM process trees.
@@ -101,9 +101,9 @@ The GitHub Actions workflow (`.github/workflows/ci.yml`) has four jobs:
 | `daml.ts` | `createDamlSdk({runner})` | SDK abstraction: detect, build, test, codegen, startSandbox |
 | `ledger-client.ts` | `createLedgerClient({baseUrl, token, fetch?})` | Canton JSON Ledger API V2 (6 endpoints) |
 | `jwt.ts` | `createSandboxToken(opts)` | HS256 JWT for sandbox auth (well-known secret) |
-| `scaffold.ts` | `scaffoldProject(opts)` | Project scaffolding with 5 templates |
+| `scaffold.ts` | `scaffoldProject(opts)` | Project scaffolding with 5 templates, interactive mode (inquirer prompts when no args) |
 | `dev-server.ts` | `createDevServer(deps)` | Dev server: sandbox + health + parties + hot-reload |
-| `builder.ts` | `createBuilder(deps)` | Build orchestration: DAR caching, codegen, AbortSignal |
+| `builder.ts` | `createBuilder(deps)` | Build orchestration: DAR caching, codegen, --watch mode (chokidar), AbortSignal |
 | `test-runner.ts` | `createTestRunner(deps)` | Test execution: structured output, ANSI stripping |
 | `deployer.ts` | `createDeployer(deps)` | 6-step deploy pipeline: validate → build → auth → preflight → upload → verify |
 | `credential-store.ts` | `createCredentialStore(deps)` | Keychain-backed JWT storage. Env var override: `CANTONCTL_JWT_<NETWORK>` |
@@ -184,7 +184,8 @@ vi.spyOn(process.stdout, 'write').mockReturnValue(true)
 | Phase 3: Simple commands (build, test, status) | Complete (builder, test-runner, status with real DamlSdk/LedgerClient) |
 | Phase 4: Deploy, console, auth/hooks groundwork | Complete (deployer, credential-store, auth commands, repl/parser, repl/executor, repl/completer, plugin-hooks) |
 | Phase 5: Polish (E2E, hooks integration, keychain, clean, CI, docs) | Complete (hook integration into commands, keytar backend, clean command, deploy/status E2E, CI workflow, task/concept docs) |
-| Phase 6: `dev --full` multi-node topology | In progress (topology generation, Docker lifecycle, multi-participant dev server — see ADR-0014) |
+| Phase 6: `dev --full` multi-node topology | Complete (topology generation, Docker lifecycle, multi-participant dev server — see ADR-0014) |
+| Phase 7: build --watch, interactive init, multi-node status | Complete (chokidar file watching, inquirer prompts, .cantonctl/ directory detection) |
 
 ## Config schema (cantonctl.yaml)
 

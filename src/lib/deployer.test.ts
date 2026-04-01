@@ -15,6 +15,7 @@ import {createPluginHookManager} from './plugin-hooks.js'
 function createMockBuilder(): Builder & {
   build: ReturnType<typeof vi.fn>
   buildWithCodegen: ReturnType<typeof vi.fn>
+  watch: ReturnType<typeof vi.fn>
 } {
   return {
     build: vi.fn<Builder['build']>().mockResolvedValue({
@@ -23,6 +24,7 @@ function createMockBuilder(): Builder & {
       success: true,
     } as BuildResult),
     buildWithCodegen: vi.fn<Builder['buildWithCodegen']>(),
+    watch: vi.fn<Builder['watch']>(),
   }
 }
 
@@ -264,6 +266,7 @@ describe('Deployer', () => {
         builder: {
           build: vi.fn().mockResolvedValue({darPath: null, durationMs: 50, success: true}),
           buildWithCodegen: vi.fn(),
+          watch: vi.fn(),
         },
       })
       const deployer = createDeployer(deps)

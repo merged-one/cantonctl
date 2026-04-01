@@ -79,11 +79,20 @@ Hardhat won because of four things: every command works reliably, plugins let th
 
 **Total (Phases 0-6): 361 unit + 72 E2E = 433 tests.**
 
+### Done (Phase 7)
+
+| Component | Status | Tests |
+|-----------|--------|-------|
+| `build --watch` | Chokidar file watching for continuous `.daml` compilation | +5 unit |
+| Interactive init | Inquirer prompts when `cantonctl init` run with no args | +3 unit |
+| Multi-node status | Detects `.cantonctl/` directory for multi-node topology awareness | +2 unit |
+| Build --watch E2E | Added to e2e-sdk project | — |
+
+**Total (Phases 0-7): 371 unit + 72 E2E = 443 tests. 98.18% statement coverage.**
+
 ### Remaining for v1
 
 ```
-Interactive init (inquirer prompts)             — Phase 5 polish, deferred
-build --watch mode                              — Phase 5 polish, deferred
 --json conformance audit                        — verify every command's JSON output
 dev --full E2E tests                            — requires Docker + Canton image in CI
 ```

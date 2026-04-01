@@ -6,10 +6,10 @@ This file defines conventions for AI agents working on cantonctl, whether as a s
 
 cantonctl is an institutional CLI toolchain for Canton Network (enterprise blockchain, $6T+ tokenized assets). It provides Hardhat/Foundry-equivalent DX for Daml smart contracts.
 
-**Current state:** Phases 0-6 complete. 361 unit + 72 E2E = 433 tests. 99.9% coverage.
+**Current state:** Phases 0-7 complete. 371 unit + 72 E2E = 443 tests. 98.18% statement coverage.
 
 ```bash
-npm test          # 361 unit tests
+npm test          # 371 unit tests
 npm run test:e2e  # 72 E2E tests (requires Daml SDK + Java 21)
 npm run build     # TypeScript compilation
 ```
@@ -39,7 +39,7 @@ src/lib/              ← Pure logic (DI, tested, no side effects)
   dev-server-full.ts  ← Multi-node Docker dev server
   topology.ts         ← Topology config generation (Docker Compose + HOCON)
   docker.ts           ← Docker Compose lifecycle management
-  builder.ts          ← Build orchestration + DAR caching
+  builder.ts          ← Build orchestration + DAR caching + --watch mode (chokidar)
   test-runner.ts      ← Test execution + ANSI stripping
   deployer.ts         ← 6-step deploy pipeline
   credential-store.ts ← Keychain-backed JWT storage
@@ -168,7 +168,7 @@ ADRs (`docs/adr/`) are immutable once accepted. Reference docs (`docs/reference/
 
 Before every commit:
 
-- [ ] `npm test` — all 361 unit tests pass
+- [ ] `npm test` — all 371 unit tests pass
 - [ ] `npm run build` — TypeScript compiles clean
 - [ ] No machine-specific paths (use `os.homedir()`, `path.delimiter`)
 - [ ] Doc metrics match actual test counts

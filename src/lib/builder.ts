@@ -18,6 +18,7 @@
 
 import type {DamlSdk} from './daml.js'
 import {CantonctlError, ErrorCode} from './errors.js'
+import type {OutputWriter} from './output.js'
 import type {PluginHookManager} from './plugin-hooks.js'
 
 // ---------------------------------------------------------------------------
@@ -61,11 +62,32 @@ export interface BuildResult {
   durationMs: number
 }
 
+/** Minimal chokidar-compatible watcher interface for DI. */
+export interface BuildWatcher {
+  on(event: string, handler: (...args: unknown[]) => void): BuildWatcher
+  close(): Promise<void>
+}
+
+export interface WatchOptions {
+  /** Absolute path to the project root. */
+  projectDir: string
+  /** Output writer for status messages. */
+  output: OutputWriter
+  /** AbortSignal for cancellation. */
+  signal?: AbortSignal
+  /** File watcher factory (chokidar.watch). */
+  watch: (paths: string, opts?: Record<string, unknown>) => BuildWatcher
+  /** Debounce delay in ms (default 300). */
+  debounceMs?: number
+}
+
 export interface Builder {
   /** Compile Daml to .dar with caching. */
   build(opts: BuildOptions): Promise<BuildResult>
   /** Compile Daml to .dar then generate language bindings. */
   buildWithCodegen(opts: BuildWithCodegenOptions): Promise<BuildResult>
+  /** Watch for .daml file changes and rebuild automatically. Returns a stop function. */
+  watch(opts: WatchOptions): Promise<{stop: () => Promise<void>}>
 }
 
 // ---------------------------------------------------------------------------
@@ -148,6 +170,80 @@ export function createBuilder(deps: BuilderDeps): Builder {
 
       await sdk.codegen({language: opts.language, projectDir: opts.projectDir, signal: opts.signal})
       return result
+    },
+
+    async watch(opts: WatchOptions): Promise<{stop: () => Promise<void>}> {
+      const {output, projectDir, watch} = opts
+      const debounceMs = opts.debounceMs ?? 300
+      const damlDir = `${projectDir}/${SOURCE_DIR}`
+
+      let rebuildInProgress = false
+      let rebuildQueued = false
+      let debounceTimer: ReturnType<typeof setTimeout> | null = null
+
+      const watcher = watch(damlDir, {ignoreInitial: true})
+
+      const triggerBuild = async () => {
+        if (rebuildInProgress) {
+          rebuildQueued = true
+          return
+        }
+
+        rebuildInProgress = true
+        try {
+          output.info('Rebuilding...')
+          const result = await runBuild({projectDir, force: true})
+          if (result.darPath) {
+            output.success(`Build successful: ${result.darPath.split('/').pop()}`)
+          } else {
+            output.success('Build successful')
+          }
+        } catch (err) {
+          if (err instanceof CantonctlError) {
+            output.error(`${err.code}: ${err.message}`)
+          } else {
+            output.error(`Build failed: ${err instanceof Error ? err.message : String(err)}`)
+          }
+        } finally {
+          rebuildInProgress = false
+          if (rebuildQueued) {
+            rebuildQueued = false
+            await triggerBuild()
+          }
+        }
+      }
+
+      watcher.on('change', (filePath: unknown) => {
+        const fp = String(filePath)
+        if (!fp.endsWith('.daml')) return
+
+        if (debounceTimer) clearTimeout(debounceTimer)
+        debounceTimer = setTimeout(() => {
+          output.info(`File changed: ${fp}`)
+          triggerBuild()
+        }, debounceMs)
+      })
+
+      // Handle abort signal
+      if (opts.signal) {
+        opts.signal.addEventListener('abort', () => {
+          if (debounceTimer) clearTimeout(debounceTimer)
+          watcher.close()
+        }, {once: true})
+      }
+
+      output.info(`Watching for changes: ${damlDir}`)
+
+      return {
+        async stop() {
+          if (debounceTimer) {
+            clearTimeout(debounceTimer)
+            debounceTimer = null
+          }
+
+          await watcher.close()
+        },
+      }
     },
   }
 }

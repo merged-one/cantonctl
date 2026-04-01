@@ -92,17 +92,25 @@ if command -v java &>/dev/null; then
   echo "  Java:    $(java -version 2>&1 | head -1)"
 fi
 
+# Docker detection (for e2e-docker tests)
+HAS_DOCKER=false
+if command -v docker &>/dev/null && docker compose version &>/dev/null 2>&1; then
+  HAS_DOCKER=true
+  echo "  Docker:  available ($(docker compose version 2>&1 | head -1))"
+fi
+
 # What to run
 MODE="${1:-all}"
-RUN_UNIT=false; RUN_E2E_SDK=false; RUN_E2E_SANDBOX=false
+RUN_UNIT=false; RUN_E2E_SDK=false; RUN_E2E_SANDBOX=false; RUN_E2E_DOCKER=false
 
 case "$MODE" in
   unit)        RUN_UNIT=true ;;
-  e2e)         RUN_E2E_SDK=true; RUN_E2E_SANDBOX=true ;;
+  e2e)         RUN_E2E_SDK=true; RUN_E2E_SANDBOX=true; RUN_E2E_DOCKER=true ;;
   e2e-sdk)     RUN_E2E_SDK=true ;;
   e2e-sandbox) RUN_E2E_SANDBOX=true ;;
-  all)         RUN_UNIT=true; RUN_E2E_SDK=true; RUN_E2E_SANDBOX=true ;;
-  *)           echo "Usage: $0 [--docker] [unit|e2e|e2e-sdk|e2e-sandbox|all]"; exit 1 ;;
+  e2e-docker)  RUN_E2E_DOCKER=true ;;
+  all)         RUN_UNIT=true; RUN_E2E_SDK=true; RUN_E2E_SANDBOX=true; RUN_E2E_DOCKER=true ;;
+  *)           echo "Usage: $0 [--docker] [unit|e2e|e2e-sdk|e2e-sandbox|e2e-docker|all]"; exit 1 ;;
 esac
 
 # Install + build (matches CI)
@@ -146,6 +154,20 @@ if $RUN_E2E_SANDBOX; then
   fi
 else
   skip "e2e-sandbox tests (not selected)"
+fi
+
+# E2E Docker tests
+if $RUN_E2E_DOCKER; then
+  step "E2E Docker tests (CI: e2e-docker-tests)"
+  if ! $HAS_DAML || ! $HAS_JAVA; then
+    skip "e2e-docker (requires Daml SDK + Java 21)"
+  elif ! $HAS_DOCKER; then
+    skip "e2e-docker (requires Docker + Docker Compose)"
+  else
+    run_step "e2e-docker tests" npm run test:e2e:docker || true
+  fi
+else
+  skip "e2e-docker tests (not selected)"
 fi
 
 # Summary

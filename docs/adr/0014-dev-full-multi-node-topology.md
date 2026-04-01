@@ -131,6 +131,101 @@ Docker Compose runs:
 - Canton Docker image version must track SDK version (potential version mismatch)
 - In-memory storage means state lost on restart (acceptable for dev; Postgres mode deferred)
 
+## Implementation Addendum (2026-03-31)
+
+The following decisions were made during implementation and are documented here as rationale for future maintainers.
+
+### Canton 3.4.x HOCON Schema: Sequencers + Mediators (not legacy Domains)
+
+Canton 3.4.x deprecated the `domains {}` HOCON block in favor of explicit `sequencers {}` and `mediators {}` blocks. The generated HOCON uses:
+
+```hocon
+canton {
+  sequencers {
+    sequencer1 {
+      storage.type = memory
+      public-api { address = "0.0.0.0"; port = 10002 }
+      admin-api { address = "0.0.0.0"; port = 10001 }
+      sequencer.type = BFT
+    }
+  }
+  mediators {
+    mediator1 {
+      storage.type = memory
+      admin-api { address = "0.0.0.0"; port = 10101 }
+    }
+  }
+  participants { ... }
+}
+```
+
+**Justification**: The `domains {}` block produces "At least one node must be defined" errors on Canton 3.4.x. The new schema was discovered by inspecting the example configs inside the Canton Docker image at `/app/examples/01-simple-topology/simple-topology.conf`.
+
+### Bootstrap Script: `synchronizers.connect_local` (not `domains.connect_local`)
+
+Canton 3.4.x renamed the participant API from `domains` to `synchronizers`:
+
+```scala
+participant1.synchronizers.connect_local(sequencer1, alias = "da")
+utils.retry_until_true { participant1.synchronizers.active("da") }
+```
+
+**Justification**: The `domains.connect_local` API no longer exists in Canton 3.4.x. The `bootstrap` DSL object provides `synchronizer_local()` (not the deprecated `domain()`).
+
+### Custom Docker Entrypoint (Ammonite Name Collision Bypass)
+
+The Canton Docker image's default `entrypoint.sh` wraps the bootstrap script via Ammonite:
+
+```scala
+// bootstrap-entrypoint.sc (image's wrapper)
+import $file.bootstrap
+bootstrap.main()
+```
+
+This imports our bootstrap script as a `bootstrap` object, which shadows the Canton DSL's built-in `bootstrap` object (needed for `bootstrap.synchronizer_local()`). The result is a compilation error: `bootstrap` resolves to our file's self-reference, not the Canton DSL.
+
+**Solution**: Bypass the image's entrypoint entirely with a custom Docker entrypoint:
+
+```yaml
+entrypoint: ["/app/bin/canton"]
+command:
+  - daemon
+  - --no-tty
+  - --config
+  - /app/app.conf
+  - --bootstrap
+  - /canton/bootstrap.canton
+```
+
+This invokes the Canton binary directly, which loads the bootstrap script without Ammonite's `import $file` wrapper. The `--bootstrap` flag passes the script directly to Canton's DSL interpreter.
+
+**Justification**: There is no way to rename the Canton DSL's `bootstrap` object or the image's wrapper file. The only reliable solution is to bypass the wrapper entirely. This is also more explicit and avoids depending on undocumented wrapper behavior.
+
+### Address Binding: `0.0.0.0` for All APIs
+
+Canton defaults all API address bindings to `127.0.0.1`, which is unreachable from the Docker host even with port forwarding. Docker's `--publish` flag maps host→container ports but cannot intercept traffic to `127.0.0.1` inside the container (only `0.0.0.0`).
+
+All API blocks (ledger-api, admin-api, http-ledger-api, public-api) explicitly bind to `0.0.0.0`:
+
+```hocon
+ledger-api {
+  address = "0.0.0.0"
+  port = 10012
+}
+```
+
+**Justification**: Verified empirically — `docker exec curl localhost:20013` succeeds but host `curl localhost:20013` fails (exit 56, empty response) when using the default `127.0.0.1` binding. Adding `address = "0.0.0.0"` resolves this.
+
+### E2E Docker Test Strategy
+
+The E2E Docker tests (`test/e2e/dev-full.e2e.test.ts`) follow these principles:
+
+1. **Triple-layer cleanup**: (1) in-test `afterAll` calls `server.stop()`, (2) fallback `docker compose down` if stop fails, (3) CI `if: always()` step catches anything that leaks
+2. **Port isolation**: Uses `basePort: 20000` to avoid conflicts with sandbox tests (5xxx/7xxx ports)
+3. **Skip guards**: `describe.skipIf` when Docker, Canton image, or Daml SDK is unavailable — `npm test` never fails on machines without Docker
+4. **CI image caching**: GitHub Actions uses `docker save/load` with `actions/cache` to avoid pulling the ~500MB Canton image on every run
+5. **vitest `forks` pool**: Prevents JVM child process cleanup issues (same rationale as sandbox E2E tests per vitest.config.ts comments)
+
 ## References
 
 - [ADR-0004: Sandbox-first local development](0004-sandbox-first-local-dev.md) — establishes the sandbox/Docker split

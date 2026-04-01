@@ -1,8 +1,9 @@
 import {describe, expect, it, vi} from 'vitest'
 
 import type {DamlSdk, SdkCommandResult} from './daml.js'
-import {type BuildOptions, type BuildResult, type Builder, type BuilderDeps, createBuilder} from './builder.js'
+import {type BuildOptions, type BuildResult, type Builder, type BuilderDeps, type BuildWatcher, createBuilder} from './builder.js'
 import {CantonctlError, ErrorCode} from './errors.js'
+import type {OutputWriter} from './output.js'
 import {createPluginHookManager} from './plugin-hooks.js'
 
 // ---------------------------------------------------------------------------
@@ -215,6 +216,234 @@ describe('Builder', () => {
       await builder.buildWithCodegen({...defaultOpts, force: true, language: 'ts'})
 
       expect(deps.sdk.codegen).toHaveBeenCalled()
+    })
+  })
+
+  describe('watch()', () => {
+    function createMockWatcher(): BuildWatcher & {handlers: Map<string, (...args: unknown[]) => void>} {
+      const handlers = new Map<string, (...args: unknown[]) => void>()
+      return {
+        close: vi.fn().mockResolvedValue(undefined),
+        handlers,
+        on(event: string, handler: (...args: unknown[]) => void) {
+          handlers.set(event, handler)
+          return this
+        },
+      }
+    }
+
+    function createMockOutput(): OutputWriter {
+      return {
+        error: vi.fn(),
+        info: vi.fn(),
+        log: vi.fn(),
+        result: vi.fn(),
+        spinner: vi.fn().mockReturnValue({fail: vi.fn(), start: vi.fn(), stop: vi.fn(), succeed: vi.fn()}),
+        success: vi.fn(),
+        table: vi.fn(),
+        warn: vi.fn(),
+      }
+    }
+
+    it('starts watching daml/ directory', async () => {
+      const deps = createDefaultDeps({getFileMtime: vi.fn().mockResolvedValue(null)})
+      const builder = createBuilder(deps)
+      const mockWatcher = createMockWatcher()
+      const watchFn = vi.fn().mockReturnValue(mockWatcher)
+
+      await builder.watch({
+        output: createMockOutput(),
+        projectDir: '/project',
+        watch: watchFn,
+      })
+
+      expect(watchFn).toHaveBeenCalledWith('/project/daml', {ignoreInitial: true})
+    })
+
+    it('rebuilds on .daml file change', async () => {
+      const deps = createDefaultDeps({getFileMtime: vi.fn().mockResolvedValue(null)})
+      const builder = createBuilder(deps)
+      const mockWatcher = createMockWatcher()
+      const output = createMockOutput()
+
+      await builder.watch({
+        debounceMs: 0,
+        output,
+        projectDir: '/project',
+        watch: vi.fn().mockReturnValue(mockWatcher),
+      })
+
+      // Trigger a .daml file change
+      mockWatcher.handlers.get('change')?.('/project/daml/Main.daml')
+      await new Promise(r => setTimeout(r, 50))
+
+      expect(deps.sdk.build).toHaveBeenCalled()
+      expect(output.success).toHaveBeenCalled()
+    })
+
+    it('ignores non-.daml file changes', async () => {
+      const deps = createDefaultDeps({getFileMtime: vi.fn().mockResolvedValue(null)})
+      const builder = createBuilder(deps)
+      const mockWatcher = createMockWatcher()
+
+      await builder.watch({
+        debounceMs: 0,
+        output: createMockOutput(),
+        projectDir: '/project',
+        watch: vi.fn().mockReturnValue(mockWatcher),
+      })
+
+      mockWatcher.handlers.get('change')?.('/project/daml/README.md')
+      await new Promise(r => setTimeout(r, 50))
+
+      expect(deps.sdk.build).not.toHaveBeenCalled()
+    })
+
+    it('reports build errors without crashing', async () => {
+      const sdk = createMockSdk()
+      sdk.build.mockRejectedValue(new CantonctlError(ErrorCode.BUILD_DAML_ERROR, {}))
+      const deps = createDefaultDeps({getFileMtime: vi.fn().mockResolvedValue(null), sdk})
+      const builder = createBuilder(deps)
+      const mockWatcher = createMockWatcher()
+      const output = createMockOutput()
+
+      await builder.watch({
+        debounceMs: 0,
+        output,
+        projectDir: '/project',
+        watch: vi.fn().mockReturnValue(mockWatcher),
+      })
+
+      mockWatcher.handlers.get('change')?.('/project/daml/Main.daml')
+      await new Promise(r => setTimeout(r, 50))
+
+      expect(output.error).toHaveBeenCalled()
+    })
+
+    it('queues rebuild if one is in progress', async () => {
+      let buildResolve: (() => void) | null = null
+      const buildPromise = new Promise<SdkCommandResult>(resolve => {
+        buildResolve = () => resolve({exitCode: 0, stderr: '', stdout: '', success: true})
+      })
+      const sdk = createMockSdk()
+      sdk.build.mockReturnValue(buildPromise)
+      const deps = createDefaultDeps({getFileMtime: vi.fn().mockResolvedValue(null), sdk})
+      const builder = createBuilder(deps)
+      const mockWatcher = createMockWatcher()
+
+      await builder.watch({
+        debounceMs: 0,
+        output: createMockOutput(),
+        projectDir: '/project',
+        watch: vi.fn().mockReturnValue(mockWatcher),
+      })
+
+      // Trigger first change
+      mockWatcher.handlers.get('change')?.('/project/daml/A.daml')
+      await new Promise(r => setTimeout(r, 10))
+
+      // Trigger second while first is building
+      mockWatcher.handlers.get('change')?.('/project/daml/B.daml')
+      await new Promise(r => setTimeout(r, 10))
+
+      // Resolve first build
+      buildResolve!()
+      await new Promise(r => setTimeout(r, 50))
+
+      expect(sdk.build.mock.calls.length).toBeGreaterThanOrEqual(2)
+    })
+
+    it('stop() closes watcher and clears timer', async () => {
+      const deps = createDefaultDeps({getFileMtime: vi.fn().mockResolvedValue(null)})
+      const builder = createBuilder(deps)
+      const mockWatcher = createMockWatcher()
+
+      const {stop} = await builder.watch({
+        output: createMockOutput(),
+        projectDir: '/project',
+        watch: vi.fn().mockReturnValue(mockWatcher),
+      })
+
+      await stop()
+      expect(mockWatcher.close).toHaveBeenCalled()
+    })
+
+    it('respects AbortSignal', async () => {
+      const deps = createDefaultDeps({getFileMtime: vi.fn().mockResolvedValue(null)})
+      const builder = createBuilder(deps)
+      const mockWatcher = createMockWatcher()
+      const controller = new AbortController()
+
+      await builder.watch({
+        output: createMockOutput(),
+        projectDir: '/project',
+        signal: controller.signal,
+        watch: vi.fn().mockReturnValue(mockWatcher),
+      })
+
+      controller.abort()
+      expect(mockWatcher.close).toHaveBeenCalled()
+    })
+
+    it('reports non-CantonctlError build failures', async () => {
+      const sdk = createMockSdk()
+      sdk.build.mockRejectedValue(new Error('ENOENT'))
+      const deps = createDefaultDeps({getFileMtime: vi.fn().mockResolvedValue(null), sdk})
+      const builder = createBuilder(deps)
+      const mockWatcher = createMockWatcher()
+      const output = createMockOutput()
+
+      await builder.watch({
+        debounceMs: 0,
+        output,
+        projectDir: '/project',
+        watch: vi.fn().mockReturnValue(mockWatcher),
+      })
+
+      mockWatcher.handlers.get('change')?.('/project/daml/Main.daml')
+      await new Promise(r => setTimeout(r, 50))
+
+      expect(output.error).toHaveBeenCalledWith(expect.stringContaining('ENOENT'))
+    })
+
+    it('shows DAR filename in success message', async () => {
+      const deps = createDefaultDeps({getFileMtime: vi.fn().mockResolvedValue(null)})
+      const builder = createBuilder(deps)
+      const mockWatcher = createMockWatcher()
+      const output = createMockOutput()
+
+      await builder.watch({
+        debounceMs: 0,
+        output,
+        projectDir: '/project',
+        watch: vi.fn().mockReturnValue(mockWatcher),
+      })
+
+      mockWatcher.handlers.get('change')?.('/project/daml/Main.daml')
+      await new Promise(r => setTimeout(r, 50))
+
+      expect(output.success).toHaveBeenCalledWith(expect.stringContaining('my-app-1.0.0.dar'))
+    })
+
+    it('stop() clears pending debounce timer', async () => {
+      const deps = createDefaultDeps({getFileMtime: vi.fn().mockResolvedValue(null)})
+      const builder = createBuilder(deps)
+      const mockWatcher = createMockWatcher()
+
+      const {stop} = await builder.watch({
+        debounceMs: 5000, // Long debounce so timer is still pending
+        output: createMockOutput(),
+        projectDir: '/project',
+        watch: vi.fn().mockReturnValue(mockWatcher),
+      })
+
+      // Trigger a change to create a pending debounce timer
+      mockWatcher.handlers.get('change')?.('/project/daml/Main.daml')
+
+      // Stop should clear the timer without building
+      await stop()
+      expect(mockWatcher.close).toHaveBeenCalled()
+      expect(deps.sdk.build).not.toHaveBeenCalled()
     })
   })
 })
