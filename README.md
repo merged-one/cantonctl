@@ -310,11 +310,11 @@ Plugins are auto-discovered from `node_modules` matching `@cantonctl/plugin-*` o
 
 ```bash
 npm install           # Install dependencies
-npm test              # Run unit tests (374 tests)
+npm test              # Run unit tests (383 tests)
 npm run test:watch    # Watch mode
 npm run test:e2e      # Run E2E tests (75 tests, requires Daml SDK + Java 21)
 npm run test:e2e:docker # Run Docker E2E tests (2 tests, requires Docker)
-npm run test:all      # Run all 451 tests
+npm run test:all      # Run all 460 tests
 npm run test:coverage # Coverage report (98.18% statements)
 npm run build         # Compile TypeScript
 npm run ci            # Local CI check (mirrors GitHub Actions)
@@ -327,8 +327,8 @@ This tool is proposed under the [Canton Development Fund](https://github.com/can
 
 ## Contributing
 
-Contributions welcome. Please read the [Design Decisions](docs/DESIGN_DECISIONS.md) document before proposing architectural changes.
+Contributions welcome. See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
 
 ## License
 
-MIT
+Apache License 2.0 — see [LICENSE](LICENSE).

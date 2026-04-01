@@ -205,17 +205,17 @@ Sources: [RocknBlock grants list](https://rocknblock.io/blog/blockchain-ecosyste
 | Foundry (to current state) | $5-15M (Paradigm internal) | Second-most-popular, 10.2K stars |
 | Anchor (to current state) | $20M (Coral strategic round) | Standard Solana framework, 15K weekly downloads |
 | Truffle (over lifetime) | $15-30M (ConsenSys internal) | Was dominant, sunset after 7 years |
-| cantonctl (to current state) | < $500K est.* | Feature-complete CLI, published on npm (v0.1.0), 451 tests, 98% coverage |
+| cantonctl (to current state) | < $500K est.* | Feature-complete CLI, published on npm (v0.1.0), 460 tests, 98% coverage |
 
 *\*Based on single developer over ~6 months at market rates*
 
 ### The Efficiency Argument
 
 cantonctl has achieved feature parity with tools that cost $5-15M to build, at a fraction of the cost:
-- **11 commands** (Hardhat has 8 core commands)
+- **12 commands** (Hardhat has 8 core commands)
 - **5 templates** (Hardhat has 3)
 - **98.18% test coverage** (Hardhat doesn't publish coverage)
-- **451 tests** across 4 E2E test suites
+- **460 tests** across 4 E2E test suites
 - **Multi-node Docker topology** (Hardhat has single network only)
 - **Every command except console supports --json** (Hardhat: partial)
 

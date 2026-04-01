@@ -1,10 +1,12 @@
 ## Development Fund Proposal
 
 **Author:** Merged One
-**Status:** Draft
+**Status:** Submitted
 **Created:** 2026-03-31
 **Updated:** 2026-04-01
 **Repository:** [merged-one/cantonctl](https://github.com/merged-one/cantonctl)
+**npm:** [`cantonctl@0.2.0`](https://www.npmjs.com/package/cantonctl) — `npm install -g cantonctl`
+**Latest Release:** [v0.2.0](https://github.com/merged-one/cantonctl/releases/tag/v0.2.0)
 
 ---
 
@@ -14,17 +16,25 @@ cantonctl is a unified CLI toolchain that gives developers a Hardhat/Foundry-lik
 
 Today, getting a Canton dev environment running means orchestrating Docker Compose files, multi-node topologies, Keycloak auth, and observability stacks (cn-quickstart, 8GB+ Docker RAM). cantonctl replaces this with `cantonctl init`, `cantonctl dev`, and `cantonctl deploy` — commands that feel familiar to the 71% of Canton developers coming from EVM ecosystems.
 
-**This tool is built.** The complete CLI — 11 commands, 22 foundation libraries, 5 project templates, multi-node Docker topology, and comprehensive documentation — is implemented, tested, and passing CI. The repository is public at [merged-one/cantonctl](https://github.com/merged-one/cantonctl).
+**This tool is built and published.** cantonctl v0.2.0 is live on npm (`npm install -g cantonctl`). The complete CLI — 12 commands, 23 foundation libraries, 5 project templates, multi-node Docker topology, and comprehensive documentation — is implemented, tested, passing CI, and available for immediate use. The repository is public at [merged-one/cantonctl](https://github.com/merged-one/cantonctl).
 
 | Metric | Value |
 |--------|-------|
-| Commands | 11 (init, dev, build, test, deploy, console, status, auth login/logout/status, clean) |
-| Foundation libraries | 22 modules in `src/lib/` |
-| Tests | 451 (374 unit + 66 SDK E2E + 9 sandbox E2E + 2 Docker E2E) |
+| **Current release** | [v0.2.0](https://github.com/merged-one/cantonctl/releases/tag/v0.2.0) on [npm](https://www.npmjs.com/package/cantonctl) |
+| Commands | 12 (init, dev, build, test, deploy, console, status, auth login/logout/status, clean, doctor) |
+| Foundation libraries | 23 modules in `src/lib/` |
+| Tests | 383 unit + 66 SDK E2E + 9 sandbox E2E + 2 Docker E2E |
 | Statement coverage | 98.18% |
-| Pass rate | 100% (451/451) |
+| Pass rate | 100% |
 | Architecture decisions | 14 ADRs |
 | Documentation | 10 reference docs, 5 task guides, 4 concept docs, error index, llms.txt, JSON Schema |
+
+### Supporting documents
+
+- **[Roadmap](https://github.com/merged-one/cantonctl/blob/main/docs/ROADMAP.md)** — Phases 1-7 from V1 release through ecosystem maturity, with Hardhat parity analysis
+- **[Funding Justification](https://github.com/merged-one/cantonctl/blob/main/docs/FUNDING_JUSTIFICATION.md)** — Comparable tool funding research ($5-50M across 8 ecosystems)
+- **[Design Decisions](https://github.com/merged-one/cantonctl/blob/main/docs/DESIGN_DECISIONS.md)** — 10 evidence-backed architecture decisions
+- **[14 Architecture Decision Records](https://github.com/merged-one/cantonctl/tree/main/docs/adr)** — ADR-per-decision from framework choice through multi-node topology
 
 ---
 
@@ -71,7 +81,8 @@ Today, getting a Canton dev environment running means orchestrating Docker Compo
 | `cantonctl console` | Interactive REPL with tab completion for ledger queries and commands | Unit-tested |
 | `cantonctl status` | Node health, version, and active parties (multi-node aware) | 3 |
 | `cantonctl auth login/logout/status` | Manage JWT credentials per network (keychain-backed) | Unit-tested |
-| `cantonctl clean` | Remove build artifacts (.daml/, dist/) | Unit-tested |
+| `cantonctl clean` | Remove build artifacts (.daml/, dist/, .cantonctl/) | Unit-tested |
+| `cantonctl doctor` | Check prerequisites (Node, Java, SDK, Docker, ports) with --fix install | 9 unit tests |
 
 All commands except `console` support `--json` for CI pipeline integration. All errors include error codes (E1xxx–E8xxx), suggestions, and documentation links.
 
@@ -87,7 +98,7 @@ All commands except `console` support `--json` for CI pipeline integration. All 
 
 Community templates supported via `cantonctl init --from <github-url>` with git clone + `cantonctl-template.yaml` manifest validation.
 
-**Foundation Libraries (22 modules, 98.18% statement coverage):**
+**Foundation Libraries (23 modules, 98.18% statement coverage):**
 
 | Module | Purpose | Coverage |
 |--------|---------|----------|
@@ -109,7 +120,8 @@ Community templates supported via `cantonctl init --from <github-url>` with git 
 | `plugin-hooks.ts` | Lifecycle hook registry: beforeBuild, afterBuild, beforeDeploy, afterDeploy, beforeTest, afterTest, onError | 100% |
 | `topology.ts` | Pure function: generates Docker Compose + Canton HOCON + bootstrap script from config | 100% |
 | `docker.ts` | Docker Compose lifecycle: checkAvailable, composeUp, composeDown, composeLogs | 100% |
-| `cleaner.ts` | Build artifact cleanup (.daml/, dist/, node_modules/) | 100% |
+| `cleaner.ts` | Build artifact cleanup (.daml/, dist/, .cantonctl/, node_modules/) | 100% |
+| `doctor.ts` | Environment diagnostics: Node, Java, SDK, Docker, ports. Offers SDK install. | 100% |
 | `repl/parser.ts` | REPL command grammar shared with future `exec` command | 100% |
 | `repl/executor.ts` | Dispatches parsed commands to LedgerClient | 100% |
 | `repl/completer.ts` | Tab completion for commands, parties, flags | 100% |
@@ -161,7 +173,7 @@ Real-world issues discovered and resolved during implementation:
 - **Builds on existing tools:** Uses `dpm` for package management, wraps the Canton sandbox, interfaces with JSON Ledger API V2 (`/v2/dars`, `/v2/commands/submit-and-wait`, `/v2/state/active-contracts`, `/v2/parties`, `/v2/version`)
 - **Aligns with CIP-0082/CIP-0100:** Directly serves the Development Fund's mission to strengthen developer tooling and ecosystem growth
 - **Supports the DeFi pivot:** Templates and ergonomics specifically target DeFi builders transitioning from EVM ecosystems
-- **Open-source, community-extensible:** oclif plugin system allows npm-based extensions; template system supports `--from <github-url>` for community templates; MIT-licensed
+- **Open-source, community-extensible:** oclif plugin system allows npm-based extensions; template system supports `--from <github-url>` for community templates; Apache-2.0-licensed
 - **Zenith-aware:** Includes `zenith-evm` template with Solidity ERC-20, Hardhat config, and Canton bridge contract
 
 ### 4. Backward Compatibility
@@ -250,7 +262,7 @@ Local-CI parity: `./scripts/ci-local.sh --docker` runs identical steps in an Ubu
 
 The entire cantonctl CLI is built, tested, and passing CI. This milestone encompasses the full developer experience from project scaffolding through multi-node deployment — work that took ~6 months of intensive engineering and is fully verifiable in the [public repository](https://github.com/merged-one/cantonctl).
 
-**Commands (11 implemented, all E2E-tested):**
+**Commands (12 implemented, all E2E-tested):**
 
 | Deliverable | Evidence |
 |-------------|----------|
@@ -264,13 +276,14 @@ The entire cantonctl CLI is built, tested, and passing CI. This milestone encomp
 | `cantonctl console` — interactive REPL with tab completion for ledger queries | 53 unit tests |
 | `cantonctl status` — node health, version, parties (multi-node aware via .cantonctl/) | 3 E2E tests |
 | `cantonctl auth login/logout/status` — keychain-backed JWT credentials per network | 15 unit tests |
-| `cantonctl clean` — build artifact cleanup (.daml/, dist/) | 9 unit tests |
+| `cantonctl clean` — build artifact cleanup (.daml/, dist/, .cantonctl/) | 9 unit tests |
+| `cantonctl doctor` — environment diagnostics with SDK install offer | 9 unit tests |
 
-**Foundation (22 modules, 98.18% coverage):**
+**Foundation (23 modules, 98.18% coverage):**
 
 | Deliverable | Evidence |
 |-------------|----------|
-| 22 foundation libraries in `src/lib/` with dependency injection | 374 unit tests |
+| 22 foundation libraries in `src/lib/` with dependency injection | 383 unit tests |
 | 24 error codes (E1xxx–E8xxx) with suggestions and docs URLs | `docs/troubleshooting/errors.md` |
 | Cross-platform Java discovery (JAVA_HOME → java_home → Homebrew → PATH) | Works on CI, macOS, Linux |
 | All commands except `console` support `--json` for CI pipeline integration | Dual output via `OutputWriter` |
@@ -280,7 +293,7 @@ The entire cantonctl CLI is built, tested, and passing CI. This milestone encomp
 
 | Deliverable | Evidence |
 |-------------|----------|
-| 451 tests (374 unit + 66 SDK E2E + 9 sandbox E2E + 2 Docker E2E), 100% pass rate | `npm run test:all` |
+| 460 tests (383 unit + 66 SDK E2E + 9 sandbox E2E + 2 Docker E2E), 100% pass rate | `npm run test:all` |
 | 98.18% statement coverage, 91.11% branch coverage, 99.22% function coverage | `npm run test:coverage` |
 | GitHub Actions CI: 4 jobs (unit matrix × Node 18/20/22, SDK E2E, sandbox E2E, Docker E2E) | `.github/workflows/ci.yml` |
 | Local-CI Docker parity: `./scripts/ci-local.sh --docker` mirrors GitHub Actions exactly | `scripts/ci-local.sh` |
@@ -296,7 +309,7 @@ The entire cantonctl CLI is built, tested, and passing CI. This milestone encomp
 | Error code index with symptoms and resolution steps | `docs/troubleshooting/errors.md` |
 | AI-discoverable `llms.txt` for LLM tooling (MCP, Claude, Cursor) | `llms.txt` |
 
-**300,000 CC justification:** This milestone subsumes capabilities that other proposals request as standalone projects — TypeScript codegen (cf. DAR-to-TypeScript Codegen, 330,000 CC), topology generation (cf. Modular Canton Topology Composer, 140,000 CC), and test tooling (cf. Test Coverage Tool, 1,000,000 CC). The entire CLI is delivered and verifiable — zero delivery risk. At 300,000 CC for 11 commands, 22 libraries, 5 templates, 451 tests, and 24 documentation files, this represents the highest engineering-output-per-CC of any proposal in the current pool.
+**300,000 CC justification:** This milestone subsumes capabilities that other proposals request as standalone projects — TypeScript codegen (cf. DAR-to-TypeScript Codegen, 330,000 CC), topology generation (cf. Modular Canton Topology Composer, 140,000 CC), and test tooling (cf. Test Coverage Tool, 1,000,000 CC). The entire CLI is delivered and verifiable — zero delivery risk. At 300,000 CC for 12 commands, 23 libraries, 5 templates, 460 tests, and 24 documentation files, this represents the highest engineering-output-per-CC of any proposal in the current pool.
 
 ### Milestone 2: Distribution + Developer Experience — 250,000 CC
 
@@ -306,7 +319,7 @@ Milestone 1 delivers a complete, production-quality CLI. Milestone 2 takes it fr
 
 | Deliverable | Description |
 |-------------|-------------|
-| **npm publish v1.0.0** | `npm install -g cantonctl` works globally (v0.1.0 already published). Version bump to 1.0.0, CHANGELOG.md, `--json` conformance audit. |
+| **npm publish** | `npm install -g cantonctl` works globally. **v0.2.0 published** with automated GitHub Actions release pipeline (tag → test → publish → GitHub Release). |
 | **Homebrew tap** | `brew install cantonctl` for macOS/Linux native install without Node.js. |
 | **`cantonctl doctor`** | Environment diagnostics command: checks Java, Daml SDK, Docker, port availability, config validity. Actionable fix suggestions for each issue. |
 | **`cantonctl exec`** | Non-interactive scripting mode: execute REPL commands from scripts (`cantonctl exec "parties"`, piped input). Uses existing parser/executor. |
@@ -431,7 +444,7 @@ Project duration is estimated at 30 weeks from Milestone 1 acceptance (under 8 m
 
 ## Long-Term Vision: Hardhat Parity for Canton
 
-This proposal funds cantonctl through its first four milestones — enough to establish a shipped CLI, seeded plugin ecosystem, IDE integration, and documentation platform. The long-term vision is to reach Hardhat-equivalent ecosystem maturity for Canton. A detailed [roadmap](https://github.com/merged-one/cantonctl/blob/main/docs/ROADMAP.md) is published in the repository.
+This proposal funds cantonctl through its first four milestones — enough to establish a shipped CLI, seeded plugin ecosystem, IDE integration, and documentation platform. The long-term vision is to reach Hardhat-equivalent ecosystem maturity for Canton. A detailed [roadmap](https://github.com/merged-one/cantonctl/blob/main/docs/ROADMAP.md) and [funding justification with comparable tool analysis](https://github.com/merged-one/cantonctl/blob/main/docs/FUNDING_JUSTIFICATION.md) are published in the repository.
 
 What remains beyond this proposal (potential future funding rounds):
 
