@@ -78,7 +78,36 @@ cantonctl deploy
 
 # Interactive REPL
 cantonctl console
+
+# Browser IDE (like Remix, but for Canton)
+cantonctl playground
 ```
+
+## Playground
+
+`cantonctl playground` opens a Remix-like browser IDE at `localhost:4000`. Everything runs locally on your machine.
+
+```
+cantonctl playground                   # Open browser IDE
+cantonctl playground --port 8080       # Custom port
+cantonctl serve                        # Headless API only (for VS Code, Neovim)
+```
+
+**What it solves** (mapped to [Q1 2026 Developer Survey](https://forum.canton.network/t/canton-network-developer-experience-and-tooling-survey-analysis-2026/8412) pain points):
+
+| Survey Finding | Playground Solution |
+|---|---|
+| "41% cited environment setup as longest" | One command starts sandbox + IDE. Zero config. |
+| "Package ID discovery is opaque" | Dynamic forms auto-generated from Daml source. No IDs. |
+| "JWT auth middleware is repeated friction" | Auth handled invisibly. No token code. |
+| "Struggle to read on-ledger data" | Contracts display live, filtered by party. |
+| "Web3.js equivalent missing" | `cantonctl serve` REST + WebSocket API for any client. |
+
+**Features no other blockchain IDE has:**
+- **Party-scoped contract visibility** — switch party, contract list changes (Canton privacy model)
+- **Dynamic template forms** — Daml source parser auto-generates typed create/exercise forms
+- **Multi-party split view** — side-by-side comparison of what each party can see
+- **Canton IDE Protocol** — documented REST + WebSocket API that VS Code and other IDEs connect to
 
 ## Commands
 

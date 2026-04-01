@@ -119,6 +119,45 @@ The GitHub Actions workflow (`.github/workflows/ci.yml`) has four jobs:
 | `keytar-backend.ts` | `createBackendWithFallback()` | OS keychain backend via keytar with in-memory fallback |
 | `serve.ts` | `createServeServer(deps)` | Canton IDE Protocol server: REST + WebSocket API for any IDE client |
 | `doctor.ts` | `createDoctor(deps)` | Environment diagnostics: Node, Java, SDK, Docker, ports |
+| `daml-parser.ts` | `parseDamlSource(source)` | Regex-based Daml source parser: templates, fields, choices, signatories |
+
+## Playground (`playground/`)
+
+Browser IDE served by `cantonctl playground`. React + Monaco + Tailwind frontend.
+
+- `playground/src/panels/` — UI panels (FileExplorer, Editor, InteractPanel, Terminal, SplitView)
+- `playground/src/hooks/` — React hooks (useFiles, useContracts, useTemplates, useBuild)
+- `playground/src/lib/` — API client, WebSocket client, Daml syntax highlighting
+- `playground/src/panels/DynamicCreateForm.tsx` — Auto-generates create forms from parsed Daml templates
+- `playground/src/panels/DynamicChoiceForm.tsx` — Auto-generates choice exercise forms
+- `playground/src/panels/SplitView.tsx` — Multi-party side-by-side contract view
+
+### Canton V2 API Format (critical knowledge)
+
+The Canton JSON Ledger API V2 has specific format requirements discovered through testing:
+
+**Submit command** — requires `userId: 'admin'` in request body:
+```json
+{"commands": [...], "actAs": ["party"], "commandId": "...", "userId": "admin"}
+```
+
+**Template IDs** — use `#packageName:Module:Template` format (with `#` prefix):
+```json
+{"templateId": "#my-app:Main:Token"}
+```
+
+**Active contracts query** — requires nested `identifierFilter` with `WildcardFilter`:
+```json
+{
+  "activeAtOffset": N,
+  "filter": {"filtersByParty": {"PARTY": {"cumulative": [{
+    "identifierFilter": {"WildcardFilter": {"value": {"includeCreatedEventBlob": false}}}
+  }]}}},
+  "verbose": true
+}
+```
+
+**JWT** — must include `sub` claim: `.setSubject('admin')`
 
 ## Test patterns
 

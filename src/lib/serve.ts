@@ -29,6 +29,7 @@ import * as path from 'node:path'
 import {WebSocketServer, type WebSocket} from 'ws'
 
 import type {Builder} from './builder.js'
+import {parseDamlSource, type DamlTemplate} from './daml-parser.js'
 import type {OutputWriter} from './output.js'
 import type {TestRunner} from './test-runner.js'
 
@@ -50,8 +51,9 @@ export interface LedgerClientLike {
   getVersion(signal?: AbortSignal): Promise<Record<string, unknown>>
   getParties(signal?: AbortSignal): Promise<{partyDetails: Array<Record<string, unknown>>}>
   getActiveContracts(params: {filter: {party: string; templateIds?: string[]}}, signal?: AbortSignal): Promise<{activeContracts: Array<Record<string, unknown>>}>
-  submitAndWait(request: {actAs: string[]; commandId?: string; commands: unknown[]}, signal?: AbortSignal): Promise<{transaction: Record<string, unknown>}>
+  submitAndWait(request: {actAs: string[]; commandId?: string; commands: unknown[]; userId?: string}, signal?: AbortSignal): Promise<{transaction: Record<string, unknown>}>
   allocateParty(params: {displayName: string; identifierHint?: string}, signal?: AbortSignal): Promise<{partyDetails: Record<string, unknown>}>
+  uploadDar(darBytes: Uint8Array, signal?: AbortSignal): Promise<{mainPackageId: string}>
 }
 
 export interface ServeEvent {
@@ -99,6 +101,32 @@ async function buildFileTree(dir: string, relativeTo: string): Promise<FileNode[
 }
 
 // ---------------------------------------------------------------------------
+// Template discovery — scans .daml files and parses templates
+// ---------------------------------------------------------------------------
+
+async function scanDamlTemplates(projectDir: string): Promise<DamlTemplate[]> {
+  const damlDir = path.join(projectDir, 'daml')
+  const templates: DamlTemplate[] = []
+
+  try {
+    const entries = await fs.promises.readdir(damlDir, {recursive: true})
+    for (const entry of entries) {
+      const entryStr = String(entry)
+      if (!entryStr.endsWith('.daml')) continue
+
+      const filePath = path.join(damlDir, entryStr)
+      const source = await fs.promises.readFile(filePath, 'utf-8')
+      const result = parseDamlSource(source)
+      templates.push(...result.templates)
+    }
+  } catch {
+    // daml/ directory doesn't exist or can't be read
+  }
+
+  return templates
+}
+
+// ---------------------------------------------------------------------------
 // Implementation
 // ---------------------------------------------------------------------------
 
@@ -140,6 +168,24 @@ export function createServeServer(deps: ServeServerDeps): ServeServer {
       app.use(express.json())
 
       // ── REST API ────────────────────────────────────────────────
+
+      // Read daml.yaml for project metadata (package name for template IDs)
+      app.get('/api/project', async (_req: Request, res: Response) => {
+        try {
+          const damlYamlPath = path.join(projectDir, 'daml.yaml')
+          const content = await fs.promises.readFile(damlYamlPath, 'utf-8')
+          // Simple YAML extraction — just need name and version
+          const nameMatch = content.match(/^name:\s*(.+)$/m)
+          const versionMatch = content.match(/^version:\s*(.+)$/m)
+          res.json({
+            name: nameMatch?.[1]?.trim() ?? 'unknown',
+            version: versionMatch?.[1]?.trim() ?? '0.0.0',
+            projectDir,
+          })
+        } catch (err) {
+          res.status(500).json({error: String(err)})
+        }
+      })
 
       app.get('/api/health', async (_req: Request, res: Response) => {
         try {
@@ -201,6 +247,14 @@ export function createServeServer(deps: ServeServerDeps): ServeServer {
                   durationMs: result.durationMs,
                   type: result.cached ? 'build:cached' : 'build:success',
                 })
+                // Auto-upload DAR to sandbox after successful build
+                if (result.darPath && !result.cached) {
+                  try {
+                    const darBytes = await fs.promises.readFile(result.darPath)
+                    await client.uploadDar(new Uint8Array(darBytes))
+                    broadcast({type: 'dar:uploaded', dar: result.darPath})
+                  } catch (uploadErr) { output.warn(`DAR upload failed: ${uploadErr}`) }
+                }
               } catch (err) {
                 broadcast({output: String(err), type: 'build:error'})
               }
@@ -236,6 +290,62 @@ export function createServeServer(deps: ServeServerDeps): ServeServer {
         }
       })
 
+      // ── Template Discovery ──────────────────────────────────────
+
+      app.get('/api/templates', async (_req: Request, res: Response) => {
+        try {
+          const templates = await scanDamlTemplates(projectDir)
+          res.json({templates})
+        } catch (err) {
+          res.status(500).json({error: String(err)})
+        }
+      })
+
+      app.get('/api/templates/:name', async (req: Request, res: Response) => {
+        try {
+          const templates = await scanDamlTemplates(projectDir)
+          const template = templates.find(t => t.name === String(req.params.name))
+          if (!template) {
+            res.status(404).json({error: `Template "${req.params.name}" not found`})
+            return
+          }
+
+          res.json(template)
+        } catch (err) {
+          res.status(500).json({error: String(err)})
+        }
+      })
+
+      // ── Multi-Party Contracts ─────────────────────────────────
+
+      app.get('/api/contracts/multi', async (req: Request, res: Response) => {
+        const partiesParam = req.query.parties as string
+        if (!partiesParam) {
+          res.status(400).json({error: 'parties query parameter required (comma-separated)'})
+          return
+        }
+
+        const partyIds = partiesParam.split(',').map(p => p.trim()).filter(Boolean)
+        try {
+          const results: Record<string, Array<Record<string, unknown>>> = {}
+          await Promise.all(
+            partyIds.map(async (party) => {
+              try {
+                const result = await client.getActiveContracts({filter: {party}})
+                results[party] = result.activeContracts
+              } catch {
+                results[party] = []
+              }
+            }),
+          )
+          res.json({contracts: results})
+        } catch (err) {
+          res.status(500).json({error: String(err)})
+        }
+      })
+
+      // ── Single-Party Contracts ────────────────────────────────
+
       app.get('/api/contracts', async (req: Request, res: Response) => {
         const party = req.query.party as string
         const templateId = req.query.templateId as string | undefined
@@ -263,6 +373,7 @@ export function createServeServer(deps: ServeServerDeps): ServeServer {
             actAs: req.body.actAs,
             commandId: `playground-${Date.now()}-${Math.random().toString(36).slice(2)}`,
             commands: req.body.commands,
+            userId: 'admin',
           })
           res.json(result)
           broadcast({type: 'contracts:update'})
@@ -276,6 +387,15 @@ export function createServeServer(deps: ServeServerDeps): ServeServer {
         try {
           const result = await builder.build({force: true, projectDir})
           broadcast({dar: result.darPath, durationMs: result.durationMs, type: 'build:success'})
+          // Auto-upload DAR to sandbox
+          if (result.darPath) {
+            try {
+              const darBytes = await fs.promises.readFile(result.darPath)
+              await client.uploadDar(new Uint8Array(darBytes))
+              broadcast({type: 'dar:uploaded', dar: result.darPath})
+            } catch (uploadErr) { output.warn(`DAR upload failed: ${uploadErr}`) }
+          }
+
           res.json(result)
         } catch (err) {
           broadcast({output: String(err), type: 'build:error'})

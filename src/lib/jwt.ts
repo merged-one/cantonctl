@@ -106,6 +106,7 @@ export async function createSandboxToken(options: SandboxTokenOptions): Promise<
 
   return new jose.SignJWT(claims)
     .setProtectedHeader({alg: 'HS256'})
+    .setSubject('admin')
     .setIssuedAt()
     .setExpirationTime(`${expiresIn}s`)
     .sign(secret)

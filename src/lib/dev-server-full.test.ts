@@ -30,6 +30,7 @@ function createMockClient(): LedgerClient {
     allocateParty: vi.fn().mockResolvedValue({displayName: 'Test'}),
     getActiveContracts: vi.fn().mockResolvedValue({activeContracts: []}),
     getParties: vi.fn().mockResolvedValue({partyDetails: []}),
+    getLedgerEnd: vi.fn().mockResolvedValue({offset: 0}),
     getVersion: vi.fn().mockResolvedValue({version: '3.4.11'}),
     submitAndWait: vi.fn().mockResolvedValue({}),
     uploadDar: vi.fn().mockResolvedValue({}),

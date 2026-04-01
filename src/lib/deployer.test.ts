@@ -40,6 +40,7 @@ function createMockLedgerClient(): LedgerClient & {
     allocateParty: vi.fn(),
     getActiveContracts: vi.fn(),
     getParties: vi.fn(),
+    getLedgerEnd: vi.fn().mockResolvedValue({offset: 0}),
     getVersion: vi.fn().mockResolvedValue({version: '3.4.9'}),
     submitAndWait: vi.fn(),
     uploadDar: vi.fn().mockResolvedValue({mainPackageId: 'pkg-abc123'}),

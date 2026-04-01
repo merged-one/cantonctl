@@ -51,6 +51,8 @@ export interface SubmitRequest {
   actAs: string[]
   /** List of commands (create, exercise, etc.). */
   commands: unknown[]
+  /** User ID for Canton V2 API authentication. */
+  userId?: string
 }
 
 /** Filter for active contract queries. */
@@ -69,11 +71,13 @@ export interface ContractFilter {
 export interface LedgerClient {
   /** Get ledger version info. */
   getVersion(signal?: AbortSignal): Promise<Record<string, unknown>>
+  /** Get the current ledger end offset. */
+  getLedgerEnd(signal?: AbortSignal): Promise<{offset: number}>
   /** Upload a DAR archive (raw bytes). */
   uploadDar(darBytes: Uint8Array, signal?: AbortSignal): Promise<{mainPackageId: string}>
   /** Submit a command and wait for the transaction result. */
   submitAndWait(request: SubmitRequest, signal?: AbortSignal): Promise<{transaction: Record<string, unknown>}>
-  /** Query active contracts. */
+  /** Query active contracts (auto-fetches ledger end offset). */
   getActiveContracts(params: {filter: ContractFilter}, signal?: AbortSignal): Promise<{activeContracts: Array<Record<string, unknown>>}>
   /** Allocate a new party on the ledger. */
   allocateParty(params: {displayName: string; identifierHint?: string}, signal?: AbortSignal): Promise<{partyDetails: Record<string, unknown>}>
@@ -166,6 +170,10 @@ export function createLedgerClient(options: LedgerClientOptions): LedgerClient {
       return request<Record<string, unknown>>('GET', '/v2/version', undefined, signal)
     },
 
+    async getLedgerEnd(signal?: AbortSignal) {
+      return request<{offset: number}>('GET', '/v2/state/ledger-end', undefined, signal)
+    },
+
     async uploadDar(darBytes: Uint8Array, signal?: AbortSignal) {
       return request<{mainPackageId: string}>(
         'POST', '/v2/dars', darBytes, signal, ErrorCode.DEPLOY_UPLOAD_FAILED,
@@ -179,9 +187,56 @@ export function createLedgerClient(options: LedgerClientOptions): LedgerClient {
     },
 
     async getActiveContracts(params: {filter: ContractFilter}, signal?: AbortSignal) {
-      return request<{activeContracts: Array<Record<string, unknown>>}>(
-        'POST', '/v2/state/active-contracts', params, signal,
+      // Canton V2 requires activeAtOffset — get current ledger end first
+      const ledgerEnd = await request<{offset: number}>('GET', '/v2/state/ledger-end', undefined, signal)
+
+      // Build Canton V2 filtersByParty format with correct nested structure
+      const {party, templateIds} = params.filter
+
+      // Build identifier filter — use WildcardFilter for all, or TemplateFilter for specific
+      let identifierFilter: Record<string, unknown>
+      if (templateIds && templateIds.length > 0) {
+        identifierFilter = {TemplateFilter: {value: {templateId: templateIds[0], includeCreatedEventBlob: false}}}
+      } else {
+        identifierFilter = {WildcardFilter: {value: {includeCreatedEventBlob: false}}}
+      }
+
+      const body = {
+        activeAtOffset: ledgerEnd.offset,
+        filter: {
+          filtersByParty: {
+            [party]: {
+              cumulative: [{identifierFilter}],
+            },
+          },
+        },
+        verbose: true,
+      }
+
+      // Canton V2 returns an array of contract entries
+      const result = await request<unknown>(
+        'POST', '/v2/state/active-contracts', body, signal,
       )
+
+      // Normalize Canton V2 response to our interface
+      const activeContracts: Array<Record<string, unknown>> = []
+      const items = Array.isArray(result) ? result : []
+      for (const item of items) {
+        if (item && typeof item === 'object' && 'contractEntry' in (item as Record<string, unknown>)) {
+          const entry = (item as Record<string, unknown>).contractEntry as Record<string, unknown>
+          const jsActive = entry.JsActiveContract as Record<string, unknown> | undefined
+          const created = jsActive?.createdEvent as Record<string, unknown> | undefined
+          if (created) {
+            activeContracts.push({
+              contractId: created.contractId,
+              payload: created.createArgument,
+              templateId: created.templateId,
+            })
+          }
+        }
+      }
+
+      return {activeContracts}
     },
 
     async allocateParty(params: {displayName: string; identifierHint?: string}, signal?: AbortSignal) {

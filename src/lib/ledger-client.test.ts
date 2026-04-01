@@ -171,12 +171,27 @@ describe('LedgerClient', () => {
 
   describe('getActiveContracts()', () => {
     it('queries active contracts from /v2/state/active-contracts', async () => {
-      const fetch = createMockFetch()
-      fetch.mockJsonResponse(200, {
-        activeContracts: [
-          {contractId: 'c-1', templateId: 'Main:Token', payload: {owner: 'Alice'}},
-        ],
-      })
+      const fetch = vi.fn()
+        // First call: GET /v2/state/ledger-end
+        .mockResolvedValueOnce(new Response(JSON.stringify({offset: 5}), {
+          status: 200, headers: {'Content-Type': 'application/json'},
+        }))
+        // Second call: POST /v2/state/active-contracts (Canton V2 array format)
+        .mockResolvedValueOnce(new Response(JSON.stringify([
+          {
+            contractEntry: {
+              JsActiveContract: {
+                createdEvent: {
+                  contractId: 'c-1',
+                  templateId: 'Main:Token',
+                  createArgument: {owner: 'Alice', symbol: 'CTK', amount: '1000'},
+                },
+              },
+            },
+          },
+        ]), {
+          status: 200, headers: {'Content-Type': 'application/json'},
+        }))
 
       const client = createLedgerClient({baseUrl, fetch, token})
       const result = await client.getActiveContracts({
@@ -184,6 +199,12 @@ describe('LedgerClient', () => {
       })
       expect(result.activeContracts).toHaveLength(1)
       expect(result.activeContracts[0].contractId).toBe('c-1')
+      expect(result.activeContracts[0].templateId).toBe('Main:Token')
+
+      // Verify ledger-end was called first
+      expect(fetch).toHaveBeenCalledTimes(2)
+      expect(fetch.mock.calls[0][0]).toContain('/v2/state/ledger-end')
+      expect(fetch.mock.calls[1][0]).toContain('/v2/state/active-contracts')
     })
   })
 
