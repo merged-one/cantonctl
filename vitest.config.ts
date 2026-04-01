@@ -79,6 +79,23 @@ export default defineConfig({
           retry: 1,
         },
       },
+      {
+        test: {
+          name: 'e2e-playground',
+          include: [
+            'test/e2e/playground.e2e.test.ts',
+          ],
+          environment: 'node',
+          setupFiles: ['./vitest.setup.ts'],
+          disableConsoleIntercept: true,
+          globals: true,
+          testTimeout: 120_000,
+          // Sequential: playground starts its own sandbox + serve server.
+          pool: 'forks',
+          poolOptions: {forks: {singleFork: true}},
+          retry: 1,
+        },
+      },
     ],
     coverage: {
       provider: 'v8',
