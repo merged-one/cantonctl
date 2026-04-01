@@ -86,15 +86,21 @@ Hardhat won because of four things: every command works reliably, plugins let th
 | `build --watch` | Chokidar file watching for continuous `.daml` compilation | +5 unit |
 | Interactive init | Inquirer prompts when `cantonctl init` run with no args | +3 unit |
 | Multi-node status | Detects `.cantonctl/` directory for multi-node topology awareness | +2 unit |
-| Build --watch E2E | Added to e2e-sdk project | — |
+| Build --watch E2E | E2E test verifying file change detection and rebuild | +3 E2E |
+| Docker E2E tests | Multi-node topology start, health, parties, shutdown | +2 E2E |
+| Java discovery | Cross-platform resolution: JAVA_HOME → java_home → Homebrew → PATH | Fix |
+| Canton 3.4.x HOCON | Sequencers + mediators schema, 0.0.0.0 bindings, custom entrypoint | Fix |
+| CI parity | e2e-docker job, Canton image caching, ci-local.sh alignment | +1 CI job |
 
-**Total (Phases 0-7): 371 unit + 72 E2E = 443 tests. 98.18% statement coverage.**
+**Total (Phases 0-7): 374 unit + 77 E2E = 451 tests. 98.18% statement coverage. 100% pass rate.**
 
 ### Remaining for v1
 
 ```
+CHANGELOG.md                                    — release notes for v1.0.0
+Version bump (0.1.0 → 1.0.0)                   — package.json
+npm publish                                      — npm install -g cantonctl
 --json conformance audit                        — verify every command's JSON output
-dev --full E2E tests                            — requires Docker + Canton image in CI
 ```
 
 Detailed sequencing and open decisions live in [docs/PHASE_4_PREP.md](./PHASE_4_PREP.md).
