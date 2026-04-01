@@ -8,50 +8,13 @@
  */
 
 import {Command, Flags} from '@oclif/core'
-import * as fs from 'node:fs'
-import * as path from 'node:path'
 
 import {loadConfig} from '../lib/config.js'
 import {CantonctlError, ErrorCode} from '../lib/errors.js'
 import {createSandboxToken} from '../lib/jwt.js'
 import {createLedgerClient} from '../lib/ledger-client.js'
 import {createOutput} from '../lib/output.js'
-import {type GeneratedTopology} from '../lib/topology.js'
-
-/** Attempt to read the generated topology metadata from .cantonctl/. */
-async function detectTopology(projectDir: string): Promise<GeneratedTopology | null> {
-  try {
-    const confPath = path.join(projectDir, '.cantonctl', 'canton.conf')
-    const composePath = path.join(projectDir, '.cantonctl', 'docker-compose.yml')
-    const [confExists, composeExists] = await Promise.all([
-      fs.promises.access(confPath).then(() => true).catch(() => false),
-      fs.promises.access(composePath).then(() => true).catch(() => false),
-    ])
-    if (!confExists || !composeExists) return null
-
-    // Parse participant ports from the compose file health check
-    const composeContent = await fs.promises.readFile(composePath, 'utf8')
-    const portMatches = [...composeContent.matchAll(/localhost:(\d+)\/v2\/version/g)]
-    if (portMatches.length === 0) return null
-
-    // Reconstruct participant metadata from ports
-    const participants = portMatches.map((m, idx) => ({
-      name: `participant${idx + 1}`,
-      parties: [] as string[],
-      ports: {admin: 0, jsonApi: Number.parseInt(m[1], 10), ledgerApi: 0},
-    }))
-
-    return {
-      bootstrapScript: '',
-      cantonConf: '',
-      dockerCompose: composeContent,
-      participants,
-      synchronizer: {admin: 0, publicApi: 0},
-    }
-  } catch {
-    return null
-  }
-}
+import {type GeneratedTopology, detectTopology} from '../lib/topology.js'
 
 export default class Status extends Command {
   static override description = 'Show node health, version, and active parties'

@@ -16,6 +16,7 @@ import {createOutput} from '../lib/output.js'
 import {createCompleter} from '../lib/repl/completer.js'
 import {createExecutor} from '../lib/repl/executor.js'
 import {parseCommand} from '../lib/repl/parser.js'
+import {detectTopology} from '../lib/topology.js'
 
 export default class Console extends Command {
   static override description = 'Interactive REPL connected to a Canton node'
@@ -23,6 +24,7 @@ export default class Console extends Command {
   static override examples = [
     '<%= config.bin %> console',
     '<%= config.bin %> console --network devnet',
+    '<%= config.bin %> console --participant participant2',
   ]
 
   static override flags = {
@@ -30,6 +32,10 @@ export default class Console extends Command {
       char: 'n',
       default: 'local',
       description: 'Network to connect to',
+    }),
+    participant: Flags.string({
+      char: 'p',
+      description: 'Participant to connect to in multi-node mode (e.g., participant1)',
     }),
   }
 
@@ -49,8 +55,29 @@ export default class Console extends Command {
         })
       }
 
-      const jsonApiPort = network['json-api-port'] ?? 7575
-      const baseUrl = network.url ?? `http://localhost:${jsonApiPort}`
+      // Detect multi-node topology
+      let baseUrl: string
+      let connectionLabel: string
+      const topology = networkName === 'local' ? await detectTopology(process.cwd()) : null
+
+      if (topology && topology.participants.length > 0) {
+        const participantName = flags.participant ?? topology.participants[0].name
+        const participant = topology.participants.find(p => p.name === participantName)
+        if (!participant) {
+          const available = topology.participants.map(p => p.name).join(', ')
+          throw new CantonctlError(ErrorCode.CONFIG_SCHEMA_VIOLATION, {
+            context: {available, participant: participantName},
+            suggestion: `Participant "${participantName}" not found. Available: ${available}`,
+          })
+        }
+
+        baseUrl = `http://localhost:${participant.ports.jsonApi}`
+        connectionLabel = `${networkName} → ${participantName} at ${baseUrl}`
+      } else {
+        const jsonApiPort = network['json-api-port'] ?? 7575
+        baseUrl = network.url ?? `http://localhost:${jsonApiPort}`
+        connectionLabel = `${networkName} at ${baseUrl}`
+      }
 
       // Auth
       const partyNames = config.parties?.map(p => p.name) ?? []
@@ -71,7 +98,7 @@ export default class Console extends Command {
 
       // Banner
       out.log(`Canton Console (cantonctl)`)
-      out.log(`Connected to ${networkName} at ${baseUrl}`)
+      out.log(`Connected to ${connectionLabel}`)
       out.log('Type "help" for commands, "exit" to quit')
       out.log('')
 

@@ -40,28 +40,29 @@ function createMockOutput(): OutputWriter {
 
 describe('Cleaner', () => {
   describe('clean()', () => {
-    it('removes .daml and dist by default', async () => {
-      const fs = createMockFs(['.daml', 'dist'])
+    it('removes .daml, dist, and .cantonctl by default', async () => {
+      const fs = createMockFs(['.daml', 'dist', '.cantonctl'])
       const output = createMockOutput()
       const cleaner = createCleaner({fs, output})
 
       const result = await cleaner.clean({force: true, projectDir: '/project'})
 
-      expect(result.removed).toEqual(['.daml', 'dist'])
-      expect(fs.rm).toHaveBeenCalledTimes(2)
+      expect(result.removed).toEqual(['.daml', 'dist', '.cantonctl'])
+      expect(fs.rm).toHaveBeenCalledTimes(3)
       expect(fs.rm).toHaveBeenCalledWith('/project/.daml', {force: true, recursive: true})
       expect(fs.rm).toHaveBeenCalledWith('/project/dist', {force: true, recursive: true})
+      expect(fs.rm).toHaveBeenCalledWith('/project/.cantonctl', {force: true, recursive: true})
     })
 
     it('also removes node_modules with --all', async () => {
-      const fs = createMockFs(['.daml', 'dist', 'node_modules'])
+      const fs = createMockFs(['.daml', 'dist', '.cantonctl', 'node_modules'])
       const output = createMockOutput()
       const cleaner = createCleaner({fs, output})
 
       const result = await cleaner.clean({all: true, force: true, projectDir: '/project'})
 
-      expect(result.removed).toEqual(['.daml', 'dist', 'node_modules'])
-      expect(fs.rm).toHaveBeenCalledTimes(3)
+      expect(result.removed).toEqual(['.daml', 'dist', '.cantonctl', 'node_modules'])
+      expect(fs.rm).toHaveBeenCalledTimes(4)
     })
 
     it('skips directories that do not exist', async () => {
@@ -72,7 +73,7 @@ describe('Cleaner', () => {
       const result = await cleaner.clean({force: true, projectDir: '/project'})
 
       expect(result.removed).toEqual(['.daml'])
-      expect(result.skipped).toEqual(['dist'])
+      expect(result.skipped).toEqual(['dist', '.cantonctl'])
       expect(fs.rm).toHaveBeenCalledTimes(1)
     })
 

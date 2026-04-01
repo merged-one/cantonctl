@@ -19,6 +19,7 @@ import {createLedgerClient} from '../lib/ledger-client.js'
 import {createOutput} from '../lib/output.js'
 import {createPluginHookManager} from '../lib/plugin-hooks.js'
 import {createProcessRunner} from '../lib/process-runner.js'
+import {detectTopology} from '../lib/topology.js'
 
 const NETWORKS = ['local', 'devnet', 'testnet', 'mainnet'] as const
 
@@ -112,37 +113,15 @@ export default class Deploy extends Command {
       const hooks = createPluginHookManager()
       const builder = createBuilder({findDarFile, getDamlSourceMtime, getFileMtime, hooks, sdk})
 
-      const deployer = createDeployer({
-        builder,
-        config,
-        createLedgerClient,
-        createToken: createSandboxToken,
-        fs: {readFile: (p: string) => fs.promises.readFile(p)},
-        hooks,
-        output: out,
-      })
+      // Detect multi-node topology
+      const networkName = args.network ?? 'local'
+      const topology = networkName === 'local' ? await detectTopology(process.cwd()) : null
 
-      out.log(`Deploying to ${args.network}...`)
-      out.log('')
-
-      const result = await deployer.deploy({
-        darPath: flags.dar,
-        dryRun: flags['dry-run'],
-        network: args.network ?? 'local',
-        party: flags.party,
-        projectDir: process.cwd(),
-      })
-
-      out.result({
-        data: {
-          darPath: result.darPath,
-          dryRun: result.dryRun,
-          mainPackageId: result.mainPackageId,
-          network: result.network,
-        },
-        success: true,
-        timing: {durationMs: result.durationMs},
-      })
+      if (topology && topology.participants.length > 0) {
+        await this.deployMultiNode(config, builder, hooks, out, flags, networkName, topology)
+      } else {
+        await this.deploySingleNode(config, builder, hooks, out, flags, networkName)
+      }
     } catch (err) {
       if (err instanceof CantonctlError) {
         out.result({
@@ -154,5 +133,110 @@ export default class Deploy extends Command {
 
       throw err
     }
+  }
+
+  private async deployMultiNode(
+    config: Awaited<ReturnType<typeof loadConfig>>,
+    builder: ReturnType<typeof createBuilder>,
+    hooks: ReturnType<typeof createPluginHookManager>,
+    out: ReturnType<typeof createOutput>,
+    flags: {dar?: string; 'dry-run': boolean; json: boolean; party?: string},
+    networkName: string,
+    topology: Awaited<ReturnType<typeof detectTopology>> & object,
+  ): Promise<void> {
+    out.log(`Deploying to ${networkName} (multi-node: ${topology.participants.length} participants)...`)
+    out.log('')
+
+    const results: Array<{mainPackageId: string | null; participant: string; port: number}> = []
+    for (const participant of topology.participants) {
+      const baseUrl = `http://localhost:${participant.ports.jsonApi}`
+      out.info(`Deploying to ${participant.name} (port ${participant.ports.jsonApi})...`)
+
+      const deployer = createDeployer({
+        builder,
+        config: {
+          ...config,
+          networks: {
+            ...config.networks,
+            [networkName]: {
+              ...config.networks?.[networkName],
+              'json-api-port': participant.ports.jsonApi,
+              type: 'sandbox' as const,
+              url: baseUrl,
+            },
+          },
+        },
+        createLedgerClient,
+        createToken: createSandboxToken,
+        fs: {readFile: (p: string) => fs.promises.readFile(p)},
+        hooks,
+        output: out,
+      })
+
+      const result = await deployer.deploy({
+        darPath: flags.dar,
+        dryRun: flags['dry-run'],
+        network: networkName,
+        party: flags.party,
+        projectDir: process.cwd(),
+      })
+
+      results.push({
+        mainPackageId: result.mainPackageId ?? null,
+        participant: participant.name,
+        port: participant.ports.jsonApi,
+      })
+    }
+
+    out.result({
+      data: {
+        dryRun: flags['dry-run'],
+        mode: 'multi-node',
+        network: networkName,
+        participants: results,
+      },
+      success: true,
+    })
+  }
+
+  private async deploySingleNode(
+    config: Awaited<ReturnType<typeof loadConfig>>,
+    builder: ReturnType<typeof createBuilder>,
+    hooks: ReturnType<typeof createPluginHookManager>,
+    out: ReturnType<typeof createOutput>,
+    flags: {dar?: string; 'dry-run': boolean; json: boolean; party?: string},
+    networkName: string,
+  ): Promise<void> {
+    const deployer = createDeployer({
+      builder,
+      config,
+      createLedgerClient,
+      createToken: createSandboxToken,
+      fs: {readFile: (p: string) => fs.promises.readFile(p)},
+      hooks,
+      output: out,
+    })
+
+    out.log(`Deploying to ${networkName}...`)
+    out.log('')
+
+    const result = await deployer.deploy({
+      darPath: flags.dar,
+      dryRun: flags['dry-run'],
+      network: networkName,
+      party: flags.party,
+      projectDir: process.cwd(),
+    })
+
+    out.result({
+      data: {
+        darPath: result.darPath,
+        dryRun: result.dryRun,
+        mainPackageId: result.mainPackageId,
+        network: result.network,
+      },
+      success: true,
+      timing: {durationMs: result.durationMs},
+    })
   }
 }

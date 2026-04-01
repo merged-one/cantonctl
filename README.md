@@ -234,13 +234,32 @@ Plugins are auto-discovered from `node_modules` matching `@cantonctl/plugin-*` o
 
 ## Design Documentation
 
+### Architecture Decision Records (ADRs)
+
+| ADR | Decision |
+|-----|----------|
+| [ADR-0001](docs/adr/0001-typescript-oclif-framework.md) | TypeScript + oclif framework |
+| [ADR-0002](docs/adr/0002-plugin-architecture.md) | Plugin architecture |
+| [ADR-0003](docs/adr/0003-yaml-configuration.md) | YAML configuration |
+| [ADR-0004](docs/adr/0004-sandbox-first-local-dev.md) | Sandbox-first local development |
+| [ADR-0005](docs/adr/0005-template-system.md) | Template system |
+| [ADR-0006](docs/adr/0006-testing-value-proposition.md) | Testing value proposition |
+| [ADR-0007](docs/adr/0007-dual-interface-console.md) | Dual-interface console |
+| [ADR-0008](docs/adr/0008-deploy-pipeline.md) | Deploy pipeline |
+| [ADR-0009](docs/adr/0009-multi-channel-distribution.md) | Multi-channel distribution |
+| [ADR-0010](docs/adr/0010-hybrid-architecture.md) | Hybrid architecture |
+| [ADR-0011](docs/adr/0011-build-wraps-sdk.md) | Build wraps SDK |
+| [ADR-0012](docs/adr/0012-test-output-parsing.md) | Test output parsing |
+| [ADR-0013](docs/adr/0013-dar-caching-strategy.md) | DAR caching strategy |
+| [ADR-0014](docs/adr/0014-dev-full-multi-node-topology.md) | Multi-node Docker topology |
+
+### Research & Design
+
 - **[Design Decisions](docs/DESIGN_DECISIONS.md)** — 10 evidence-backed architecture decisions
-- **[ADR-0014: Multi-Node Topology](docs/adr/0014-dev-full-multi-node-topology.md)** — `dev --full` Docker architecture
-- **[Agentic Documentation System](docs/AGENTIC_DOCS_SYSTEM.md)** — Beyond-SOTA documentation architecture
-- **[Phase 4 Prep](docs/PHASE_4_PREP.md)** — Concrete execution order for deploy, console, auth, and hooks
-- **[Research: Blockchain CLIs](docs/research/blockchain-cli-toolchain-research.md)** — 16 toolchains analyzed
-- **[Research: Canton Ecosystem](docs/research/CANTON_ECOSYSTEM_RESEARCH.md)** — Full ecosystem deep dive
-- **[Research: Agentic Docs](docs/research/AGENTIC_DOCS_RESEARCH.md)** — AI documentation SOTA survey
+- **[Agentic Documentation System](docs/AGENTIC_DOCS_SYSTEM.md)** — Documentation architecture
+- **[Blockchain CLI Research](docs/research/blockchain-cli-toolchain-research.md)** — 16 toolchains analyzed
+- **[Canton Ecosystem Research](docs/research/CANTON_ECOSYSTEM_RESEARCH.md)** — Full ecosystem deep dive
+- **[Agentic Docs Research](docs/research/AGENTIC_DOCS_RESEARCH.md)** — AI documentation survey
 
 ## Prerequisites
 

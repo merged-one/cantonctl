@@ -57,7 +57,7 @@ export interface Cleaner {
 // Implementation
 // ---------------------------------------------------------------------------
 
-const DEFAULT_TARGETS = ['.daml', 'dist']
+const DEFAULT_TARGETS = ['.daml', 'dist', '.cantonctl']
 const ALL_TARGETS = [...DEFAULT_TARGETS, 'node_modules']
 
 /**
