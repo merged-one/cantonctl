@@ -46,13 +46,13 @@ cantonctl console
 | `cantonctl build` | Compile Daml + generate TypeScript bindings | Implemented |
 | `cantonctl build --watch` | Continuous compilation on `.daml` file changes (chokidar) | Implemented |
 | `cantonctl test` | Run Daml Script tests with structured output | Implemented |
-| `cantonctl deploy <network>` | 7-step DAR deployment pipeline for local and remote networks | Implemented |
+| `cantonctl deploy <network>` | 6-step DAR deployment pipeline for local and remote networks | Implemented |
 | `cantonctl console` | Interactive REPL for querying and submitting ledger commands | Implemented |
 | `cantonctl status` | Show node health, version, and active parties (multi-node aware) | Implemented |
 | `cantonctl auth login/logout/status` | Manage JWT credentials per network | Implemented |
 | `cantonctl clean` | Remove build artifacts (.daml/, dist/) | Implemented |
 
-All implemented commands support `--json` for CI pipeline integration. All errors include error codes, suggestions, and documentation links.
+All commands except `console` support `--json` for CI pipeline integration. All errors include error codes, suggestions, and documentation links.
 
 ## Templates
 
@@ -128,7 +128,7 @@ See [ADR-0014](docs/adr/0014-dev-full-multi-node-topology.md) for architecture d
 | Module | Purpose | Test Coverage |
 |--------|---------|---------------|
 | `src/lib/config.ts` | Hierarchical config: project > user > env > flags. Zod-validated YAML. | 98% |
-| `src/lib/errors.ts` | 23 error codes (E1xxx-E8xxx) with suggestions and docs URLs | 100% |
+| `src/lib/errors.ts` | 24 error codes (E1xxx-E8xxx) with suggestions and docs URLs | 100% |
 | `src/lib/output.ts` | Human/JSON/quiet output modes, spinners, tables | 97% |
 | `src/lib/process-runner.ts` | Subprocess abstraction over execa. Injectable mock for tests. | Mock-tested |
 | `src/lib/daml.ts` | DamlSdk: detect, build, test, codegen, startSandbox | 95% |
@@ -316,7 +316,7 @@ npm run ci            # Local CI check (mirrors GitHub Actions)
 
 ## Development Fund Proposal
 
-This tool is proposed under the [Canton Development Fund](https://github.com/canton-foundation/canton-dev-fund). See the [proposal](https://github.com/canton-foundation/canton-dev-fund/proposals/cantonctl.md) for full details.
+This tool is proposed under the [Canton Development Fund](https://github.com/canton-foundation/canton-dev-fund). See the [proposal](proposals/cantonctl.md) for full details.
 
 ## Contributing
 
