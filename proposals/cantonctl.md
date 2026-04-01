@@ -343,7 +343,7 @@ Milestone 1 delivers a complete, production-quality CLI. Milestone 2 takes it fr
 - `cantonctl deploy` tracks deployed packages and prevents duplicates
 - Blog post published, 3 videos published, community call completed
 
-### Milestone 3: Plugin Ecosystem — 200,000 CC
+### Milestone 3: Plugin Ecosystem — 250,000 CC
 
 - **Estimated Delivery:** 10 weeks from Milestone 2 acceptance
 - **Focus:** Plugin infrastructure, first-party plugins, and community enablement
@@ -361,7 +361,7 @@ The plugin ecosystem is what transforms a CLI tool into a platform. Hardhat's 19
 | **`@cantonctl/plugin-codegen`** | Extended binding generation: TypeScript (enhanced), Python, and Java client code from DAR inspection. |
 | **Plugin authoring guide** | Comprehensive tutorial with examples: hook API, context injection, testing, publishing. |
 
-**200,000 CC justification:** Plugin infrastructure and first-party plugins create ecosystem network effects. Three first-party plugins demonstrate the platform and lower the barrier for community contributions. Comparable to the Canton Grants Portal build phase (330,000 CC) but with broader ecosystem impact — plugins benefit every Canton developer, not a single workflow.
+**250,000 CC justification:** Plugin infrastructure and first-party plugins create ecosystem network effects. Three first-party plugins demonstrate the platform and lower the barrier for community contributions. Comparable to the Canton Grants Portal build phase (330,000 CC) but with broader ecosystem impact — plugins benefit every Canton developer, not a single workflow.
 
 **Acceptance criteria:**
 - `cantonctl plugin init` scaffolds a working plugin that builds, tests, and installs
@@ -369,7 +369,7 @@ The plugin ecosystem is what transforms a CLI tool into a platform. Hardhat's 19
 - Plugin authoring guide published with working examples
 - At least 1 community plugin demonstrated (can be from internal testing)
 
-### Milestone 4: VS Code Extension — 100,000 CC
+### Milestone 4: VS Code Extension — 250,000 CC
 
 - **Estimated Delivery:** 6 weeks from Milestone 3 acceptance
 - **Focus:** IDE integration for the most popular editor among Canton developers
@@ -385,7 +385,7 @@ The VS Code extension is the #2 most-requested feature for blockchain dev tools 
 | **Status bar widget** | Sandbox status (running/stopped), active network, connected participants. |
 | **Task runner** | Run cantonctl commands (dev, build, test, deploy) from VS Code tasks. |
 
-**100,000 CC justification:** IDE integration is table-stakes for developer adoption. The extension leverages all infrastructure built in Milestones 1-3 (commands, plugin hooks, JSON output) and packages it for the editor where most Canton developers work.
+**250,000 CC justification:** IDE integration is table-stakes for developer adoption. The extension leverages all infrastructure built in Milestones 1-3 (commands, plugin hooks, JSON output) and packages it for the editor where most Canton developers work.
 
 **Acceptance criteria:**
 - VS Code extension published to Marketplace
@@ -444,7 +444,7 @@ The Tech & Ops Committee will evaluate completion based on:
 
 ## Funding
 
-**Total Funding Request: 850,000 CC**
+**Total Funding Request: 1,050,000 CC**
 
 ### Payment Breakdown by Milestone
 
@@ -452,8 +452,8 @@ The Tech & Ops Committee will evaluate completion based on:
 |-----------|-------|---:|---------|
 | **Milestone 1** | Complete CLI Toolchain | 300,000 | **COMPLETE** — upon committee acceptance |
 | **Milestone 2** | Distribution + Developer Experience | 250,000 | Upon npm publish, `doctor`, `exec`, deployment tracking, launch content |
-| **Milestone 3** | Plugin Ecosystem | 200,000 | Upon 3+ plugins published, plugin registry, authoring guide |
-| **Milestone 4** | VS Code Extension | 100,000 | Upon extension published to VS Code Marketplace |
+| **Milestone 3** | Plugin Ecosystem | 250,000 | Upon 3+ plugins published, plugin registry, authoring guide |
+| **Milestone 4** | VS Code Extension | 250,000 | Upon extension published to VS Code Marketplace |
 
 ### Funding Context
 
@@ -471,7 +471,7 @@ This request is calibrated against comparable proposals in the current Developme
 - Foundry (Paradigm) represents an estimated $5–15M internal investment over 3 years
 - The Ethereum Foundation spends ~$100M/year on ecosystem grants, with developer tooling as the largest category
 
-At 850,000 CC, cantonctl requests less than the median for `daml-tooling` category proposals while delivering more engineering scope than any other proposal in the pool — and with Milestone 1 already complete, representing zero delivery risk on 300,000 CC (35%) of the total ask.
+At 1,050,000 CC, cantonctl requests less than the median for `daml-tooling` category proposals while delivering more engineering scope than any other proposal in the pool — and with Milestone 1 already complete, representing zero delivery risk on 300,000 CC (29%) of the total ask.
 
 ### Volatility Stipulation
 
