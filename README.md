@@ -10,6 +10,50 @@ The [Q1 2026 Canton Developer Experience Survey](https://forum.canton.network/t/
 
 cantonctl eliminates the "infrastructure engineer before product builder" problem.
 
+## Prerequisites
+
+### Required
+
+| Dependency | Version | Purpose | Install |
+|-----------|---------|---------|---------|
+| **Node.js** | ≥ 18 | Runtime for cantonctl CLI | [nodejs.org](https://nodejs.org) or `nvm install 22` |
+| **Daml SDK** | 3.4.11 | Smart contract compilation, testing, sandbox | `curl -sSL https://get.daml.com/ \| sh -s 3.4.11` |
+| **Java** | 21 (LTS) | JVM runtime required by Daml SDK and Canton | See below |
+
+### Optional (for `dev --full`)
+
+| Dependency | Version | Purpose | Install |
+|-----------|---------|---------|---------|
+| **Docker** | ≥ 24 | Multi-node topology via Docker Compose | [docker.com](https://docs.docker.com/get-docker/) |
+| **Canton image** | 0.5.3 | Canton runtime for multi-node mode | `docker pull ghcr.io/digital-asset/decentralized-canton-sync/docker/canton:0.5.3` |
+
+### Verify your environment
+
+```bash
+npm install -g cantonctl
+cantonctl doctor                     # Checks all prerequisites automatically
+```
+
+### Java 21 Installation
+
+The Daml SDK and Canton sandbox require Java 21. cantonctl auto-discovers Java via `JAVA_HOME`, macOS `java_home` utility, Homebrew paths, or system PATH.
+
+```bash
+# macOS (Homebrew)
+brew install openjdk@21
+
+# Linux (apt)
+sudo apt install openjdk-21-jdk
+
+# Any platform (SDKMAN — also sets JAVA_HOME automatically)
+sdk install java 21.0.5-tem
+```
+
+> **Note**: If you install Java via Homebrew and cantonctl cannot find it, set `JAVA_HOME` explicitly:
+> ```bash
+> export JAVA_HOME=/opt/homebrew/opt/openjdk@21   # Add to ~/.zshrc or ~/.bashrc
+> ```
+
 ## Quick Start
 
 ```bash
@@ -50,7 +94,8 @@ cantonctl console
 | `cantonctl console` | Interactive REPL for querying and submitting ledger commands | Implemented |
 | `cantonctl status` | Show node health, version, and active parties (multi-node aware) | Implemented |
 | `cantonctl auth login/logout/status` | Manage JWT credentials per network | Implemented |
-| `cantonctl clean` | Remove build artifacts (.daml/, dist/) | Implemented |
+| `cantonctl clean` | Remove build artifacts (.daml/, dist/, .cantonctl/) | Implemented |
+| `cantonctl doctor` | Check prerequisites (Node, Java, SDK, Docker, ports) | Implemented |
 
 All commands except `console` support `--json` for CI pipeline integration. All errors include error codes, suggestions, and documentation links.
 
@@ -260,63 +305,6 @@ Plugins are auto-discovered from `node_modules` matching `@cantonctl/plugin-*` o
 - **[Blockchain CLI Research](docs/research/blockchain-cli-toolchain-research.md)** — 16 toolchains analyzed
 - **[Canton Ecosystem Research](docs/research/CANTON_ECOSYSTEM_RESEARCH.md)** — Full ecosystem deep dive
 - **[Agentic Docs Research](docs/research/AGENTIC_DOCS_RESEARCH.md)** — AI documentation survey
-
-## Prerequisites
-
-### Required
-
-| Dependency | Version | Purpose | Install |
-|-----------|---------|---------|---------|
-| **Node.js** | ≥ 18 | Runtime for cantonctl CLI | [nodejs.org](https://nodejs.org) or `nvm install 22` |
-| **Daml SDK** | 3.4.11 | Smart contract compilation, testing, sandbox | `curl -sSL https://get.daml.com/ \| sh -s 3.4.11` |
-| **Java** | 21 (LTS) | JVM runtime required by Daml SDK and Canton | See below |
-
-### Java 21 Installation
-
-The Daml SDK and Canton sandbox require Java 21. cantonctl auto-discovers Java through the following resolution order:
-
-1. **`JAVA_HOME` environment variable** — Set by CI (`actions/setup-java`), sdkman, asdf
-2. **macOS `java_home` utility** — Finds JDKs registered by Apple/Adoptium installers
-3. **Homebrew well-known paths** — `/opt/homebrew/opt/openjdk@21` (ARM) and `/usr/local/opt/openjdk@21` (Intel)
-4. **System PATH** — Linux package managers place `java` in `/usr/bin`
-
-Install Java 21 via your preferred method:
-
-```bash
-# macOS (Homebrew)
-brew install openjdk@21
-
-# Linux (apt)
-sudo apt install openjdk-21-jdk
-
-# Any platform (SDKMAN — also sets JAVA_HOME automatically)
-sdk install java 21.0.5-tem
-
-# Verify
-java -version   # Should show "openjdk version 21.x.x"
-```
-
-> **Note**: If you install Java via Homebrew and cantonctl cannot find it, set `JAVA_HOME` explicitly:
-> ```bash
-> export JAVA_HOME=/opt/homebrew/opt/openjdk@21   # Add to ~/.zshrc or ~/.bashrc
-> ```
-
-### Optional (for `dev --full`)
-
-| Dependency | Version | Purpose | Install |
-|-----------|---------|---------|---------|
-| **Docker** | ≥ 24 | Multi-node topology via Docker Compose | [docker.com](https://docs.docker.com/get-docker/) |
-| **Canton image** | 0.5.3 | Canton runtime for multi-node mode | `docker pull ghcr.io/digital-asset/decentralized-canton-sync/docker/canton:0.5.3` |
-
-### Quick prerequisite check
-
-```bash
-./scripts/install-prerequisites.sh   # Installs Daml SDK + checks Java
-node --version                       # ≥ 18
-java -version                        # 21.x.x
-daml version                         # 3.4.11
-docker compose version               # Optional, for dev --full
-```
 
 ## Development
 
