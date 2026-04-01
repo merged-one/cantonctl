@@ -190,7 +190,7 @@ function ContractCard({contract, parties, activeParty, onExercised}: {
               color="canton"
               disabled={exercising}
               onClick={() => {
-                const to = parties.find(p => p.identifier !== activeParty)
+                const to = parties.find(p => (p.party ?? p.identifier ?? '') !== activeParty)
                 if (to) exerciseChoice('Transfer', {newOwner: to.identifier, transferAmount: String(Number(payload.amount) / 2)})
               }}
             />

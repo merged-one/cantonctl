@@ -154,47 +154,60 @@ export function createPlaygroundServer(deps: PlaygroundServerDeps): PlaygroundSe
         }
       })
 
-      app.get('/api/files/*', (req: Request, res: Response) => {
-        const filePath = path.join(projectDir, req.params[0])
+      // File operations — use middleware to handle subpaths (Express 5 compat)
+      app.use('/api/files', async (req: Request, res: Response, next) => {
+        // GET /api/files with no subpath → return file tree (handled above)
+        if (req.path === '/' || req.path === '') {
+          next()
+          return
+        }
+
+        const reqPath = decodeURIComponent(req.path.slice(1))
+        const filePath = path.join(projectDir, reqPath)
         if (!filePath.startsWith(projectDir)) {
           res.status(403).json({error: 'Path traversal not allowed'})
           return
         }
 
-        fs.promises.readFile(filePath, 'utf-8')
-          .then((content) => res.json({content, path: req.params[0]}))
-          .catch(() => res.status(404).json({error: 'File not found'}))
-      })
-
-      app.put('/api/files/*', async (req: Request, res: Response) => {
-        const filePath = path.join(projectDir, req.params[0])
-        if (!filePath.startsWith(projectDir)) {
-          res.status(403).json({error: 'Path traversal not allowed'})
-          return
-        }
-
-        try {
-          await fs.promises.mkdir(path.dirname(filePath), {recursive: true})
-          await fs.promises.writeFile(filePath, req.body.content, 'utf-8')
-          res.json({saved: true, path: req.params[0]})
-
-          // Auto-build on .daml file save
-          if (filePath.endsWith('.daml')) {
-            broadcast({type: 'build:start'})
-            try {
-              const result = await builder.build({projectDir})
-              broadcast({
-                dar: result.darPath,
-                durationMs: result.durationMs,
-                type: result.cached ? 'build:cached' : 'build:success',
-              })
-            } catch (err) {
-              broadcast({output: String(err), type: 'build:error'})
-            }
+        if (req.method === 'GET') {
+          try {
+            const content = await fs.promises.readFile(filePath, 'utf-8')
+            res.json({content, path: reqPath})
+          } catch {
+            res.status(404).json({error: 'File not found'})
           }
-        } catch (err) {
-          res.status(500).json({error: String(err)})
+
+          return
         }
+
+        if (req.method === 'PUT') {
+          try {
+            await fs.promises.mkdir(path.dirname(filePath), {recursive: true})
+            await fs.promises.writeFile(filePath, req.body.content, 'utf-8')
+            res.json({saved: true, path: reqPath})
+
+            // Auto-build on .daml file save
+            if (filePath.endsWith('.daml')) {
+              broadcast({type: 'build:start'})
+              try {
+                const result = await builder.build({projectDir})
+                broadcast({
+                  dar: result.darPath,
+                  durationMs: result.durationMs,
+                  type: result.cached ? 'build:cached' : 'build:success',
+                })
+              } catch (err) {
+                broadcast({output: String(err), type: 'build:error'})
+              }
+            }
+          } catch (err) {
+            res.status(500).json({error: String(err)})
+          }
+
+          return
+        }
+
+        next()
       })
 
       app.get('/api/parties', async (_req: Request, res: Response) => {
@@ -280,7 +293,7 @@ export function createPlaygroundServer(deps: PlaygroundServerDeps): PlaygroundSe
       // Serve playground static files
       if (staticDir) {
         app.use(express.static(staticDir))
-        app.get('*', (_req: Request, res: Response) => {
+        app.use((_req: Request, res: Response) => {
           res.sendFile(path.join(staticDir, 'index.html'))
         })
       }

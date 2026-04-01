@@ -18,6 +18,10 @@ import {exec} from 'node:child_process'
 import * as fs from 'node:fs'
 import * as net from 'node:net'
 import * as path from 'node:path'
+import {fileURLToPath} from 'node:url'
+
+const __filename = fileURLToPath(import.meta.url)
+const __dirname = path.dirname(__filename)
 
 import {watch} from 'chokidar'
 

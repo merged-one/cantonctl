@@ -18,8 +18,9 @@ export interface ActiveContract {
 }
 
 export interface PartyDetails {
-  displayName: string
-  identifier: string
+  party: string
+  displayName?: string
+  identifier?: string
   isLocal: boolean
 }
 

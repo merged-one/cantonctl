@@ -17,25 +17,31 @@ export function PartySelector({parties, activeParty, onSelect}: PartySelectorPro
     )
   }
 
+  const partyId = (p: PartyDetails) => p.party ?? p.identifier ?? ''
+  const partyName = (p: PartyDetails) => {
+    const id = partyId(p)
+    return p.displayName || id.split('::')[0] || id.slice(0, 12)
+  }
+
   return (
     <div className="flex items-center gap-2">
       <Users className="h-3.5 w-3.5 text-zinc-500" />
       <div className="flex gap-1">
         {parties.map(party => {
-          const name = party.displayName || party.identifier.split('::')[0]
-          const isActive = party.identifier === activeParty
+          const id = partyId(party)
+          const isActive = id === activeParty
           return (
             <button
-              key={party.identifier}
-              onClick={() => onSelect(party.identifier)}
+              key={id}
+              onClick={() => onSelect(id)}
               className={`px-2 py-0.5 text-[11px] rounded font-medium transition ${
                 isActive
                   ? 'bg-canton-600 text-white shadow-sm shadow-canton-600/25'
                   : 'bg-zinc-800 text-zinc-400 hover:bg-zinc-700 hover:text-zinc-200'
               }`}
-              title={party.identifier}
+              title={id}
             >
-              {name}
+              {partyName(party)}
             </button>
           )
         })}
