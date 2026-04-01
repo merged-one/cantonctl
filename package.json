@@ -7,7 +7,7 @@
   "homepage": "https://github.com/merged-one/cantonctl",
   "repository": {
     "type": "git",
-    "url": "https://github.com/merged-one/cantonctl.git"
+    "url": "git+https://github.com/merged-one/cantonctl.git"
   },
   "bugs": {
     "url": "https://github.com/merged-one/cantonctl/issues"
@@ -15,7 +15,7 @@
   "type": "module",
   "main": "",
   "bin": {
-    "cantonctl": "./bin/run.js"
+    "cantonctl": "bin/run.js"
   },
   "files": [
     "/bin",
