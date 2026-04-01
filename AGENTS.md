@@ -6,10 +6,10 @@ This file defines conventions for AI agents working on cantonctl, whether as a s
 
 cantonctl is an institutional CLI toolchain for Canton Network (enterprise blockchain, $6T+ tokenized assets). It provides Hardhat/Foundry-equivalent DX for Daml smart contracts.
 
-**Current state:** Phases 0-5 complete. 297 unit + 72 E2E = 369 tests. 99.9% coverage.
+**Current state:** Phases 0-6 complete. 361 unit + 72 E2E = 433 tests. 99.9% coverage.
 
 ```bash
-npm test          # 297 unit tests
+npm test          # 361 unit tests
 npm run test:e2e  # 72 E2E tests (requires Daml SDK + Java 21)
 npm run build     # TypeScript compilation
 ```
@@ -36,6 +36,9 @@ src/lib/              ← Pure logic (DI, tested, no side effects)
   jwt.ts              ← HS256 sandbox JWT
   scaffold.ts         ← Project scaffolding (5 templates)
   dev-server.ts       ← Sandbox lifecycle + hot-reload
+  dev-server-full.ts  ← Multi-node Docker dev server
+  topology.ts         ← Topology config generation (Docker Compose + HOCON)
+  docker.ts           ← Docker Compose lifecycle management
   builder.ts          ← Build orchestration + DAR caching
   test-runner.ts      ← Test execution + ANSI stripping
   deployer.ts         ← 6-step deploy pipeline
@@ -115,7 +118,7 @@ const foo = createFoo({
 |-------|-----------|-------|
 | E1xxx | Configuration | config.ts |
 | E2xxx | SDK/Tools | daml.ts, process-runner.ts |
-| E3xxx | Sandbox/Node | dev-server.ts |
+| E3xxx | Sandbox/Node/Docker | dev-server.ts, dev-server-full.ts, docker.ts |
 | E4xxx | Build | builder.ts |
 | E5xxx | Test | test-runner.ts |
 | E6xxx | Deploy | deployer.ts |
@@ -165,7 +168,7 @@ ADRs (`docs/adr/`) are immutable once accepted. Reference docs (`docs/reference/
 
 Before every commit:
 
-- [ ] `npm test` — all 297 unit tests pass
+- [ ] `npm test` — all 361 unit tests pass
 - [ ] `npm run build` — TypeScript compiles clean
 - [ ] No machine-specific paths (use `os.homedir()`, `path.delimiter`)
 - [ ] Doc metrics match actual test counts

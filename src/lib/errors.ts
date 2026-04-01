@@ -49,6 +49,8 @@ export enum ErrorCode {
   SANDBOX_START_FAILED = 'E3001',
   SANDBOX_PORT_IN_USE = 'E3002',
   SANDBOX_HEALTH_TIMEOUT = 'E3003',
+  DOCKER_NOT_AVAILABLE = 'E3004',
+  DOCKER_COMPOSE_FAILED = 'E3005',
 
   // E4xxx: Build
   BUILD_DAML_ERROR = 'E4001',
@@ -85,6 +87,8 @@ const ERROR_MESSAGES: Record<ErrorCode, string> = {
   [ErrorCode.SANDBOX_START_FAILED]: 'Canton sandbox process exited unexpectedly during startup.',
   [ErrorCode.SANDBOX_PORT_IN_USE]: 'The requested port is already in use.',
   [ErrorCode.SANDBOX_HEALTH_TIMEOUT]: 'Canton sandbox did not become healthy within the timeout.',
+  [ErrorCode.DOCKER_NOT_AVAILABLE]: 'Docker is not installed or not running.',
+  [ErrorCode.DOCKER_COMPOSE_FAILED]: 'Docker Compose operation failed.',
   [ErrorCode.BUILD_DAML_ERROR]: 'Daml compilation failed.',
   [ErrorCode.BUILD_DAR_NOT_FOUND]: 'Expected .dar file was not produced by the build.',
   [ErrorCode.TEST_EXECUTION_FAILED]: 'One or more Daml Script tests failed.',

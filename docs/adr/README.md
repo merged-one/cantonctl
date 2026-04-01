@@ -50,3 +50,4 @@ Links to evidence, research, related ADRs.
 | [0011](0011-build-wraps-sdk.md) | Build command wraps SDK (not reimplements) | Accepted | 2026-03-31 |
 | [0012](0012-test-output-parsing.md) | Test output parsing strategy | Accepted | 2026-03-31 |
 | [0013](0013-dar-caching-strategy.md) | DAR caching via mtime comparison | Accepted | 2026-03-31 |
+| [0014](0014-dev-full-multi-node-topology.md) | Multi-node dev topology via Docker | Accepted | 2026-03-31 |

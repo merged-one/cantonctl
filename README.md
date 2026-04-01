@@ -41,6 +41,7 @@ cantonctl console
 |---------|-------------|--------|
 | `cantonctl init <name>` | Scaffold a new project from a template | Implemented |
 | `cantonctl dev` | Start local Canton sandbox with hot-reload | Implemented |
+| `cantonctl dev --full` | Multi-node Docker topology (synchronizer + N participants) | Implemented |
 | `cantonctl build` | Compile Daml + generate TypeScript bindings | Implemented |
 | `cantonctl test` | Run Daml Script tests with structured output | Implemented |
 | `cantonctl deploy <network>` | 7-step DAR deployment pipeline for local and remote networks | Implemented |
@@ -74,7 +75,9 @@ Community templates: any GitHub repo with a `cantonctl-template.yaml` manifest.
 
 ## Local Development
 
-`cantonctl dev` provides a complete local development environment:
+### Sandbox Mode (default)
+
+`cantonctl dev` provides a zero-Docker local development environment:
 
 1. **SDK detection** — Finds `dpm` (preferred) or `daml` on PATH
 2. **Sandbox startup** — Spawns Canton sandbox as subprocess (no Docker required)
@@ -90,11 +93,29 @@ cantonctl dev --port 6001        # Custom Canton node port
 cantonctl dev --json             # JSON output for CI
 ```
 
+### Multi-Node Mode (`--full`)
+
+`cantonctl dev --full` launches a realistic multi-node Canton topology via Docker:
+
+- **Single Canton container** hosting synchronizer + multiple participants (conformance kit pattern)
+- **Auto-generated configs** — Docker Compose, Canton HOCON, and bootstrap scripts from `cantonctl.yaml`
+- **Party-to-participant mapping** — `operator` → participant1, `participant` → participant2
+- **Cross-node hot-reload** — DAR changes uploaded to all participants simultaneously
+- **In-memory storage** — Fastest startup, no Postgres required
+
+```bash
+cantonctl dev --full                          # Multi-node on default ports (10000+)
+cantonctl dev --full --base-port 20000        # Custom base port
+cantonctl dev --full --canton-image <image>   # Custom Canton Docker image
+```
+
+See [ADR-0014](docs/adr/0014-dev-full-multi-node-topology.md) for architecture details.
+
 ## Architecture
 
 ### Core Principles
 
-- **Test-first TDD**: Tests define the contract, implementation follows (369 tests, 99.9% coverage)
+- **Test-first TDD**: Tests define the contract, implementation follows (433 tests, 99.9% coverage)
 - **Dependency injection**: Every I/O module accepts injected dependencies. Zero `vi.mock()`.
 - **AbortSignal everywhere**: All long-running operations support graceful cancellation
 - **Structured errors**: Every error is a `CantonctlError` with code (E1xxx-E8xxx), suggestion, and docs URL
@@ -105,7 +126,7 @@ cantonctl dev --json             # JSON output for CI
 | Module | Purpose | Test Coverage |
 |--------|---------|---------------|
 | `src/lib/config.ts` | Hierarchical config: project > user > env > flags. Zod-validated YAML. | 98% |
-| `src/lib/errors.ts` | 21 error codes (E1xxx-E8xxx) with suggestions and docs URLs | 100% |
+| `src/lib/errors.ts` | 23 error codes (E1xxx-E8xxx) with suggestions and docs URLs | 100% |
 | `src/lib/output.ts` | Human/JSON/quiet output modes, spinners, tables | 97% |
 | `src/lib/process-runner.ts` | Subprocess abstraction over execa. Injectable mock for tests. | Mock-tested |
 | `src/lib/daml.ts` | DamlSdk: detect, build, test, codegen, startSandbox | 95% |
@@ -123,6 +144,9 @@ cantonctl dev --json             # JSON output for CI
 | `src/lib/repl/completer.ts` | Tab completion for commands, parties, flags | 100% |
 | `src/lib/cleaner.ts` | Build artifact cleanup (.daml/, dist/, node_modules/) | 100% |
 | `src/lib/keytar-backend.ts` | OS keychain backend via keytar with in-memory fallback | 100% |
+| `src/lib/topology.ts` | Multi-node topology generation (Docker Compose + Canton HOCON) | 100% |
+| `src/lib/docker.ts` | Docker Compose lifecycle management | 100% |
+| `src/lib/dev-server-full.ts` | Multi-node dev server with cross-participant hot-reload | 100% |
 
 ### Project Structure
 
@@ -150,7 +174,10 @@ cantonctl/
 │       ├── credential-store.ts# Keychain-backed JWT storage
 │       ├── plugin-hooks.ts    # Lifecycle hook registry
 │       ├── daml.ts            # SDK abstraction (dpm/daml)
-│       ├── dev-server.ts      # Dev server orchestration
+│       ├── dev-server.ts      # Sandbox dev server orchestration
+│       ├── dev-server-full.ts # Multi-node Docker dev server
+│       ├── topology.ts        # Topology config generation
+│       ├── docker.ts          # Docker Compose lifecycle
 │       ├── errors.ts          # Structured error system
 │       ├── jwt.ts             # Sandbox JWT generation
 │       ├── ledger-client.ts   # Canton JSON Ledger API V2 client
@@ -185,7 +212,7 @@ Every error includes a code, message, suggestion, and link to documentation.
 |-------|-----------|---------|
 | E1xxx | Configuration | `E1001` Config not found, `E1002` Invalid YAML, `E1003` Schema violation, `E1004` Directory exists |
 | E2xxx | SDK/Tools | `E2001` SDK not installed, `E2003` Command failed |
-| E3xxx | Sandbox | `E3001` Start failed, `E3002` Port in use, `E3003` Health timeout |
+| E3xxx | Sandbox/Docker | `E3001` Start failed, `E3002` Port in use, `E3003` Health timeout, `E3004` Docker not available, `E3005` Compose failed |
 | E4xxx | Build | `E4001` Daml compilation error |
 | E5xxx | Test | `E5001` Test execution failed |
 | E6xxx | Deploy | `E6001` Auth failed, `E6003` Upload failed |
@@ -206,6 +233,7 @@ Plugins are auto-discovered from `node_modules` matching `@cantonctl/plugin-*` o
 ## Design Documentation
 
 - **[Design Decisions](docs/DESIGN_DECISIONS.md)** — 10 evidence-backed architecture decisions
+- **[ADR-0014: Multi-Node Topology](docs/adr/0014-dev-full-multi-node-topology.md)** — `dev --full` Docker architecture
 - **[Agentic Documentation System](docs/AGENTIC_DOCS_SYSTEM.md)** — Beyond-SOTA documentation architecture
 - **[Phase 4 Prep](docs/PHASE_4_PREP.md)** — Concrete execution order for deploy, console, auth, and hooks
 - **[Research: Blockchain CLIs](docs/research/blockchain-cli-toolchain-research.md)** — 16 toolchains analyzed
@@ -216,10 +244,10 @@ Plugins are auto-discovered from `node_modules` matching `@cantonctl/plugin-*` o
 
 ```bash
 npm install          # Install dependencies
-npm test             # Run unit tests (297 tests)
+npm test             # Run unit tests (361 tests)
 npm run test:watch   # Watch mode
 npm run test:e2e     # Run E2E tests (72 tests, requires Daml SDK + Java 21)
-npm run test:all     # Run all 369 tests
+npm run test:all     # Run all 433 tests
 npm run test:coverage # Coverage report (99.9% statements)
 npm run build        # Compile TypeScript
 ```

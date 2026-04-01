@@ -1,5 +1,67 @@
 # cantonctl Worklog
 
+## 2026-03-31 (Session 6) ��� Phase 6: `dev --full` Multi-Node Topology
+
+### Summary
+
+Implemented `cantonctl dev --full` — a multi-node Canton development environment orchestrated via Docker Compose. This was previously deferred as "post-v1" but is now fully implemented with 64 new unit tests.
+
+### Architecture (ADR-0014)
+
+Defined best practice criteria (10 criteria, 3 alternatives evaluated). Selected the **conformance kit pattern**: single Canton container hosting multiple logical nodes (synchronizer + N participants), differentiated by port prefix. In-memory storage by default for fastest startup.
+
+### New Modules
+
+| Module | Tests | Purpose |
+|--------|-------|---------|
+| `topology.ts` | 32 | Pure function: generates Docker Compose YAML, Canton HOCON, bootstrap script from config |
+| `docker.ts` | 9 | Docker Compose lifecycle (check, up, down, logs) via injected ProcessRunner |
+| `dev-server-full.ts` | 23 | Multi-node dev server: topology → Docker → health → parties → watch → hot-reload |
+
+### Key Design Decisions
+
+- **Single Canton container** with embedded synchronizer + N participants (resource efficient)
+- **Generated configs** in `.cantonctl/` dir (cleaned up on stop, not committed)
+- **Port scheme**: base port (10000) + participant index × 10 + offset
+- **Party mapping**: operator → participant1, participant/observer → participant2, no-role → round-robin
+- **Hot-reload uploads to ALL participants** (packages must be available everywhere)
+- **New error codes**: E3004 (Docker not available), E3005 (Docker Compose failed)
+
+### Updated Command
+
+`cantonctl dev --full` with `--base-port`, `--canton-image` flags. Sandbox mode unchanged.
+
+### Metrics
+
+- **Unit tests:** 361 (64 new: 32 topology + 9 docker + 23 dev-server-full)
+- **E2E tests:** 72 (unchanged)
+- **Total:** 433 tests
+- **ADRs:** 14 (1 new: ADR-0014)
+
+---
+
+## 2026-03-31 (Session 5) — CI Parity & Docker CI Environment
+
+### Summary
+
+Fixed GitHub Actions CI failures and established local-CI parity. Created Docker-based CI environment matching GitHub Actions exactly. Added vitest project-based test isolation for sandbox E2E tests.
+
+### Key Fixes
+
+- Vitest `pool: 'forks'` with `singleFork: true` for sandbox E2E (prevents JVM child process interference)
+- `waitForExit()` on SpawnedProcess for proper JVM cleanup
+- Cross-platform Java/Daml path resolution via `test/e2e/helpers.ts`
+- Deploy E2E assertions accept platform-specific Canton errors
+
+### CI Infrastructure
+
+- `Dockerfile.ci` — Ubuntu 24.04 + Node 22 + Java 21 Temurin + Daml SDK 3.4.11
+- `docker-compose.ci.yml` — One-command CI with `NODE_VERSION` override
+- `scripts/ci-local.sh` — Native or `--docker` mode for exact parity
+- `.github/workflows/ci.yml` — 4 jobs: unit-tests (matrix), e2e-sdk, e2e-sandbox, all-green gate
+
+---
+
 ## 2026-03-31 (Session 4) — Documentation Audit + Phase 4 Prep
 
 ### Summary

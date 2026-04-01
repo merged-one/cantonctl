@@ -29,7 +29,7 @@ Hardhat won because of four things: every command works reliably, plugins let th
 | `src/commands/test.ts` | Fully functional, E2E tested | 2 E2E | Verified |
 | `src/commands/status.ts` | Functional (queries real Ledger API) | — | — |
 | Layer 1 docs | Reference (5 commands), troubleshooting, concepts, tasks, llms.txt, JSON Schema | — | — |
-| ADR system | 13 ADRs (10 converted + 3 new from Phase 3 research) | — | — |
+| ADR system | 14 ADRs (10 converted + 3 from Phase 3 + 1 from Phase 6) | — | — |
 
 **Total (Phases 0-3): 180 unit + 67 E2E = 247 tests. 99.9% statement coverage on lib/.**
 
@@ -66,12 +66,26 @@ Hardhat won because of four things: every command works reliably, plugins let th
 
 **Total (Phases 0-5): 297 unit + 72 E2E = 369 tests.**
 
+### Done (Phase 6)
+
+| Component | Status | Tests |
+|-----------|--------|-------|
+| `src/lib/topology.ts` | Pure topology generation: Docker Compose + Canton HOCON + bootstrap script | +32 unit |
+| `src/lib/docker.ts` | Docker Compose lifecycle: checkAvailable, composeUp, composeDown, composeLogs | +9 unit |
+| `src/lib/dev-server-full.ts` | Multi-node dev server: Docker topology, multi-participant health, cross-node hot-reload | +23 unit |
+| `src/lib/errors.ts` | 2 new error codes: E3004 (Docker not available), E3005 (Docker Compose failed) | — |
+| `src/commands/dev.ts` | Updated: `--full`, `--base-port`, `--canton-image` flags wired to FullDevServer | — |
+| `docs/adr/0014-dev-full-multi-node-topology.md` | Architecture decision with best practice criteria and alternatives analysis | — |
+
+**Total (Phases 0-6): 361 unit + 72 E2E = 433 tests.**
+
 ### Remaining for v1
 
 ```
 Interactive init (inquirer prompts)             — Phase 5 polish, deferred
 build --watch mode                              — Phase 5 polish, deferred
 --json conformance audit                        — verify every command's JSON output
+dev --full E2E tests                            — requires Docker + Canton image in CI
 ```
 
 Detailed sequencing and open decisions live in [docs/PHASE_4_PREP.md](./PHASE_4_PREP.md).
@@ -318,7 +332,7 @@ Interactive REPL connected to a Canton node, inspired by Foundry's Chisel + Cast
 
 | Feature | Why deferred |
 |---------|-------------|
-| `dev --full` (Docker multi-node) | Complex infra, most users need sandbox only |
+| ~~`dev --full` (Docker multi-node)~~ | **Implemented in Phase 6** (ADR-0014) |
 | Contract verification (block explorer) | Canton doesn't have public explorers yet |
 | Fork mode (`dev --fork`) | Canton sandbox doesn't support forking |
 | Network helpers (`setBalance`, `mine`) | Canton's privacy model doesn't expose state manipulation |

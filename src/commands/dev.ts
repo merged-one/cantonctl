@@ -1,13 +1,15 @@
 /**
  * @module commands/dev
  *
- * Starts a local Canton development environment with sandbox, party
- * provisioning, and hot-reload. Thin oclif wrapper over {@link createDevServer}.
+ * Starts a local Canton development environment with hot-reload.
+ * Thin oclif wrapper over {@link createDevServer} (sandbox mode)
+ * and {@link createFullDevServer} (multi-node Docker mode).
  *
  * @example
  * ```bash
  * cantonctl dev                      # Start sandbox on default ports
  * cantonctl dev --port 6001          # Custom Canton node port
+ * cantonctl dev --full               # Multi-node topology via Docker
  * cantonctl dev --json               # JSON output for CI
  * ```
  */
@@ -20,12 +22,17 @@ import {watch} from 'chokidar'
 
 import {loadConfig} from '../lib/config.js'
 import {createDamlSdk} from '../lib/daml.js'
-import {createDevServer} from '../lib/dev-server.js'
+import {createFullDevServer, type FullDevServer} from '../lib/dev-server-full.js'
+import {createDevServer, type DevServer} from '../lib/dev-server.js'
+import {createDockerManager} from '../lib/docker.js'
 import {CantonctlError} from '../lib/errors.js'
 import {createSandboxToken} from '../lib/jwt.js'
 import {createLedgerClient} from '../lib/ledger-client.js'
 import {createOutput} from '../lib/output.js'
 import {createProcessRunner} from '../lib/process-runner.js'
+
+/** Default Canton Docker image for --full mode. */
+const DEFAULT_CANTON_IMAGE = 'ghcr.io/digital-asset/decentralized-canton-sync/docker/canton:0.5.3'
 
 /**
  * Check if a TCP port is currently in use.
@@ -64,10 +71,20 @@ export default class Dev extends Command {
   static override examples = [
     '<%= config.bin %> dev',
     '<%= config.bin %> dev --port 6001',
+    '<%= config.bin %> dev --full',
+    '<%= config.bin %> dev --full --base-port 20000',
     '<%= config.bin %> dev --json',
   ]
 
   static override flags = {
+    'base-port': Flags.integer({
+      default: 10_000,
+      description: 'Base port for multi-node topology (--full mode only)',
+    }),
+    'canton-image': Flags.string({
+      default: DEFAULT_CANTON_IMAGE,
+      description: 'Canton Docker image for --full mode',
+    }),
     full: Flags.boolean({
       default: false,
       description: 'Start full multi-node topology (requires Docker)',
@@ -78,12 +95,12 @@ export default class Dev extends Command {
     }),
     'json-api-port': Flags.integer({
       default: 7575,
-      description: 'JSON Ledger API port',
+      description: 'JSON Ledger API port (sandbox mode only)',
     }),
     port: Flags.integer({
       char: 'p',
       default: 5001,
-      description: 'Canton node port',
+      description: 'Canton node port (sandbox mode only)',
     }),
   }
 
@@ -91,27 +108,11 @@ export default class Dev extends Command {
     const {flags} = await this.parse(Dev)
     const out = createOutput({json: flags.json})
 
-    if (flags.full) {
-      out.warn('Full multi-node mode is not yet implemented. Using sandbox mode.')
-    }
-
-    let server: Awaited<ReturnType<typeof createDevServer>> | null = null
+    let server: DevServer | FullDevServer | null = null
 
     try {
       const config = await loadConfig()
       const runner = createProcessRunner()
-
-      server = createDevServer({
-        config,
-        createClient: createLedgerClient,
-        createToken: createSandboxToken,
-        findDarFile,
-        isPortInUse,
-        output: out,
-        readFile: (p) => fs.promises.readFile(p),
-        sdk: createDamlSdk({runner}),
-        watch: (paths, opts) => watch(paths, opts),
-      })
 
       // Handle graceful shutdown without process.exit
       const controller = new AbortController()
@@ -126,7 +127,7 @@ export default class Dev extends Command {
           server = null
         }
 
-        out.success('Canton sandbox stopped')
+        out.success(flags.full ? 'Multi-node topology stopped' : 'Canton sandbox stopped')
         out.result({data: {status: 'stopped'}, success: true})
         shutdownPromiseResolve?.()
       }
@@ -146,24 +147,80 @@ export default class Dev extends Command {
         })
       }
 
-      await server.start({
-        jsonApiPort: flags['json-api-port'],
-        port: flags.port,
-        projectDir: process.cwd(),
-        signal: controller.signal,
-      })
+      if (flags.full) {
+        // --full mode: multi-node Docker topology
+        const sdk = createDamlSdk({runner})
+        const docker = createDockerManager({output: out, runner})
 
-      // In JSON mode, emit the running status immediately
-      if (flags.json) {
-        out.result({
-          data: {
-            jsonApiPort: flags['json-api-port'],
-            parties: config.parties?.map(p => p.name) ?? [],
-            port: flags.port,
-            status: 'running',
-          },
-          success: true,
+        const fullServer = createFullDevServer({
+          build: async (projectDir: string) => { await sdk.build({projectDir}) },
+          cantonImage: flags['canton-image'],
+          config,
+          createClient: createLedgerClient,
+          createToken: createSandboxToken,
+          docker,
+          findDarFile,
+          mkdir: (dir: string) => fs.promises.mkdir(dir, {recursive: true}).then(() => undefined),
+          output: out,
+          readFile: (p: string) => fs.promises.readFile(p),
+          rmdir: (dir: string) => fs.promises.rm(dir, {force: true, recursive: true}),
+          watch: (paths, opts) => watch(paths, opts),
+          writeFile: (p: string, content: string) => fs.promises.writeFile(p, content, 'utf8'),
         })
+
+        server = fullServer
+
+        await fullServer.start({
+          basePort: flags['base-port'],
+          projectDir: process.cwd(),
+          signal: controller.signal,
+        })
+
+        if (flags.json) {
+          out.result({
+            data: {
+              mode: 'full',
+              parties: config.parties?.map(p => p.name) ?? [],
+              status: 'running',
+            },
+            success: true,
+          })
+        }
+      } else {
+        // Default: sandbox mode
+        const sandboxServer = createDevServer({
+          config,
+          createClient: createLedgerClient,
+          createToken: createSandboxToken,
+          findDarFile,
+          isPortInUse,
+          output: out,
+          readFile: (p) => fs.promises.readFile(p),
+          sdk: createDamlSdk({runner}),
+          watch: (paths, opts) => watch(paths, opts),
+        })
+
+        server = sandboxServer
+
+        await sandboxServer.start({
+          jsonApiPort: flags['json-api-port'],
+          port: flags.port,
+          projectDir: process.cwd(),
+          signal: controller.signal,
+        })
+
+        if (flags.json) {
+          out.result({
+            data: {
+              jsonApiPort: flags['json-api-port'],
+              mode: 'sandbox',
+              parties: config.parties?.map(p => p.name) ?? [],
+              port: flags.port,
+              status: 'running',
+            },
+            success: true,
+          })
+        }
       }
 
       // Keep process alive until shutdown signal

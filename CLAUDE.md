@@ -8,11 +8,11 @@ cantonctl is an institutional-grade CLI toolchain for Canton Network — the ent
 
 ```bash
 npm install                         # Install dependencies
-npm test                            # Run 297 unit tests (project: unit)
+npm test                            # Run 361 unit tests (project: unit)
 npm run test:e2e:sdk                # Run 63 SDK E2E tests (project: e2e-sdk)
 npm run test:e2e:sandbox            # Run 9 sandbox E2E tests (project: e2e-sandbox)
 npm run test:e2e                    # Run all 72 E2E tests
-npm run test:all                    # Run all 369 tests
+npm run test:all                    # Run all 433 tests
 npm run test:coverage               # Coverage report
 npm run build                       # Compile TypeScript to dist/
 npm run ci                          # Local CI check (native)
@@ -111,6 +111,9 @@ The GitHub Actions workflow (`.github/workflows/ci.yml`) has four jobs:
 | `repl/parser.ts` | `parseCommand(input)` | REPL command grammar shared with future `exec` command |
 | `repl/executor.ts` | `createExecutor(deps)` | Dispatches parsed REPL commands to LedgerClient |
 | `repl/completer.ts` | `createCompleter(deps)` | Tab completion for REPL (commands, parties, flags) |
+| `topology.ts` | `generateTopology(opts)` | Pure function: generates Docker Compose + Canton HOCON + bootstrap script from config |
+| `docker.ts` | `createDockerManager(deps)` | Docker Compose lifecycle: checkAvailable, composeUp, composeDown, composeLogs |
+| `dev-server-full.ts` | `createFullDevServer(deps)` | Multi-node dev server: Docker topology, multi-participant health, cross-node hot-reload |
 | `cleaner.ts` | `createCleaner(deps)` | Build artifact cleanup (.daml/, dist/, node_modules/) |
 | `keytar-backend.ts` | `createBackendWithFallback()` | OS keychain backend via keytar with in-memory fallback |
 
@@ -156,7 +159,7 @@ vi.spyOn(process.stdout, 'write').mockReturnValue(true)
 
 - E1xxx: Configuration (E1001 not found, E1002 invalid YAML, E1003 schema violation, E1004 directory exists)
 - E2xxx: SDK/Tools (E2001 not installed, E2002 version mismatch, E2003 command failed)
-- E3xxx: Sandbox (E3001 start failed, E3002 port in use, E3003 health timeout)
+- E3xxx: Sandbox (E3001 start failed, E3002 port in use, E3003 health timeout, E3004 Docker not available, E3005 Docker Compose failed)
 - E4xxx: Build (E4001 Daml error, E4002 DAR not found)
 - E5xxx: Test (E5001 execution failed)
 - E6xxx: Deploy (E6001 auth failed, E6002 unreachable, E6003 upload failed, E6004 exists)
@@ -181,8 +184,7 @@ vi.spyOn(process.stdout, 'write').mockReturnValue(true)
 | Phase 3: Simple commands (build, test, status) | Complete (builder, test-runner, status with real DamlSdk/LedgerClient) |
 | Phase 4: Deploy, console, auth/hooks groundwork | Complete (deployer, credential-store, auth commands, repl/parser, repl/executor, repl/completer, plugin-hooks) |
 | Phase 5: Polish (E2E, hooks integration, keychain, clean, CI, docs) | Complete (hook integration into commands, keytar backend, clean command, deploy/status E2E, CI workflow, task/concept docs) |
-
-`dev --full` remains deferred until after the v1 core flow.
+| Phase 6: `dev --full` multi-node topology | In progress (topology generation, Docker lifecycle, multi-participant dev server — see ADR-0014) |
 
 ## Config schema (cantonctl.yaml)
 
