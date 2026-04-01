@@ -16,26 +16,11 @@ import {execSync} from 'node:child_process'
 
 import {loadConfig} from '../../src/lib/config.js'
 import {scaffoldProject, type Template} from '../../src/lib/scaffold.js'
+import {ENV_PATH, hasDaml, SDK_VERSION} from './helpers.js'
 
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
-
-const DAML_PATH = `${os.homedir()}/.daml/bin`
-const JAVA_PATH = '/opt/homebrew/opt/openjdk@21/bin'
-const ENV_PATH = `${JAVA_PATH}:${DAML_PATH}:${process.env.PATH}`
-
-function hasDaml(): boolean {
-  try {
-    execSync('daml version --no-legacy-assistant-warning', {
-      env: {...process.env, PATH: ENV_PATH},
-      stdio: 'pipe',
-    })
-    return true
-  } catch {
-    return false
-  }
-}
 
 function run(cmd: string, cwd: string): {stdout: string; stderr: string; exitCode: number} {
   try {
@@ -57,7 +42,6 @@ function run(cmd: string, cwd: string): {stdout: string; stderr: string; exitCod
 }
 
 const SDK_AVAILABLE = hasDaml()
-const SDK_VERSION = '3.4.11'
 const itWithSdk = SDK_AVAILABLE ? it : it.skip
 
 // ---------------------------------------------------------------------------

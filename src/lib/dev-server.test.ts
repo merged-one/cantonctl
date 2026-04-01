@@ -64,6 +64,7 @@ function createMockProcess(): SpawnedProcess & {_exitCallbacks: Array<(code: num
     _exitCallbacks: exitCallbacks,
     kill: vi.fn(),
     onExit(cb: (code: number | null) => void) { exitCallbacks.push(cb) },
+    waitForExit: vi.fn().mockResolvedValue(0),
     pid: 12345,
     stderr: null,
     stdout: null,

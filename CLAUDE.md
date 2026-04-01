@@ -8,11 +8,15 @@ cantonctl is an institutional-grade CLI toolchain for Canton Network — the ent
 
 ```bash
 npm install                         # Install dependencies
-npm test                            # Run 297 unit tests
-npm run test:e2e                    # Run 72 E2E tests (requires Daml SDK + Java 21)
+npm test                            # Run 297 unit tests (project: unit)
+npm run test:e2e:sdk                # Run 63 SDK E2E tests (project: e2e-sdk)
+npm run test:e2e:sandbox            # Run 9 sandbox E2E tests (project: e2e-sandbox)
+npm run test:e2e                    # Run all 72 E2E tests
 npm run test:all                    # Run all 369 tests
-npm run test:coverage               # Coverage report (99.9% statements)
+npm run test:coverage               # Coverage report
 npm run build                       # Compile TypeScript to dist/
+npm run ci                          # Local CI check (native)
+./scripts/ci-local.sh --docker      # Local CI check (Docker — exact GitHub Actions parity)
 ./scripts/install-prerequisites.sh  # Install Daml SDK + Java 21
 ```
 
@@ -24,6 +28,59 @@ npm run build                       # Compile TypeScript to dist/
 4. **CantonctlError for all errors**: Every error is a `CantonctlError` with code (E1xxx-E8xxx), suggestion, and docs URL. Never throw bare `Error` or use `this.error()` in commands.
 5. **Dual output**: Every command supports `--json` flag via `OutputWriter`. Use `createOutput({json: flags.json})`.
 6. **Thin command wrappers**: Commands in `src/commands/` are thin oclif wrappers. All logic lives in `src/lib/` modules.
+7. **CI parity**: Code must pass in Docker (`./scripts/ci-local.sh --docker`) before pushing. See CI rules below.
+
+## CI parity rules (non-negotiable)
+
+Local and GitHub Actions must run identical steps. Passing locally must guarantee passing on CI.
+
+### Verify before pushing
+
+Run `./scripts/ci-local.sh --docker` (or `npm run ci` for native). The `--docker` flag runs inside an ubuntu container with the exact same Node, Java, and Daml SDK versions as GitHub Actions. This is the gold standard.
+
+### Cross-platform code — no hardcoded paths
+
+- **Never hardcode OS-specific paths** in source or test files. No `/opt/homebrew/...`, no `/usr/local/...`.
+- Java resolution: Use `JAVA_HOME/bin` (set by `actions/setup-java` on CI, sdkman/asdf/Homebrew locally). The `process-runner.ts` and `test/e2e/helpers.ts` handle this — use them.
+- Daml resolution: Use `~/.daml/bin` or expect it on `PATH`.
+- New E2E tests must import `{hasDaml, SDK_VERSION, ENV_PATH}` from `test/e2e/helpers.ts` — never define their own path constants.
+
+### Test project structure
+
+Tests are organized into three vitest projects in `vitest.config.ts`:
+
+| Project | Files | Isolation | Purpose |
+|---------|-------|-----------|---------|
+| `unit` | `src/**/*.test.ts` | Default (threads) | Fast, no external deps |
+| `e2e-sdk` | `test/e2e/{init,build,test-cmd}.e2e.test.ts` | Default (threads) | Requires Daml SDK + Java |
+| `e2e-sandbox` | `test/e2e/{dev,deploy,status}.e2e.test.ts` | `pool: 'forks'`, `singleFork: true` | Requires Canton sandbox (JVM) |
+
+**Why forks for sandbox tests**: Vitest's default thread pool kills JVM child processes when a test file completes. The `forks` pool isolates each file in its own Node.js process, preventing cross-file interference between Canton sandbox JVM process trees.
+
+**Adding new E2E tests**: Add the file path to the appropriate project's `include` array in `vitest.config.ts`. If the test starts a Canton sandbox, it goes in `e2e-sandbox`. If it only needs the Daml SDK CLI, it goes in `e2e-sdk`.
+
+### SpawnedProcess lifecycle
+
+Long-running processes (Canton sandbox) must be properly cleaned up:
+- `stop()` must call `kill()` then `await waitForExit()` — never fire-and-forget.
+- Mock `SpawnedProcess` objects must include `waitForExit: vi.fn().mockResolvedValue(0)`.
+
+### CI workflow structure
+
+The GitHub Actions workflow (`.github/workflows/ci.yml`) has four jobs:
+- **`unit-tests`** — Matrix: Node 18/20/22. Runs on every push and PR. Required.
+- **`e2e-sdk-tests`** — Node 22 + Java 21 + Daml SDK. Runs on every push and PR. Required.
+- **`e2e-sandbox-tests`** — Same as SDK + Canton sandbox. Runs on main pushes only. Informational (not in gate).
+- **`all-green`** — Gate job. Depends on `unit-tests` + `e2e-sdk-tests`. The only required status check in branch protection.
+
+### Docker CI environment
+
+`Dockerfile.ci` replicates the GitHub Actions runner:
+- Ubuntu 24.04 (matches `ubuntu-latest`)
+- Node 22 (override with `NODE_VERSION=18 docker compose -f docker-compose.ci.yml build ci`)
+- Java 21 Temurin (matches `actions/setup-java distribution: temurin`)
+- Daml SDK 3.4.11 (matches CI install step)
+- `JAVA_OPTS: -Xms512M -Xmx2G -XX:+UseSerialGC` for sandbox tests (matches CI env)
 
 ## Module layout
 
@@ -69,6 +126,18 @@ const config = await loadConfig({dir: '/project', fs})
 ```ts
 const runner = {run: vi.fn(), spawn: vi.fn(), which: vi.fn()}
 runner.which.mockImplementation(async (cmd) => cmd === 'dpm' ? '/bin/dpm' : null)
+```
+
+**SpawnedProcess mocks** — Must include `waitForExit`:
+```ts
+const mockProc: SpawnedProcess = {
+  kill: vi.fn(),
+  onExit: vi.fn(),
+  waitForExit: vi.fn().mockResolvedValue(0),
+  pid: 12345,
+  stderr: null,
+  stdout: null,
+}
 ```
 
 **LedgerClient tests** — Mock fetch:

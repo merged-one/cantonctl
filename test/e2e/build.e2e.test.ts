@@ -7,24 +7,12 @@ import * as fs from 'node:fs'
 import * as os from 'node:os'
 import * as path from 'node:path'
 import {afterAll, beforeAll, describe, expect, it} from 'vitest'
-import {execSync} from 'node:child_process'
 
 import {createBuilder} from '../../src/lib/builder.js'
 import {createDamlSdk} from '../../src/lib/daml.js'
 import {createProcessRunner} from '../../src/lib/process-runner.js'
 import {scaffoldProject, type Template} from '../../src/lib/scaffold.js'
-
-const DAML_PATH = `${os.homedir()}/.daml/bin`
-const JAVA_PATH = '/opt/homebrew/opt/openjdk@21/bin'
-const ENV_PATH = `${JAVA_PATH}:${DAML_PATH}:${process.env.PATH}`
-const SDK_VERSION = '3.4.11'
-
-function hasDaml(): boolean {
-  try {
-    execSync('daml version --no-legacy-assistant-warning', {env: {...process.env, PATH: ENV_PATH}, stdio: 'pipe'})
-    return true
-  } catch { return false }
-}
+import {hasDaml, SDK_VERSION} from './helpers.js'
 
 async function findDarFile(dir: string): Promise<string | null> {
   try {

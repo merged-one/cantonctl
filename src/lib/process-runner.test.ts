@@ -55,6 +55,7 @@ describe('ProcessRunner (mock)', () => {
     const mockProc: SpawnedProcess = {
       kill: vi.fn(),
       onExit: vi.fn(),
+      waitForExit: vi.fn().mockResolvedValue(0),
       pid: 12345,
       stderr: null,
       stdout: null,
@@ -72,6 +73,7 @@ describe('ProcessRunner (mock)', () => {
     runner.spawn.mockReturnValue({
       kill: killFn,
       onExit: vi.fn(),
+      waitForExit: vi.fn().mockResolvedValue(0),
       pid: 99,
       stderr: null,
       stdout: null,
@@ -88,6 +90,7 @@ describe('ProcessRunner (mock)', () => {
     runner.spawn.mockReturnValue({
       kill: vi.fn(),
       onExit: (cb: (code: number | null) => void) => exitCallbacks.push(cb),
+      waitForExit: vi.fn().mockResolvedValue(0),
       pid: 99,
       stderr: null,
       stdout: null,

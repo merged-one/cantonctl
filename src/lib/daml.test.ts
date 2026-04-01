@@ -204,6 +204,7 @@ describe('DamlSdk', () => {
       const mockProc: SpawnedProcess = {
         kill: vi.fn(),
         onExit: vi.fn(),
+        waitForExit: vi.fn().mockResolvedValue(0),
         pid: 9999,
         stderr: null,
         stdout: null,
@@ -228,6 +229,7 @@ describe('DamlSdk', () => {
       const mockProc: SpawnedProcess = {
         kill: vi.fn(),
         onExit: vi.fn(),
+        waitForExit: vi.fn().mockResolvedValue(0),
         pid: 8888,
         stderr: null,
         stdout: null,
@@ -252,6 +254,7 @@ describe('DamlSdk', () => {
       const mockProc: SpawnedProcess = {
         kill: vi.fn(),
         onExit: vi.fn(),
+        waitForExit: vi.fn().mockResolvedValue(0),
         pid: 7777,
         stderr: null,
         stdout: null,

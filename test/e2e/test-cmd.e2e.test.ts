@@ -13,18 +13,7 @@ import {createDamlSdk} from '../../src/lib/daml.js'
 import {createProcessRunner} from '../../src/lib/process-runner.js'
 import {createTestRunner} from '../../src/lib/test-runner.js'
 import {scaffoldProject} from '../../src/lib/scaffold.js'
-
-const DAML_PATH = `${os.homedir()}/.daml/bin`
-const JAVA_PATH = '/opt/homebrew/opt/openjdk@21/bin'
-const ENV_PATH = `${JAVA_PATH}:${DAML_PATH}:${process.env.PATH}`
-const SDK_VERSION = '3.4.11'
-
-function hasDaml(): boolean {
-  try {
-    execSync('daml version --no-legacy-assistant-warning', {env: {...process.env, PATH: ENV_PATH}, stdio: 'pipe'})
-    return true
-  } catch { return false }
-}
+import {ENV_PATH, hasDaml, SDK_VERSION} from './helpers.js'
 
 const SDK_AVAILABLE = hasDaml()
 const describeWithSdk = SDK_AVAILABLE ? describe : describe.skip

@@ -10,7 +10,6 @@ import * as fs from 'node:fs'
 import * as os from 'node:os'
 import * as path from 'node:path'
 import {afterAll, beforeAll, describe, expect, it} from 'vitest'
-import {execSync} from 'node:child_process'
 
 import {createDamlSdk} from '../../src/lib/daml.js'
 import {createDevServer, type DevServer} from '../../src/lib/dev-server.js'
@@ -19,29 +18,14 @@ import {createLedgerClient} from '../../src/lib/ledger-client.js'
 import {createOutput} from '../../src/lib/output.js'
 import {createProcessRunner} from '../../src/lib/process-runner.js'
 import {scaffoldProject} from '../../src/lib/scaffold.js'
+import {hasDaml, SDK_VERSION} from './helpers.js'
 
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 
-const DAML_PATH = `${os.homedir()}/.daml/bin`
-const JAVA_PATHS = ['/opt/homebrew/opt/openjdk@21/bin', '/usr/local/opt/openjdk@21/bin']
-const ENV_PATH = [...JAVA_PATHS, DAML_PATH, process.env.PATH].join(path.delimiter)
-const SDK_VERSION = '3.4.11'
 const CANTON_PORT = 5041
 const JSON_API_PORT = 7611
-
-function hasDaml(): boolean {
-  try {
-    execSync('daml version --no-legacy-assistant-warning', {
-      env: {...process.env, PATH: ENV_PATH},
-      stdio: 'pipe',
-    })
-    return true
-  } catch {
-    return false
-  }
-}
 
 const SDK_AVAILABLE = hasDaml()
 const describeWithSdk = SDK_AVAILABLE ? describe : describe.skip

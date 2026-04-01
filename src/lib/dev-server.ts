@@ -271,7 +271,10 @@ export function createDevServer(deps: DevServerDeps): DevServer {
 
       if (sandboxProcess) {
         sandboxProcess.kill()
+        await sandboxProcess.waitForExit()
         sandboxProcess = null
+        // Allow OS to reclaim ports and file locks from the JVM process tree
+        await new Promise(r => setTimeout(r, 500))
       }
     },
   }

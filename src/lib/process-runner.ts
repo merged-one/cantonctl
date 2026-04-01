@@ -37,6 +37,8 @@ export interface SpawnedProcess {
   stderr: NodeJS.ReadableStream | null
   kill(signal?: NodeJS.Signals): void
   onExit(callback: (code: number | null) => void): void
+  /** Wait for the process to exit after kill(). Resolves with exit code. */
+  waitForExit(): Promise<number | null>
 }
 
 export interface RunOptions {
@@ -63,6 +65,9 @@ export interface ProcessRunner {
 export function createProcessRunner(): ProcessRunner {
   const defaultToolPaths = [
     path.join(os.homedir(), '.daml', 'bin'),
+    // JAVA_HOME/bin is set by actions/setup-java on CI and sdkman/asdf locally
+    ...(process.env.JAVA_HOME ? [path.join(process.env.JAVA_HOME, 'bin')] : []),
+    // macOS Homebrew paths
     '/opt/homebrew/opt/openjdk@21/bin',
     '/usr/local/opt/openjdk@21/bin',
   ]
@@ -137,17 +142,22 @@ export function createProcessRunner(): ProcessRunner {
 
     spawn(cmd: string, args: string[], opts?: RunOptions): SpawnedProcess {
       const proc: ResultPromise = execa(cmd, args, {
+        cleanup: true,
         cwd: opts?.cwd,
         env: resolveEnv(opts?.env),
+        forceKillAfterDelay: 5000,
         reject: false,
         stdio: ['ignore', 'pipe', 'pipe'],
       })
 
       const exitCallbacks: Array<(code: number | null) => void> = []
-      proc.then(result => {
-        for (const cb of exitCallbacks) cb(result.exitCode ?? null)
+      const exitPromise = proc.then(result => {
+        const code = result.exitCode ?? null
+        for (const cb of exitCallbacks) cb(code)
+        return code
       }).catch(() => {
         for (const cb of exitCallbacks) cb(1)
+        return 1 as number | null
       })
 
       return {
@@ -156,6 +166,9 @@ export function createProcessRunner(): ProcessRunner {
         },
         onExit(callback: (code: number | null) => void) {
           exitCallbacks.push(callback)
+        },
+        waitForExit() {
+          return exitPromise
         },
         get pid() {
           return proc.pid

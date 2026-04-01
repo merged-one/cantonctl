@@ -22,7 +22,38 @@ jobs:
       - run: npm run build
       - run: npm test
 
-  e2e-tests:
+  e2e-sdk-tests:
+    name: e2e-tests (sdk)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+      - name: Cache Daml SDK
+        uses: actions/cache@v4
+        with:
+          path: ~/.daml
+          key: daml-sdk-3.4.11-${{ runner.os }}
+      - name: Install Daml SDK
+        run: |
+          if [ ! -f "$HOME/.daml/bin/daml" ]; then
+            curl -sSL https://get.daml.com/ | sh -s 3.4.11
+          fi
+          echo "$HOME/.daml/bin" >> $GITHUB_PATH
+      - run: npm ci
+      - run: npm run build
+      - name: Run SDK E2E tests
+        run: npm run test:e2e:sdk
+        timeout-minutes: 10
+
+  e2e-sandbox-tests:
+    name: e2e-tests (sandbox)
     runs-on: ubuntu-latest
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     steps:
@@ -35,11 +66,50 @@ jobs:
         with:
           distribution: temurin
           java-version: 21
+      - name: Cache Daml SDK
+        uses: actions/cache@v4
+        with:
+          path: ~/.daml
+          key: daml-sdk-3.4.11-${{ runner.os }}
       - name: Install Daml SDK
         run: |
-          curl -sSL https://get.daml.com/ | sh -s 3.4.11
+          if [ ! -f "$HOME/.daml/bin/daml" ]; then
+            curl -sSL https://get.daml.com/ | sh -s 3.4.11
+          fi
           echo "$HOME/.daml/bin" >> $GITHUB_PATH
       - run: npm ci
       - run: npm run build
-      - run: npm run test:e2e
+      - name: Run sandbox E2E tests
+        run: npm run test:e2e:sandbox
         timeout-minutes: 10
+        env:
+          JAVA_OPTS: -Xms512M -Xmx2G -XX:+UseSerialGC
+      - name: Upload test artifacts on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: sandbox-e2e-failure-logs
+          path: |
+            /tmp/cantonctl-e2e-*/
+          retention-days: 7
+
+  # Single gate job — the only required status check in branch protection.
+  # Sandbox tests are informational: failures are visible but don't block merge.
+  all-green:
+    if: always()
+    needs: [unit-tests, e2e-sdk-tests]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify required jobs passed
+        run: |
+          echo "unit-tests: ${{ needs.unit-tests.result }}"
+          echo "e2e-sdk-tests: ${{ needs.e2e-sdk-tests.result }}"
+          if [[ "${{ needs.unit-tests.result }}" != "success" ]]; then
+            echo "::error::unit-tests failed"
+            exit 1
+          fi
+          if [[ "${{ needs.e2e-sdk-tests.result }}" != "success" ]]; then
+            echo "::error::e2e-sdk-tests failed"
+            exit 1
+          fi
+          echo "All required checks passed"

@@ -15,7 +15,6 @@ import * as fs from 'node:fs'
 import * as os from 'node:os'
 import * as path from 'node:path'
 import {afterAll, afterEach, beforeAll, describe, expect, it} from 'vitest'
-import {execSync} from 'node:child_process'
 
 import {loadConfig} from '../../src/lib/config.js'
 import {createDamlSdk} from '../../src/lib/daml.js'
@@ -25,27 +24,11 @@ import {createSandboxToken} from '../../src/lib/jwt.js'
 import {createOutput} from '../../src/lib/output.js'
 import {createProcessRunner} from '../../src/lib/process-runner.js'
 import {scaffoldProject} from '../../src/lib/scaffold.js'
+import {hasDaml, SDK_VERSION} from './helpers.js'
 
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
-
-const DAML_PATH = `${os.homedir()}/.daml/bin`
-const JAVA_PATH = '/opt/homebrew/opt/openjdk@21/bin'
-const ENV_PATH = `${JAVA_PATH}:${DAML_PATH}:${process.env.PATH}`
-const SDK_VERSION = '3.4.11'
-
-function hasDaml(): boolean {
-  try {
-    execSync('daml version --no-legacy-assistant-warning', {
-      env: {...process.env, PATH: ENV_PATH},
-      stdio: 'pipe',
-    })
-    return true
-  } catch {
-    return false
-  }
-}
 
 const SDK_AVAILABLE = hasDaml()
 const describeWithSdk = SDK_AVAILABLE ? describe : describe.skip

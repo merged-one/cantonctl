@@ -1,0 +1,91 @@
+# Dockerfile.ci — Reproduces the GitHub Actions CI environment locally.
+#
+# Matches: ubuntu-latest + actions/setup-node@v4 (Node 22)
+#        + actions/setup-java@v4 (Temurin 21)
+#        + Daml SDK 3.4.11
+#
+# Build:   docker build -f Dockerfile.ci -t cantonctl-ci .
+# Run:     docker run --rm cantonctl-ci              # all tests
+#          docker run --rm cantonctl-ci unit          # unit only
+#          docker run --rm cantonctl-ci e2e-sdk       # SDK E2E only
+#          docker run --rm cantonctl-ci e2e-sandbox   # sandbox E2E only
+
+FROM ubuntu:24.04
+
+ARG NODE_VERSION=22
+ARG JAVA_VERSION=21
+ARG DAML_SDK_VERSION=3.4.11
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+# ---------------------------------------------------------------------------
+# System packages (matches ubuntu-latest runner)
+# ---------------------------------------------------------------------------
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ca-certificates \
+    curl \
+    git \
+    gnupg \
+    && rm -rf /var/lib/apt/lists/*
+
+# ---------------------------------------------------------------------------
+# Java 21 — Eclipse Temurin (matches actions/setup-java distribution: temurin)
+# ---------------------------------------------------------------------------
+RUN curl -fsSL https://packages.adoptium.net/artifactory/api/gpg/key/public \
+    | gpg --dearmor -o /usr/share/keyrings/adoptium.gpg \
+    && echo "deb [signed-by=/usr/share/keyrings/adoptium.gpg] https://packages.adoptium.net/artifactory/deb $(. /etc/os-release && echo $VERSION_CODENAME) main" \
+    > /etc/apt/sources.list.d/adoptium.list \
+    && apt-get update \
+    && apt-get install -y --no-install-recommends temurin-${JAVA_VERSION}-jdk \
+    && rm -rf /var/lib/apt/lists/*
+
+# JAVA_HOME: Temurin installs to arch-specific path
+RUN ARCH=$(dpkg --print-architecture) && \
+    echo "JAVA_HOME=/usr/lib/jvm/temurin-${JAVA_VERSION}-jdk-${ARCH}" >> /etc/environment
+ENV JAVA_HOME=/usr/lib/jvm/temurin-21-jdk-arm64
+# Fallback: detect at runtime if needed
+RUN if [ -d /usr/lib/jvm/temurin-21-jdk-amd64 ]; then \
+      ln -sfn /usr/lib/jvm/temurin-21-jdk-amd64 /usr/lib/jvm/temurin-21-jdk; \
+    else \
+      ln -sfn /usr/lib/jvm/temurin-21-jdk-arm64 /usr/lib/jvm/temurin-21-jdk; \
+    fi
+ENV JAVA_HOME=/usr/lib/jvm/temurin-21-jdk
+ENV PATH="${JAVA_HOME}/bin:${PATH}"
+
+# ---------------------------------------------------------------------------
+# Node.js (matches actions/setup-node)
+# ---------------------------------------------------------------------------
+RUN curl -fsSL https://deb.nodesource.com/setup_${NODE_VERSION}.x | bash - \
+    && apt-get install -y --no-install-recommends nodejs \
+    && rm -rf /var/lib/apt/lists/* \
+    && corepack enable
+
+# ---------------------------------------------------------------------------
+# Daml SDK (matches CI install step)
+# ---------------------------------------------------------------------------
+RUN curl -sSL https://get.daml.com/ | sh -s ${DAML_SDK_VERSION}
+ENV PATH="/root/.daml/bin:${PATH}"
+
+# ---------------------------------------------------------------------------
+# Application
+# ---------------------------------------------------------------------------
+WORKDIR /app
+
+# Install deps first (layer caching)
+COPY package.json package-lock.json ./
+RUN npm ci
+
+# Copy source
+COPY . .
+
+# Build
+RUN npm run build
+
+# ---------------------------------------------------------------------------
+# Entrypoint — run CI steps
+# ---------------------------------------------------------------------------
+COPY scripts/ci-docker-entrypoint.sh /usr/local/bin/ci-entrypoint.sh
+RUN chmod +x /usr/local/bin/ci-entrypoint.sh
+
+ENTRYPOINT ["ci-entrypoint.sh"]
+CMD ["all"]

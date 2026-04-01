@@ -1,0 +1,25 @@
+# docker-compose.ci.yml — Local CI that matches GitHub Actions exactly.
+#
+# Usage:
+#   docker compose -f docker-compose.ci.yml run --rm ci          # all tests
+#   docker compose -f docker-compose.ci.yml run --rm ci unit     # unit only
+#   docker compose -f docker-compose.ci.yml run --rm ci e2e-sdk  # SDK E2E
+#   docker compose -f docker-compose.ci.yml run --rm ci e2e-sandbox
+#   docker compose -f docker-compose.ci.yml run --rm ci shell    # debug shell
+#
+#   # Test against a specific Node version (CI tests 18, 20, 22):
+#   NODE_VERSION=18 docker compose -f docker-compose.ci.yml build ci
+#   docker compose -f docker-compose.ci.yml run --rm ci unit
+
+services:
+  ci:
+    build:
+      context: .
+      dockerfile: Dockerfile.ci
+      args:
+        NODE_VERSION: ${NODE_VERSION:-22}
+        JAVA_VERSION: 21
+        DAML_SDK_VERSION: 3.4.11
+    tmpfs:
+      # Sandbox writes temp files — tmpfs avoids slow overlay writes
+      - /tmp:exec,size=2G
