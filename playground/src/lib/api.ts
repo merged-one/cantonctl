@@ -93,6 +93,27 @@ export const api = {
   getMultiPartyContracts: (parties: string[]) =>
     request<{contracts: Record<string, ActiveContract[]>}>(`/api/contracts/multi?parties=${parties.join(',')}`),
 
+  getTopology: () => request<{
+    mode: 'single' | 'multi'
+    participants: Array<{name: string; port: number}>
+    synchronizer: {admin: number; publicApi: number} | null
+    topology: {
+      participants: Array<{name: string; parties: string[]; ports: {admin: number; jsonApi: number; ledgerApi: number}}>
+      synchronizer: {admin: number; publicApi: number}
+    } | null
+  }>('/api/topology'),
+
+  getTopologyStatus: () => request<{
+    participants: Array<{
+      name: string
+      healthy: boolean
+      version?: string
+      port: number
+      parties: Array<Record<string, unknown>>
+      contractCount: number
+    }>
+  }>('/api/topology/status'),
+
   build: () => request<{darPath?: string; durationMs?: number}>('/api/build', {method: 'POST'}),
 
   test: () => request<{passed: boolean; output: string}>('/api/test', {method: 'POST'}),

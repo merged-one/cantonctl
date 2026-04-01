@@ -1,4 +1,4 @@
-import {Columns2, LayoutPanelLeft, WifiOff} from 'lucide-react'
+import {Columns2, LayoutPanelLeft, Network, WifiOff} from 'lucide-react'
 import {useState} from 'react'
 import {useQuery} from '@tanstack/react-query'
 import {api} from './lib/api'
@@ -12,8 +12,9 @@ import {InteractPanel} from './panels/InteractPanel'
 import {PartySelector} from './panels/PartySelector'
 import {SplitView} from './panels/SplitView'
 import {Terminal} from './panels/Terminal'
+import {TopologyView} from './panels/TopologyView'
 
-type ViewMode = 'editor' | 'split'
+type ViewMode = 'editor' | 'split' | 'topology'
 
 export function App() {
   const files = useFiles()
@@ -70,6 +71,17 @@ export function App() {
             >
               <Columns2 className="h-3 w-3" />
               Multi-Party
+            </button>
+            <button
+              onClick={() => setViewMode('topology')}
+              className={`flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-medium transition ${
+                viewMode === 'topology'
+                  ? 'bg-zinc-700 text-zinc-200'
+                  : 'text-zinc-500 hover:text-zinc-300'
+              }`}
+            >
+              <Network className="h-3 w-3" />
+              Topology
             </button>
           </div>
 
@@ -140,7 +152,7 @@ export function App() {
               />
             </div>
           </>
-        ) : (
+        ) : viewMode === 'split' ? (
           /* Split View: Multi-Party */
           <div className="flex-1 flex flex-col overflow-hidden">
             <div className="flex-1 overflow-hidden">
@@ -149,6 +161,22 @@ export function App() {
                 templates={templates}
                 projectName={projectName}
               />
+            </div>
+            <div className="h-40 shrink-0 border-t border-zinc-800/50">
+              <Terminal
+                logs={build.logs}
+                building={build.building}
+                testing={build.testing}
+                onBuild={build.triggerBuild}
+                onTest={build.triggerTest}
+              />
+            </div>
+          </div>
+        ) : (
+          /* Topology View */
+          <div className="flex-1 flex flex-col overflow-hidden">
+            <div className="flex-1 overflow-hidden">
+              <TopologyView />
             </div>
             <div className="h-40 shrink-0 border-t border-zinc-800/50">
               <Terminal
