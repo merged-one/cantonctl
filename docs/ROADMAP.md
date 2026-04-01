@@ -189,7 +189,7 @@ The plugin ecosystem is what transforms a CLI tool into a platform. Hardhat's 19
 |------|--------|-------|-------------|
 | Documentation site (Docusaurus/Mintlify) | 2 weeks | hardhat.org | Searchable, versioned documentation |
 | API reference (auto-generated) | 1 week | Hardhat API docs | Generated from TypeScript types |
-| Interactive playground | 2 weeks | — | Browser-based `cantonctl` sandbox (WebContainer) |
+| Interactive playground | 2 weeks | — | Hosted Canton sandbox with browser frontend (JVM precludes in-browser execution) |
 | Tutorial series (10+ articles) | 2 weeks | Hardhat tutorials | Progressive complexity from "Hello World" to DeFi |
 | Cookbook (recipes) | 1 week | — | Common patterns: multi-party, upgrades, testing |
 | Multilingual docs (i18n) | 2 weeks | — | Chinese, Korean, Japanese (key DeFi markets) |
