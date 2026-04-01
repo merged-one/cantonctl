@@ -117,6 +117,8 @@ The GitHub Actions workflow (`.github/workflows/ci.yml`) has four jobs:
 | `dev-server-full.ts` | `createFullDevServer(deps)` | Multi-node dev server: Docker topology, multi-participant health, cross-node hot-reload |
 | `cleaner.ts` | `createCleaner(deps)` | Build artifact cleanup (.daml/, dist/, node_modules/) |
 | `keytar-backend.ts` | `createBackendWithFallback()` | OS keychain backend via keytar with in-memory fallback |
+| `serve.ts` | `createServeServer(deps)` | Canton IDE Protocol server: REST + WebSocket API for any IDE client |
+| `doctor.ts` | `createDoctor(deps)` | Environment diagnostics: Node, Java, SDK, Docker, ports |
 
 ## Test patterns
 

@@ -1,27 +1,25 @@
 /**
- * @module commands/playground
+ * @module commands/serve
  *
- * Starts a Remix-like browser IDE for Canton development.
- * This is a convenience wrapper: it starts `cantonctl serve` and serves
- * the browser UI on top of the same server.
+ * Starts the Canton IDE Protocol server — a headless REST + WebSocket API
+ * that any IDE client can connect to (VS Code, Neovim, browser playground).
  *
- * For headless mode (VS Code, Neovim, other IDEs), use `cantonctl serve`.
+ * This is the generic interface. `cantonctl playground` adds the browser UI
+ * on top of this same server.
  *
  * @example
  * ```bash
- * cantonctl playground                   # Open browser IDE at localhost:4000
- * cantonctl playground --port 8080       # Custom port
- * cantonctl playground --no-open         # Don't auto-open browser
+ * cantonctl serve                     # Start API server at localhost:4000
+ * cantonctl serve --port 8080         # Custom port
+ * cantonctl serve --no-sandbox        # Connect to existing sandbox
  * ```
  */
 
 import {Command, Flags} from '@oclif/core'
-import {exec} from 'node:child_process'
 import {watch} from 'chokidar'
 import * as fs from 'node:fs'
 import * as net from 'node:net'
 import * as path from 'node:path'
-import {fileURLToPath} from 'node:url'
 
 import {createBuilder} from '../lib/builder.js'
 import {loadConfig} from '../lib/config.js'
@@ -34,9 +32,6 @@ import {createOutput} from '../lib/output.js'
 import {createProcessRunner} from '../lib/process-runner.js'
 import {createServeServer} from '../lib/serve.js'
 import {createTestRunner} from '../lib/test-runner.js'
-
-const __filename = fileURLToPath(import.meta.url)
-const __dirname = path.dirname(__filename)
 
 function isPortInUse(port: number): Promise<boolean> {
   return new Promise((resolve) => {
@@ -51,30 +46,24 @@ function isPortInUse(port: number): Promise<boolean> {
   })
 }
 
-function openBrowser(url: string): void {
-  const cmd = process.platform === 'darwin' ? 'open'
-    : process.platform === 'win32' ? 'start'
-      : 'xdg-open'
-  exec(`${cmd} ${url}`)
-}
-
-export default class Playground extends Command {
-  static override description = 'Open a Remix-like browser IDE for Canton development'
+export default class Serve extends Command {
+  static override description = 'Start the Canton IDE Protocol server (REST + WebSocket)'
 
   static override examples = [
-    '<%= config.bin %> playground',
-    '<%= config.bin %> playground --port 8080',
-    '<%= config.bin %> playground --no-open',
+    '<%= config.bin %> serve',
+    '<%= config.bin %> serve --port 8080',
+    '<%= config.bin %> serve --no-sandbox',
+    '<%= config.bin %> serve --json',
   ]
 
   static override flags = {
+    json: Flags.boolean({
+      default: false,
+      description: 'Output connection info as JSON',
+    }),
     'json-api-port': Flags.integer({
       default: 7575,
       description: 'Canton JSON Ledger API port',
-    }),
-    'no-open': Flags.boolean({
-      default: false,
-      description: 'Do not auto-open browser',
     }),
     'no-sandbox': Flags.boolean({
       default: false,
@@ -83,7 +72,7 @@ export default class Playground extends Command {
     port: Flags.integer({
       char: 'p',
       default: 4000,
-      description: 'Playground server port',
+      description: 'Server port',
     }),
     'sandbox-port': Flags.integer({
       default: 5001,
@@ -92,13 +81,14 @@ export default class Playground extends Command {
   }
 
   async run(): Promise<void> {
-    const {flags} = await this.parse(Playground)
-    const out = createOutput({json: false})
+    const {flags} = await this.parse(Serve)
+    const out = createOutput({json: flags.json})
     const projectDir = process.cwd()
 
+    // Verify we're in a cantonctl project
     if (!fs.existsSync(path.join(projectDir, 'cantonctl.yaml'))) {
       throw new CantonctlError(ErrorCode.CONFIG_NOT_FOUND, {
-        suggestion: 'Run "cantonctl init" first to create a project, then run "cantonctl playground" from the project directory.',
+        suggestion: 'Run "cantonctl init" first to create a project, then run "cantonctl serve" from the project directory.',
       })
     }
 
@@ -117,7 +107,6 @@ export default class Playground extends Command {
     // Start sandbox if needed
     let devServer: Awaited<ReturnType<typeof createDevServer>> | null = null
     if (!flags['no-sandbox']) {
-      out.log('')
       out.info('Starting Canton sandbox...')
 
       devServer = createDevServer({
@@ -147,14 +136,7 @@ export default class Playground extends Command {
       out.success('Canton sandbox ready')
     }
 
-    // Find playground UI static files
-    const possiblePaths = [
-      path.join(__dirname, '..', '..', 'playground', 'dist'),
-      path.join(__dirname, '..', 'playground'),
-    ]
-    const staticDir = possiblePaths.find(p => fs.existsSync(p))
-
-    // Create the serve server with UI
+    // Create serve dependencies
     const builder = createBuilder({
       findDarFile: async (dir: string) => {
         try {
@@ -183,30 +165,33 @@ export default class Playground extends Command {
       ledgerUrl,
       port: flags.port,
       projectDir,
-      staticDir,
     })
 
-    if (!staticDir) {
-      out.warn('Playground UI not found. API server is running at http://localhost:' + flags.port)
-      out.info('To build the playground UI: cd playground && npm install && npm run build')
+    out.result({
+      data: {
+        ledgerUrl,
+        port: flags.port,
+        projectDir,
+        protocol: 'canton-ide-protocol/v1',
+        websocket: `ws://localhost:${flags.port}`,
+      },
+      success: true,
+    })
+
+    if (!flags.json) {
+      out.log('')
+      out.log(`  API:         http://localhost:${flags.port}/api`)
+      out.log(`  WebSocket:   ws://localhost:${flags.port}`)
+      out.log(`  Ledger API:  ${ledgerUrl}`)
+      out.log(`  Project:     ${projectDir}`)
+      out.log('')
+      out.log('Connect any IDE client to this server.')
+      out.log('Press Ctrl+C to stop')
     }
 
-    if (!flags['no-open'] && staticDir) {
-      openBrowser(`http://localhost:${flags.port}`)
-    }
-
-    out.log('')
-    out.log(`  Playground:  http://localhost:${flags.port}`)
-    out.log(`  API:         http://localhost:${flags.port}/api`)
-    out.log(`  WebSocket:   ws://localhost:${flags.port}`)
-    out.log(`  Ledger API:  ${ledgerUrl}`)
-    out.log(`  Project:     ${projectDir}`)
-    out.log('')
-    out.log('Press Ctrl+C to stop')
-
+    // Wait for shutdown
     await new Promise<void>((resolve) => {
       const shutdown = async () => {
-        out.log('')
         out.info('Shutting down...')
         await server.stop()
         if (devServer) await devServer.stop()
