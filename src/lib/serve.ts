@@ -29,6 +29,7 @@ import * as path from 'node:path'
 import {WebSocketServer, type WebSocket} from 'ws'
 
 import type {Builder} from './builder.js'
+import {parseDamlSource, type DamlTemplate} from './daml-parser.js'
 import type {OutputWriter} from './output.js'
 import type {TestRunner} from './test-runner.js'
 
@@ -96,6 +97,32 @@ async function buildFileTree(dir: string, relativeTo: string): Promise<FileNode[
   }
 
   return nodes
+}
+
+// ---------------------------------------------------------------------------
+// Template discovery — scans .daml files and parses templates
+// ---------------------------------------------------------------------------
+
+async function scanDamlTemplates(projectDir: string): Promise<DamlTemplate[]> {
+  const damlDir = path.join(projectDir, 'daml')
+  const templates: DamlTemplate[] = []
+
+  try {
+    const entries = await fs.promises.readdir(damlDir, {recursive: true})
+    for (const entry of entries) {
+      const entryStr = String(entry)
+      if (!entryStr.endsWith('.daml')) continue
+
+      const filePath = path.join(damlDir, entryStr)
+      const source = await fs.promises.readFile(filePath, 'utf-8')
+      const result = parseDamlSource(source)
+      templates.push(...result.templates)
+    }
+  } catch {
+    // daml/ directory doesn't exist or can't be read
+  }
+
+  return templates
 }
 
 // ---------------------------------------------------------------------------
@@ -235,6 +262,62 @@ export function createServeServer(deps: ServeServerDeps): ServeServer {
           res.status(500).json({error: String(err)})
         }
       })
+
+      // ── Template Discovery ──────────────────────────────────────
+
+      app.get('/api/templates', async (_req: Request, res: Response) => {
+        try {
+          const templates = await scanDamlTemplates(projectDir)
+          res.json({templates})
+        } catch (err) {
+          res.status(500).json({error: String(err)})
+        }
+      })
+
+      app.get('/api/templates/:name', async (req: Request, res: Response) => {
+        try {
+          const templates = await scanDamlTemplates(projectDir)
+          const template = templates.find(t => t.name === String(req.params.name))
+          if (!template) {
+            res.status(404).json({error: `Template "${req.params.name}" not found`})
+            return
+          }
+
+          res.json(template)
+        } catch (err) {
+          res.status(500).json({error: String(err)})
+        }
+      })
+
+      // ── Multi-Party Contracts ─────────────────────────────────
+
+      app.get('/api/contracts/multi', async (req: Request, res: Response) => {
+        const partiesParam = req.query.parties as string
+        if (!partiesParam) {
+          res.status(400).json({error: 'parties query parameter required (comma-separated)'})
+          return
+        }
+
+        const partyIds = partiesParam.split(',').map(p => p.trim()).filter(Boolean)
+        try {
+          const results: Record<string, Array<Record<string, unknown>>> = {}
+          await Promise.all(
+            partyIds.map(async (party) => {
+              try {
+                const result = await client.getActiveContracts({filter: {party}})
+                results[party] = result.activeContracts
+              } catch {
+                results[party] = []
+              }
+            }),
+          )
+          res.json({contracts: results})
+        } catch (err) {
+          res.status(500).json({error: String(err)})
+        }
+      })
+
+      // ── Single-Party Contracts ────────────────────────────────
 
       app.get('/api/contracts', async (req: Request, res: Response) => {
         const party = req.query.party as string

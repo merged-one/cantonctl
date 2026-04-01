@@ -17,6 +17,26 @@ export interface ActiveContract {
   payload: Record<string, unknown>
 }
 
+export interface DamlField {
+  name: string
+  type: string
+}
+
+export interface DamlChoice {
+  name: string
+  returnType: string
+  args: DamlField[]
+  controller: string
+  consuming: boolean
+}
+
+export interface DamlTemplate {
+  name: string
+  fields: DamlField[]
+  choices: DamlChoice[]
+  signatory: string
+}
+
 export interface PartyDetails {
   party: string
   displayName?: string
@@ -62,6 +82,13 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({actAs, commands}),
     }),
+
+  getTemplates: () => request<{templates: DamlTemplate[]}>('/api/templates'),
+
+  getTemplate: (name: string) => request<DamlTemplate>(`/api/templates/${name}`),
+
+  getMultiPartyContracts: (parties: string[]) =>
+    request<{contracts: Record<string, ActiveContract[]>}>(`/api/contracts/multi?parties=${parties.join(',')}`),
 
   build: () => request<{darPath?: string; durationMs?: number}>('/api/build', {method: 'POST'}),
 
