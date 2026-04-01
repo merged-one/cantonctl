@@ -160,6 +160,37 @@ Every cantonctl error includes a code, human-readable message, actionable sugges
 
 ---
 
+### E3004 — Docker Not Available
+
+**Message:** Docker is not installed or not running.
+
+**Symptoms:**
+- Running `cantonctl dev --full` fails immediately
+- `docker` command not found on PATH
+
+**Resolution:**
+1. Install Docker Desktop: https://docs.docker.com/get-docker/
+2. Ensure Docker is running (check system tray icon)
+3. Verify with `docker --version`
+
+---
+
+### E3005 — Docker Compose Failed
+
+**Message:** Docker Compose operation failed.
+
+**Symptoms:**
+- `cantonctl dev --full` fails during topology startup
+- Docker Compose up/down commands return errors
+
+**Resolution:**
+1. Ensure Docker Desktop is running and `docker compose version` works
+2. Check for port conflicts on the base port range (default 10000+)
+3. Run `docker compose -f .cantonctl/docker-compose.yml logs` for details
+4. Try `cantonctl clean --force` to remove stale topology configs
+
+---
+
 ## E4xxx: Build
 
 ### E4001 — Daml Compilation Error
