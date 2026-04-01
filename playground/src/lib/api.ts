@@ -32,6 +32,7 @@ export interface DamlChoice {
 
 export interface DamlTemplate {
   name: string
+  module: string
   fields: DamlField[]
   choices: DamlChoice[]
   signatory: string
@@ -82,6 +83,8 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({actAs, commands}),
     }),
+
+  getProject: () => request<{name: string; version: string; projectDir: string}>('/api/project'),
 
   getTemplates: () => request<{templates: DamlTemplate[]}>('/api/templates'),
 

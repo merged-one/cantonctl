@@ -51,8 +51,9 @@ export interface LedgerClientLike {
   getVersion(signal?: AbortSignal): Promise<Record<string, unknown>>
   getParties(signal?: AbortSignal): Promise<{partyDetails: Array<Record<string, unknown>>}>
   getActiveContracts(params: {filter: {party: string; templateIds?: string[]}}, signal?: AbortSignal): Promise<{activeContracts: Array<Record<string, unknown>>}>
-  submitAndWait(request: {actAs: string[]; commandId?: string; commands: unknown[]}, signal?: AbortSignal): Promise<{transaction: Record<string, unknown>}>
+  submitAndWait(request: {actAs: string[]; commandId?: string; commands: unknown[]; userId?: string}, signal?: AbortSignal): Promise<{transaction: Record<string, unknown>}>
   allocateParty(params: {displayName: string; identifierHint?: string}, signal?: AbortSignal): Promise<{partyDetails: Record<string, unknown>}>
+  uploadDar(darBytes: Uint8Array, signal?: AbortSignal): Promise<{mainPackageId: string}>
 }
 
 export interface ServeEvent {
@@ -168,6 +169,24 @@ export function createServeServer(deps: ServeServerDeps): ServeServer {
 
       // ── REST API ────────────────────────────────────────────────
 
+      // Read daml.yaml for project metadata (package name for template IDs)
+      app.get('/api/project', async (_req: Request, res: Response) => {
+        try {
+          const damlYamlPath = path.join(projectDir, 'daml.yaml')
+          const content = await fs.promises.readFile(damlYamlPath, 'utf-8')
+          // Simple YAML extraction — just need name and version
+          const nameMatch = content.match(/^name:\s*(.+)$/m)
+          const versionMatch = content.match(/^version:\s*(.+)$/m)
+          res.json({
+            name: nameMatch?.[1]?.trim() ?? 'unknown',
+            version: versionMatch?.[1]?.trim() ?? '0.0.0',
+            projectDir,
+          })
+        } catch (err) {
+          res.status(500).json({error: String(err)})
+        }
+      })
+
       app.get('/api/health', async (_req: Request, res: Response) => {
         try {
           const version = await client.getVersion()
@@ -228,6 +247,14 @@ export function createServeServer(deps: ServeServerDeps): ServeServer {
                   durationMs: result.durationMs,
                   type: result.cached ? 'build:cached' : 'build:success',
                 })
+                // Auto-upload DAR to sandbox after successful build
+                if (result.darPath && !result.cached) {
+                  try {
+                    const darBytes = await fs.promises.readFile(result.darPath)
+                    await client.uploadDar(new Uint8Array(darBytes))
+                    broadcast({type: 'dar:uploaded', dar: result.darPath})
+                  } catch (uploadErr) { output.warn(`DAR upload failed: ${uploadErr}`) }
+                }
               } catch (err) {
                 broadcast({output: String(err), type: 'build:error'})
               }
@@ -346,6 +373,7 @@ export function createServeServer(deps: ServeServerDeps): ServeServer {
             actAs: req.body.actAs,
             commandId: `playground-${Date.now()}-${Math.random().toString(36).slice(2)}`,
             commands: req.body.commands,
+            userId: 'admin',
           })
           res.json(result)
           broadcast({type: 'contracts:update'})
@@ -359,6 +387,15 @@ export function createServeServer(deps: ServeServerDeps): ServeServer {
         try {
           const result = await builder.build({force: true, projectDir})
           broadcast({dar: result.darPath, durationMs: result.durationMs, type: 'build:success'})
+          // Auto-upload DAR to sandbox
+          if (result.darPath) {
+            try {
+              const darBytes = await fs.promises.readFile(result.darPath)
+              await client.uploadDar(new Uint8Array(darBytes))
+              broadcast({type: 'dar:uploaded', dar: result.darPath})
+            } catch (uploadErr) { output.warn(`DAR upload failed: ${uploadErr}`) }
+          }
+
           res.json(result)
         } catch (err) {
           broadcast({output: String(err), type: 'build:error'})

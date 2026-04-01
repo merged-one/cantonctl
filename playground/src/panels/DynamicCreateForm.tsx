@@ -59,7 +59,7 @@ export function DynamicCreateForm({templates, parties, activeParty, projectName,
     try {
       await api.submitCommand([activeParty], [{
         CreateCommand: {
-          templateId: `${projectName}:Main:${template.name}`,
+          templateId: `#${projectName}:${template.module}:${template.name}`,
           createArguments: args,
         },
       }])

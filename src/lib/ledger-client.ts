@@ -51,6 +51,8 @@ export interface SubmitRequest {
   actAs: string[]
   /** List of commands (create, exercise, etc.). */
   commands: unknown[]
+  /** User ID for Canton V2 API authentication. */
+  userId?: string
 }
 
 /** Filter for active contract queries. */

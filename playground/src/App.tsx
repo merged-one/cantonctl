@@ -1,5 +1,7 @@
 import {Columns2, LayoutPanelLeft, WifiOff} from 'lucide-react'
 import {useState} from 'react'
+import {useQuery} from '@tanstack/react-query'
+import {api} from './lib/api'
 import {useBuild} from './hooks/useBuild'
 import {useContracts} from './hooks/useContracts'
 import {useFiles} from './hooks/useFiles'
@@ -20,10 +22,13 @@ export function App() {
   const {templates} = useTemplates()
   const [viewMode, setViewMode] = useState<ViewMode>('editor')
 
-  // Derive project name from the first directory or default
-  const projectName = files.fileTree.find(f => f.name === 'cantonctl.yaml')
-    ? files.fileTree[0]?.name?.replace('.yaml', '') ?? 'my-app'
-    : 'my-app'
+  // Get project name from daml.yaml via API
+  const {data: projectData} = useQuery({
+    queryKey: ['project'],
+    queryFn: api.getProject,
+    staleTime: 60000,
+  })
+  const projectName = projectData?.name ?? 'my-app'
 
   return (
     <div className="h-screen flex flex-col">

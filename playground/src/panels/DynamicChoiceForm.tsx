@@ -39,7 +39,7 @@ export function DynamicChoiceForm({contract, template, parties, activeParty, pro
     try {
       await api.submitCommand([activeParty], [{
         ExerciseCommand: {
-          templateId: `${projectName}:Main:${templateName}`,
+          templateId: `#${projectName}:${template?.module ?? 'Main'}:${templateName}`,
           contractId: contract.contractId,
           choice: choice.name,
           choiceArgument: choice.args.length > 0 ? args : {},

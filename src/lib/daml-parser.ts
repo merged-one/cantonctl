@@ -49,6 +49,8 @@ export interface DamlChoice {
 export interface DamlTemplate {
   /** Template name (e.g., Token, LiquidityPool). */
   name: string
+  /** Module name (e.g., Main). */
+  module: string
   /** Template fields with types. */
   fields: DamlField[]
   /** Available choices. */
@@ -77,12 +79,12 @@ export function parseDamlSource(source: string): DamlParseResult {
   const moduleName = moduleMatch?.[1] ?? 'Unknown'
 
   // Split source into template blocks
-  const templates = parseTemplates(source)
+  const templates = parseTemplates(source, moduleName)
 
   return {module: moduleName, templates}
 }
 
-function parseTemplates(source: string): DamlTemplate[] {
+function parseTemplates(source: string, moduleName: string): DamlTemplate[] {
   const templates: DamlTemplate[] = []
 
   // Find all template declarations and their positions
@@ -100,14 +102,14 @@ function parseTemplates(source: string): DamlTemplate[] {
     const end = i + 1 < matches.length ? matches[i + 1].startIndex : source.length
     const body = source.slice(start, end)
 
-    const template = parseTemplateBody(matches[i].name, body)
+    const template = parseTemplateBody(matches[i].name, moduleName, body)
     templates.push(template)
   }
 
   return templates
 }
 
-function parseTemplateBody(name: string, body: string): DamlTemplate {
+function parseTemplateBody(name: string, moduleName: string, body: string): DamlTemplate {
   // Extract fields: between first "with" and "where"
   const fields = parseFields(body)
 
@@ -118,7 +120,7 @@ function parseTemplateBody(name: string, body: string): DamlTemplate {
   // Extract choices
   const choices = parseChoices(body)
 
-  return {choices, fields, name, signatory}
+  return {choices, fields, module: moduleName, name, signatory}
 }
 
 function parseFields(body: string): DamlField[] {
