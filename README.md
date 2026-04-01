@@ -96,8 +96,10 @@ cantonctl console
 | `cantonctl auth login/logout/status` | Manage JWT credentials per network | Implemented |
 | `cantonctl clean` | Remove build artifacts (.daml/, dist/, .cantonctl/) | Implemented |
 | `cantonctl doctor` | Check prerequisites (Node, Java, SDK, Docker, ports) | Implemented |
+| `cantonctl serve` | Start Canton IDE Protocol server (REST + WebSocket) | Implemented |
+| `cantonctl playground` | Open Remix-like browser IDE with Monaco editor | Implemented |
 
-All commands except `console` support `--json` for CI pipeline integration. All errors include error codes, suggestions, and documentation links.
+All commands except `console` and `playground` support `--json` for CI pipeline integration. All errors include error codes, suggestions, and documentation links.
 
 ## Templates
 

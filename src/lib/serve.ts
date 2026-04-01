@@ -1,18 +1,23 @@
 /**
- * @module playground-server
+ * @module serve
  *
- * Express + WebSocket server for the Canton Playground browser IDE.
- * Exposes REST endpoints and real-time WebSocket events backed by
- * existing cantonctl libraries (builder, test-runner, ledger-client).
+ * Canton IDE Protocol Server — the generic backend that any IDE client
+ * (browser playground, VS Code extension, Neovim plugin) connects to.
  *
- * This server is the shared backend protocol — the browser playground
- * and future VS Code extension both connect to it.
+ * Exposes a REST + WebSocket API backed by existing cantonctl libraries
+ * (builder, test-runner, ledger-client, dev-server). The protocol is
+ * documented at docs/reference/serve.md.
+ *
+ * Clients:
+ * - `cantonctl playground` — serves the browser UI + starts this server
+ * - `cantonctl serve` — headless mode (no UI, just the API)
+ * - VS Code extension — connects to a running serve instance
  *
  * @example
  * ```ts
- * const server = createPlaygroundServer(deps)
+ * const server = createServeServer(deps)
  * await server.start({ port: 4000, projectDir: '/my-app' })
- * // Browser opens http://localhost:4000
+ * // Any IDE client connects to http://localhost:4000
  * ```
  */
 
@@ -31,7 +36,7 @@ import type {TestRunner} from './test-runner.js'
 // Types
 // ---------------------------------------------------------------------------
 
-export interface PlaygroundServerDeps {
+export interface ServeServerDeps {
   builder: Builder
   output: OutputWriter
   testRunner: TestRunner
@@ -49,15 +54,15 @@ export interface LedgerClientLike {
   allocateParty(params: {displayName: string; identifierHint?: string}, signal?: AbortSignal): Promise<{partyDetails: Record<string, unknown>}>
 }
 
-export interface PlaygroundEvent {
+export interface ServeEvent {
   type: string
   [key: string]: unknown
 }
 
-export interface PlaygroundServer {
+export interface ServeServer {
   start(opts: {port: number; projectDir: string; ledgerUrl: string; staticDir?: string}): Promise<void>
   stop(): Promise<void>
-  broadcast(event: PlaygroundEvent): void
+  broadcast(event: ServeEvent): void
 }
 
 // ---------------------------------------------------------------------------
@@ -97,14 +102,14 @@ async function buildFileTree(dir: string, relativeTo: string): Promise<FileNode[
 // Implementation
 // ---------------------------------------------------------------------------
 
-export function createPlaygroundServer(deps: PlaygroundServerDeps): PlaygroundServer {
+export function createServeServer(deps: ServeServerDeps): ServeServer {
   const {builder, createLedgerClient, createToken, output, testRunner} = deps
 
   let httpServer: http.Server | null = null
   let wss: WebSocketServer | null = null
   const clients = new Set<WebSocket>()
 
-  function broadcast(event: PlaygroundEvent): void {
+  function broadcast(event: ServeEvent): void {
     const msg = JSON.stringify(event)
     for (const ws of clients) {
       if (ws.readyState === ws.OPEN) {
@@ -312,7 +317,7 @@ export function createPlaygroundServer(deps: PlaygroundServerDeps): PlaygroundSe
 
       return new Promise<void>((resolve) => {
         httpServer!.listen(port, () => {
-          output.success(`Playground server running at http://localhost:${port}`)
+          output.success(`Canton IDE server running at http://localhost:${port}`)
           resolve()
         })
       })
