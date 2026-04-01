@@ -63,7 +63,7 @@ export interface ServeEvent {
 }
 
 export interface ServeServer {
-  start(opts: {port: number; projectDir: string; ledgerUrl: string; staticDir?: string}): Promise<void>
+  start(opts: {port: number; projectDir: string; ledgerUrl: string; staticDir?: string; multiNode?: boolean}): Promise<void>
   stop(): Promise<void>
   broadcast(event: ServeEvent): void
 }
@@ -161,9 +161,10 @@ export function createServeServer(deps: ServeServerDeps): ServeServer {
         readAs: ['Alice', 'Bob'],
       })
 
-      // Detect multi-node topology
-      const topology = await detectTopology(projectDir)
-      const isMultiNode = topology !== null && topology.participants.length > 0
+      // Use explicit multiNode flag to avoid binding to stale .cantonctl/ artifacts
+      // from a previous --full run. Only detect topology when explicitly requested.
+      const topology = opts.multiNode ? await detectTopology(projectDir) : null
+      const isMultiNode = opts.multiNode === true && topology !== null && topology.participants.length > 0
 
       // Create ledger clients — one per participant in multi-node, or single
       const participantClients: Array<{client: LedgerClientLike; name: string; port: number}> = []
