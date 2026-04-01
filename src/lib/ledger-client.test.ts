@@ -176,12 +176,20 @@ describe('LedgerClient', () => {
         .mockResolvedValueOnce(new Response(JSON.stringify({offset: 5}), {
           status: 200, headers: {'Content-Type': 'application/json'},
         }))
-        // Second call: POST /v2/state/active-contracts
-        .mockResolvedValueOnce(new Response(JSON.stringify({
-          activeContracts: [
-            {contractId: 'c-1', templateId: 'Main:Token', payload: {owner: 'Alice'}},
-          ],
-        }), {
+        // Second call: POST /v2/state/active-contracts (Canton V2 array format)
+        .mockResolvedValueOnce(new Response(JSON.stringify([
+          {
+            contractEntry: {
+              JsActiveContract: {
+                createdEvent: {
+                  contractId: 'c-1',
+                  templateId: 'Main:Token',
+                  createArgument: {owner: 'Alice', symbol: 'CTK', amount: '1000'},
+                },
+              },
+            },
+          },
+        ]), {
           status: 200, headers: {'Content-Type': 'application/json'},
         }))
 
@@ -191,6 +199,7 @@ describe('LedgerClient', () => {
       })
       expect(result.activeContracts).toHaveLength(1)
       expect(result.activeContracts[0].contractId).toBe('c-1')
+      expect(result.activeContracts[0].templateId).toBe('Main:Token')
 
       // Verify ledger-end was called first
       expect(fetch).toHaveBeenCalledTimes(2)

@@ -190,48 +190,50 @@ export function createLedgerClient(options: LedgerClientOptions): LedgerClient {
       // Canton V2 requires activeAtOffset — get current ledger end first
       const ledgerEnd = await request<{offset: number}>('GET', '/v2/state/ledger-end', undefined, signal)
 
-      // Build Canton V2 filtersByParty format
+      // Build Canton V2 filtersByParty format with correct nested structure
       const {party, templateIds} = params.filter
-      const templateFilters = templateIds?.map(id => ({templateId: id})) ?? []
+
+      // Build identifier filter — use WildcardFilter for all, or TemplateFilter for specific
+      let identifierFilter: Record<string, unknown>
+      if (templateIds && templateIds.length > 0) {
+        identifierFilter = {TemplateFilter: {value: {templateId: templateIds[0], includeCreatedEventBlob: false}}}
+      } else {
+        identifierFilter = {WildcardFilter: {value: {includeCreatedEventBlob: false}}}
+      }
 
       const body = {
         activeAtOffset: ledgerEnd.offset,
         filter: {
           filtersByParty: {
             [party]: {
-              cumulative: [{
-                interfaceFilters: [],
-                templateFilters,
-                wildcardFilter: templateFilters.length === 0 ? {} : undefined,
-              }],
+              cumulative: [{identifierFilter}],
             },
           },
         },
         verbose: true,
       }
 
-      // Canton V2 returns a different shape — normalize to our interface
-      const result = await request<Record<string, unknown>>(
+      // Canton V2 returns an array of contract entries
+      const result = await request<unknown>(
         'POST', '/v2/state/active-contracts', body, signal,
       )
 
-      // Extract contracts from Canton V2 response
+      // Normalize Canton V2 response to our interface
       const activeContracts: Array<Record<string, unknown>> = []
-      if (Array.isArray(result)) {
-        // Response is an array of events
-        for (const item of result) {
-          if (item && typeof item === 'object' && 'contractEntry' in item) {
-            const entry = (item as Record<string, unknown>).contractEntry as Record<string, unknown>
+      const items = Array.isArray(result) ? result : []
+      for (const item of items) {
+        if (item && typeof item === 'object' && 'contractEntry' in (item as Record<string, unknown>)) {
+          const entry = (item as Record<string, unknown>).contractEntry as Record<string, unknown>
+          const jsActive = entry.JsActiveContract as Record<string, unknown> | undefined
+          const created = jsActive?.createdEvent as Record<string, unknown> | undefined
+          if (created) {
             activeContracts.push({
-              contractId: entry.contractId,
-              payload: entry.payload ?? entry.createArguments,
-              templateId: entry.templateId,
+              contractId: created.contractId,
+              payload: created.createArgument,
+              templateId: created.templateId,
             })
           }
         }
-      } else if (result && 'activeContracts' in result) {
-        // Already in our expected format
-        return result as {activeContracts: Array<Record<string, unknown>>}
       }
 
       return {activeContracts}
