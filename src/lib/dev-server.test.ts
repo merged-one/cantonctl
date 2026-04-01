@@ -40,6 +40,7 @@ function createMockClient(): LedgerClient & {
     getActiveContracts: vi.fn(),
     getParties: vi.fn(),
     getVersion: vi.fn(),
+    getLedgerEnd: vi.fn().mockResolvedValue({offset: 0}),
     submitAndWait: vi.fn(),
     uploadDar: vi.fn(),
   }

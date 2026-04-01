@@ -13,6 +13,7 @@ import type {ReplCommand} from './parser.js'
 function createMockClient(): LedgerClient & {
   allocateParty: ReturnType<typeof vi.fn>
   getActiveContracts: ReturnType<typeof vi.fn>
+  getLedgerEnd: ReturnType<typeof vi.fn>
   getParties: ReturnType<typeof vi.fn>
   getVersion: ReturnType<typeof vi.fn>
   submitAndWait: ReturnType<typeof vi.fn>
@@ -22,6 +23,7 @@ function createMockClient(): LedgerClient & {
     allocateParty: vi.fn(),
     getActiveContracts: vi.fn().mockResolvedValue({activeContracts: []}),
     getParties: vi.fn().mockResolvedValue({partyDetails: []}),
+    getLedgerEnd: vi.fn().mockResolvedValue({offset: 0}),
     getVersion: vi.fn().mockResolvedValue({version: '3.4.9'}),
     submitAndWait: vi.fn().mockResolvedValue({transaction: {transactionId: 'tx-123'}}),
     uploadDar: vi.fn(),
