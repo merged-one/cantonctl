@@ -79,7 +79,53 @@ Content-Type: application/json
 {"content": "module Main where\n..."}
 ```
 
-Writes file content. If the file is a `.daml` file, triggers an automatic rebuild and emits `build:start` / `build:success` / `build:error` WebSocket events.
+Writes file content. If the file is a `.daml` file, triggers an automatic rebuild, uploads the DAR to the sandbox, and emits `build:start` / `build:success` / `dar:uploaded` / `build:error` WebSocket events.
+
+### Project
+
+```
+GET /api/project
+```
+
+Returns project metadata from `daml.yaml`. Used by the frontend to construct package-name-qualified template IDs.
+
+```json
+{"name": "my-app", "version": "1.0.0", "projectDir": "/path/to/project"}
+```
+
+### Templates
+
+```
+GET /api/templates
+```
+
+Returns all Daml templates parsed from `.daml` source files in the `daml/` directory.
+
+```json
+{
+  "templates": [{
+    "name": "Token",
+    "module": "Main",
+    "fields": [
+      {"name": "owner", "type": "Party"},
+      {"name": "symbol", "type": "Text"},
+      {"name": "amount", "type": "Decimal"}
+    ],
+    "choices": [
+      {"name": "Transfer", "returnType": "(ContractId Token, ContractId Token)", "args": [{"name": "newOwner", "type": "Party"}, {"name": "transferAmount", "type": "Decimal"}], "controller": "owner", "consuming": true},
+      {"name": "Burn", "returnType": "()", "args": [], "controller": "owner", "consuming": true},
+      {"name": "Mint", "returnType": "ContractId Token", "args": [{"name": "mintAmount", "type": "Decimal"}], "controller": "owner", "consuming": true}
+    ],
+    "signatory": "owner"
+  }]
+}
+```
+
+```
+GET /api/templates/{name}
+```
+
+Returns a single template by name. Returns 404 if not found.
 
 ### Parties
 
@@ -119,6 +165,23 @@ Returns active contracts visible to the specified party.
       "payload": {"owner": "sandbox::1220abc...", "symbol": "CTK", "amount": "1000.0"}
     }
   ]
+}
+```
+
+### Multi-Party Contracts
+
+```
+GET /api/contracts/multi?parties={partyId1},{partyId2}
+```
+
+Returns active contracts for multiple parties in a single request. Used by the split view.
+
+```json
+{
+  "contracts": {
+    "sandbox::1220abc...": [{"contractId": "c-1", "templateId": "Main:Token", "payload": {...}}],
+    "sandbox::1220def...": []
+  }
 }
 ```
 
@@ -183,6 +246,7 @@ Connect to `ws://localhost:{port}`. Messages are JSON objects with a `type` fiel
 | `test:start` | | Test execution started |
 | `test:result` | `passed`, `output` | Test completed |
 | `contracts:update` | | Contract state changed (after command submission) |
+| `dar:uploaded` | `dar` | DAR successfully uploaded to sandbox after build |
 | `file:change` | `path` | File changed on disk |
 | `log` | `message` | General log message |
 
