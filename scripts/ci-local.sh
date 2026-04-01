@@ -87,9 +87,24 @@ if command -v daml &>/dev/null || [ -f "$HOME/.daml/bin/daml" ]; then
 fi
 
 HAS_JAVA=false
-if command -v java &>/dev/null; then
+# Detect Java via the same resolution order as createProcessRunner():
+#   1. JAVA_HOME/bin/java
+#   2. Homebrew openjdk@21 (macOS ARM + Intel)
+#   3. System PATH (but verify it's real, not the macOS stub)
+JAVA_BIN=""
+if [ -n "$JAVA_HOME" ] && [ -x "$JAVA_HOME/bin/java" ]; then
+  JAVA_BIN="$JAVA_HOME/bin/java"
+elif [ -x "/opt/homebrew/opt/openjdk@21/bin/java" ]; then
+  JAVA_BIN="/opt/homebrew/opt/openjdk@21/bin/java"
+elif [ -x "/usr/local/opt/openjdk@21/bin/java" ]; then
+  JAVA_BIN="/usr/local/opt/openjdk@21/bin/java"
+elif command -v java &>/dev/null && java -version &>/dev/null 2>&1; then
+  JAVA_BIN="java"
+fi
+
+if [ -n "$JAVA_BIN" ]; then
   HAS_JAVA=true
-  echo "  Java:    $(java -version 2>&1 | head -1)"
+  echo "  Java:    $($JAVA_BIN -version 2>&1 | head -1)"
 fi
 
 # Docker detection (for e2e-docker tests)

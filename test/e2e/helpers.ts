@@ -16,26 +16,56 @@ export const SDK_VERSION = '3.4.11'
 export const CANTON_IMAGE = 'ghcr.io/digital-asset/decentralized-canton-sync/docker/canton:0.5.3'
 
 /**
- * Build a PATH that includes the Daml SDK and Java 21, resolving
- * platform-specific install locations automatically.
+ * Build a PATH that includes the Daml SDK and Java 21.
  *
- * Resolution order for Java:
- *   1. JAVA_HOME/bin  (set by actions/setup-java, sdkman, asdf)
- *   2. /opt/homebrew/opt/openjdk@21/bin  (macOS ARM Homebrew)
- *   3. /usr/local/opt/openjdk@21/bin     (macOS Intel Homebrew)
- *   4. Whatever is already on PATH       (Linux package managers)
+ * Uses the same Java discovery logic as `createProcessRunner()` in
+ * `src/lib/process-runner.ts` — see `resolveJavaBinDir()` there for the
+ * full resolution algorithm and justification.
+ *
+ * This function is used by `execSync`-based helpers (`hasDaml()`) which
+ * need a plain string PATH. The actual E2E tests use `createProcessRunner()`
+ * directly, so Java discovery is exercised through the same production path.
+ *
+ * Resolution order (mirrors process-runner.ts):
+ *   1. JAVA_HOME/bin (CI, sdkman, asdf)
+ *   2. /usr/libexec/java_home -v 21 (macOS Apple/Adoptium installers)
+ *   3. Homebrew openjdk@21 well-known paths (ARM + Intel, existence-checked)
+ *   4. ~/.daml/bin
+ *   5. System PATH
  */
 export function resolveE2ePath(): string {
+  const fs = require('fs') as typeof import('fs')
   const damlPath = path.join(os.homedir(), '.daml', 'bin')
 
   const javaPaths: string[] = []
+
+  // 1. JAVA_HOME
   if (process.env.JAVA_HOME) {
     javaPaths.push(path.join(process.env.JAVA_HOME, 'bin'))
   }
-  javaPaths.push(
-    '/opt/homebrew/opt/openjdk@21/bin',
-    '/usr/local/opt/openjdk@21/bin',
-  )
+
+  // 2. macOS java_home utility
+  if (process.platform === 'darwin') {
+    try {
+      const home = execSync('/usr/libexec/java_home -v 21', {
+        stdio: ['pipe', 'pipe', 'pipe'],
+        timeout: 5_000,
+      }).toString().trim()
+      if (home && fs.existsSync(path.join(home, 'bin', 'java'))) {
+        javaPaths.push(path.join(home, 'bin'))
+      }
+    } catch { /* not registered — fall through */ }
+  }
+
+  // 3. Homebrew well-known paths (existence-checked, not blindly added)
+  if (process.platform === 'darwin') {
+    for (const brewBase of ['/opt/homebrew/opt/openjdk@21', '/usr/local/opt/openjdk@21']) {
+      const binDir = path.join(brewBase, 'bin')
+      if (fs.existsSync(path.join(binDir, 'java'))) {
+        javaPaths.push(binDir)
+      }
+    }
+  }
 
   return [...javaPaths, damlPath, process.env.PATH].filter(Boolean).join(path.delimiter)
 }

@@ -21,8 +21,10 @@
  * ```
  */
 
+import {existsSync} from 'node:fs'
 import * as os from 'node:os'
 import * as path from 'node:path'
+import {execSync} from 'node:child_process'
 import {execa, type Options as ExecaOptions, type ResultPromise} from 'execa'
 
 export interface ProcessResult {
@@ -58,15 +60,79 @@ export interface ProcessRunner {
   which(cmd: string): Promise<string | null>
 }
 
+// ---------------------------------------------------------------------------
+// Java discovery
+// ---------------------------------------------------------------------------
+
+/**
+ * Resolve JAVA_HOME through standard discovery mechanisms.
+ *
+ * Every JVM-based tool (Gradle, Maven, IntelliJ, the `daml` CLI itself) must
+ * solve this problem. The resolution order mirrors industry convention:
+ *
+ *   1. `JAVA_HOME` env var — set by CI (actions/setup-java), sdkman, asdf, SDKMAN
+ *   2. `/usr/libexec/java_home -v 21` — macOS Java registry (Apple, Adoptium installers)
+ *   3. Well-known Homebrew paths — `/opt/homebrew/opt/openjdk@21` (ARM) and
+ *      `/usr/local/opt/openjdk@21` (Intel). Homebrew installs don't register with
+ *      the macOS java_home framework, so explicit probing is necessary.
+ *   4. Fall through — Java must already be on PATH (Linux package managers put
+ *      java in /usr/bin which is always on PATH).
+ *
+ * Returns the path to `JAVA_HOME/bin`, or null if Java cannot be found.
+ *
+ * This function runs once at module init (not per-subprocess), so the cost of
+ * the fallback probes is paid only once.
+ */
+function resolveJavaBinDir(): string | null {
+  // 1. JAVA_HOME (CI, sdkman, asdf, manual export)
+  if (process.env.JAVA_HOME) {
+    return path.join(process.env.JAVA_HOME, 'bin')
+  }
+
+  // 2. macOS java_home utility (Apple/Adoptium installers register here)
+  if (os.platform() === 'darwin') {
+    try {
+      const home = execSync('/usr/libexec/java_home -v 21', {
+        stdio: ['pipe', 'pipe', 'pipe'],
+        timeout: 5_000,
+      }).toString().trim()
+      if (home && existsSync(path.join(home, 'bin', 'java'))) {
+        return path.join(home, 'bin')
+      }
+    } catch {
+      // java_home not available or no JDK registered — fall through
+    }
+  }
+
+  // 3. Homebrew well-known paths (Homebrew doesn't register with java_home)
+  //    These paths are stable across Homebrew versions and are the documented
+  //    install locations: https://formulae.brew.sh/formula/openjdk@21
+  const homebrewPaths = os.platform() === 'darwin' ? [
+    '/opt/homebrew/opt/openjdk@21',   // ARM (Apple Silicon)
+    '/usr/local/opt/openjdk@21',      // Intel
+  ] : []
+
+  for (const brewPath of homebrewPaths) {
+    const binDir = path.join(brewPath, 'bin')
+    if (existsSync(path.join(binDir, 'java'))) {
+      return binDir
+    }
+  }
+
+  // 4. Fall through — java must already be on PATH
+  return null
+}
+
 /**
  * Create a ProcessRunner backed by execa.
  * In production, call with no arguments. In tests, provide a mock implementation.
  */
 export function createProcessRunner(): ProcessRunner {
+  const javaBinDir = resolveJavaBinDir()
+
   const defaultToolPaths = [
     path.join(os.homedir(), '.daml', 'bin'),
-    // JAVA_HOME/bin is set by actions/setup-java on CI and sdkman/asdf locally
-    ...(process.env.JAVA_HOME ? [path.join(process.env.JAVA_HOME, 'bin')] : []),
+    ...(javaBinDir ? [javaBinDir] : []),
   ]
 
   function resolveEnv(overrides?: Record<string, string>): Record<string, string> {

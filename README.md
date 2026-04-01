@@ -117,7 +117,7 @@ See [ADR-0014](docs/adr/0014-dev-full-multi-node-topology.md) for architecture d
 
 ### Core Principles
 
-- **Test-first TDD**: Tests define the contract, implementation follows (443 tests, 98.18% statement coverage)
+- **Test-first TDD**: Tests define the contract, implementation follows (451 tests, 98.18% statement coverage)
 - **Dependency injection**: Every I/O module accepts injected dependencies. Zero `vi.mock()`.
 - **AbortSignal everywhere**: All long-running operations support graceful cancellation
 - **Structured errors**: Every error is a `CantonctlError` with code (E1xxx-E8xxx), suggestion, and docs URL
@@ -242,16 +242,76 @@ Plugins are auto-discovered from `node_modules` matching `@cantonctl/plugin-*` o
 - **[Research: Canton Ecosystem](docs/research/CANTON_ECOSYSTEM_RESEARCH.md)** — Full ecosystem deep dive
 - **[Research: Agentic Docs](docs/research/AGENTIC_DOCS_RESEARCH.md)** — AI documentation SOTA survey
 
+## Prerequisites
+
+### Required
+
+| Dependency | Version | Purpose | Install |
+|-----------|---------|---------|---------|
+| **Node.js** | ≥ 18 | Runtime for cantonctl CLI | [nodejs.org](https://nodejs.org) or `nvm install 22` |
+| **Daml SDK** | 3.4.11 | Smart contract compilation, testing, sandbox | `curl -sSL https://get.daml.com/ \| sh -s 3.4.11` |
+| **Java** | 21 (LTS) | JVM runtime required by Daml SDK and Canton | See below |
+
+### Java 21 Installation
+
+The Daml SDK and Canton sandbox require Java 21. cantonctl auto-discovers Java through the following resolution order:
+
+1. **`JAVA_HOME` environment variable** — Set by CI (`actions/setup-java`), sdkman, asdf
+2. **macOS `java_home` utility** — Finds JDKs registered by Apple/Adoptium installers
+3. **Homebrew well-known paths** — `/opt/homebrew/opt/openjdk@21` (ARM) and `/usr/local/opt/openjdk@21` (Intel)
+4. **System PATH** — Linux package managers place `java` in `/usr/bin`
+
+Install Java 21 via your preferred method:
+
+```bash
+# macOS (Homebrew)
+brew install openjdk@21
+
+# Linux (apt)
+sudo apt install openjdk-21-jdk
+
+# Any platform (SDKMAN — also sets JAVA_HOME automatically)
+sdk install java 21.0.5-tem
+
+# Verify
+java -version   # Should show "openjdk version 21.x.x"
+```
+
+> **Note**: If you install Java via Homebrew and cantonctl cannot find it, set `JAVA_HOME` explicitly:
+> ```bash
+> export JAVA_HOME=/opt/homebrew/opt/openjdk@21   # Add to ~/.zshrc or ~/.bashrc
+> ```
+
+### Optional (for `dev --full`)
+
+| Dependency | Version | Purpose | Install |
+|-----------|---------|---------|---------|
+| **Docker** | ≥ 24 | Multi-node topology via Docker Compose | [docker.com](https://docs.docker.com/get-docker/) |
+| **Canton image** | 0.5.3 | Canton runtime for multi-node mode | `docker pull ghcr.io/digital-asset/decentralized-canton-sync/docker/canton:0.5.3` |
+
+### Quick prerequisite check
+
+```bash
+./scripts/install-prerequisites.sh   # Installs Daml SDK + checks Java
+node --version                       # ≥ 18
+java -version                        # 21.x.x
+daml version                         # 3.4.11
+docker compose version               # Optional, for dev --full
+```
+
 ## Development
 
 ```bash
-npm install          # Install dependencies
-npm test             # Run unit tests (371 tests)
-npm run test:watch   # Watch mode
-npm run test:e2e     # Run E2E tests (75 tests, requires Daml SDK + Java 21)
-npm run test:all     # Run all 446 tests
+npm install           # Install dependencies
+npm test              # Run unit tests (374 tests)
+npm run test:watch    # Watch mode
+npm run test:e2e      # Run E2E tests (75 tests, requires Daml SDK + Java 21)
+npm run test:e2e:docker # Run Docker E2E tests (2 tests, requires Docker)
+npm run test:all      # Run all 451 tests
 npm run test:coverage # Coverage report (98.18% statements)
-npm run build        # Compile TypeScript
+npm run build         # Compile TypeScript
+npm run ci            # Local CI check (mirrors GitHub Actions)
+./scripts/ci-local.sh --docker  # Docker CI check (exact GitHub Actions parity)
 ```
 
 ## Development Fund Proposal

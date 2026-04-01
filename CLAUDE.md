@@ -8,11 +8,12 @@ cantonctl is an institutional-grade CLI toolchain for Canton Network — the ent
 
 ```bash
 npm install                         # Install dependencies
-npm test                            # Run 371 unit tests (project: unit)
-npm run test:e2e:sdk                # Run 63 SDK E2E tests (project: e2e-sdk)
+npm test                            # Run 374 unit tests (project: unit)
+npm run test:e2e:sdk                # Run 66 SDK E2E tests (project: e2e-sdk)
 npm run test:e2e:sandbox            # Run 9 sandbox E2E tests (project: e2e-sandbox)
-npm run test:e2e                    # Run all 72 E2E tests
-npm run test:all                    # Run all 443 tests
+npm run test:e2e:docker             # Run 2 Docker E2E tests (project: e2e-docker)
+npm run test:e2e                    # Run all 75 E2E tests
+npm run test:all                    # Run all 451 tests
 npm run test:coverage               # Coverage report
 npm run build                       # Compile TypeScript to dist/
 npm run ci                          # Local CI check (native)
