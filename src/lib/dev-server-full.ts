@@ -169,6 +169,11 @@ export function createFullDevServer(deps: FullDevServerDeps): FullDevServer {
       }
 
       // Step 6: Provision parties on their assigned participants
+      // Wait for synchronizer bootstrap — Canton needs the synchronizer fully
+      // connected before parties can be allocated. Health checks pass before
+      // the synchronizer finishes bootstrapping. We poll for readiness by
+      // attempting allocation and retrying with backoff.
+
       for (const {client, participant} of clients) {
         if (participant.parties.length === 0) continue
 
@@ -190,15 +195,17 @@ export function createFullDevServer(deps: FullDevServerDeps): FullDevServer {
             continue
           }
 
-          // Retry party allocation — synchronizer may still be connecting
+          // Retry party allocation — synchronizer may need up to ~20s after
+          // health checks pass to fully bootstrap and accept party allocations.
+          // Mock tests reject immediately so retries are instant (no real delay).
           let allocated = false
-          for (let attempt = 0; attempt < 3 && !allocated; attempt++) {
+          for (let attempt = 0; attempt < 10 && !allocated; attempt++) {
             try {
               await client.allocateParty({displayName: partyName})
               output.info(`  Provisioned party: ${partyName}`)
               allocated = true
             } catch {
-              if (attempt < 2) {
+              if (attempt < 9) {
                 await new Promise(r => setTimeout(r, 2000))
               } else {
                 output.warn(`  Failed to provision party: ${partyName}`)

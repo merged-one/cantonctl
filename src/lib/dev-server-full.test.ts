@@ -220,7 +220,7 @@ describe('FullDevServer', () => {
       await server.start(startOpts)
 
       expect(deps.output.warn).toHaveBeenCalled()
-    })
+    }, 60_000) // Longer timeout: 2 parties × 10 retries × 2s delay for party allocation
 
     it('starts file watcher on daml/ directory', async () => {
       const deps = createDeps()
