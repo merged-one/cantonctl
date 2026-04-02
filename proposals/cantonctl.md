@@ -23,7 +23,7 @@ Today, getting a Canton dev environment running means orchestrating Docker Compo
 | **Current release** | [v0.2.0](https://github.com/merged-one/cantonctl/releases/tag/v0.2.0) on [npm](https://www.npmjs.com/package/cantonctl) |
 | Commands | 14 (init, dev, build, test, deploy, console, status, auth login/logout/status, clean, doctor, serve, playground) |
 | Foundation libraries | 24 modules in `src/lib/` |
-| Tests | 399 unit + 66 SDK E2E + 9 sandbox E2E + 2 Docker E2E |
+| Tests | 399 unit + 66 SDK E2E + 9 sandbox E2E + 2 Docker E2E + 14 playground E2E |
 | Statement coverage | 98.18% |
 | Pass rate | 100% |
 | Architecture decisions | 14 ADRs |
@@ -263,7 +263,7 @@ Local-CI parity: `./scripts/ci-local.sh --docker` runs identical steps in an Ubu
 
 - **Estimated Delivery:** COMPLETE — delivered prior to submission
 - **Focus:** Full developer workflow from project scaffolding through multi-node deployment
-- **Deliverables / Value Metrics:** 14 commands, 24 libraries, 5 templates, 476 tests, 14 ADRs
+- **Deliverables / Value Metrics:** 14 commands, 24 libraries, 5 templates, 490 tests, 14 ADRs
 
 **Status: Delivered. Payment upon committee acceptance.**
 
@@ -302,7 +302,7 @@ The entire cantonctl CLI is built, tested, and passing CI. This milestone encomp
 
 | Deliverable | Evidence |
 |-------------|----------|
-| 476 tests (399 unit + 66 SDK E2E + 9 sandbox E2E + 2 Docker E2E), 100% pass rate | `npm run test:all` |
+| 490 tests (399 unit + 66 SDK E2E + 9 sandbox E2E + 2 Docker E2E + 14 playground E2E), 100% pass rate | `npm run test:all` |
 | 98.18% statement coverage, 91.11% branch coverage, 99.22% function coverage | `npm run test:coverage` |
 | GitHub Actions CI: 4 jobs (unit matrix × Node 18/20/22, SDK E2E, sandbox E2E, Docker E2E) | `.github/workflows/ci.yml` |
 | Local-CI Docker parity: `./scripts/ci-local.sh --docker` mirrors GitHub Actions exactly | `scripts/ci-local.sh` |
@@ -318,7 +318,7 @@ The entire cantonctl CLI is built, tested, and passing CI. This milestone encomp
 | Error code index with symptoms and resolution steps | `docs/troubleshooting/errors.md` |
 | AI-discoverable `llms.txt` for LLM tooling (MCP, Claude, Cursor) | `llms.txt` |
 
-**250,000 CC justification:** This milestone includes capabilities that other proposals request as standalone projects — TypeScript codegen (cf. DAR-to-TypeScript Codegen, 330,000 CC) and topology generation (cf. Modular Canton Topology Composer, 140,000 CC) are already built-in. The entire CLI is delivered and verifiable — zero delivery risk. At 250,000 CC for 14 commands, 24 libraries, 5 templates, 476 tests, and 24 documentation files, this represents the highest engineering-output-per-CC of any proposal in the current pool.
+**250,000 CC justification:** This milestone includes capabilities that other proposals request as standalone projects — TypeScript codegen (cf. DAR-to-TypeScript Codegen, 330,000 CC) and topology generation (cf. Modular Canton Topology Composer, 140,000 CC) are already built-in. The entire CLI is delivered and verifiable — zero delivery risk. At 250,000 CC for 14 commands, 24 libraries, 5 templates, 490 tests, and 24 documentation files, this represents the highest engineering-output-per-CC of any proposal in the current pool.
 
 ### Milestone 2: Distribution + Developer Experience — 250,000 CC
 

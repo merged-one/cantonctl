@@ -13,7 +13,7 @@ npm run test:e2e:sdk                # Run 66 SDK E2E tests (project: e2e-sdk)
 npm run test:e2e:sandbox            # Run 9 sandbox E2E tests (project: e2e-sandbox)
 npm run test:e2e:docker             # Run 2 Docker E2E tests (project: e2e-docker)
 npm run test:e2e:playground         # Run 14 playground E2E tests (project: e2e-playground)
-npm run test:e2e                    # Run all 77 E2E tests
+npm run test:e2e                    # Run SDK + sandbox E2E tests (75 tests)
 npm run test:all                    # Run all 490 tests
 npm run test:coverage               # Coverage report
 npm run build                       # Compile TypeScript to dist/
