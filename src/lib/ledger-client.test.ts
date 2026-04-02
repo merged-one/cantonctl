@@ -146,7 +146,7 @@ describe('LedgerClient', () => {
       })
       expect(result.transaction.transactionId).toBe('tx-1')
       expect(fetch).toHaveBeenCalledWith(
-        `${baseUrl}/v2/commands/submit-and-wait`,
+        `${baseUrl}/v2/commands/submit-and-wait-for-transaction`,
         expect.objectContaining({method: 'POST'}),
       )
     })

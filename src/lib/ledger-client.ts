@@ -1,35 +1,16 @@
 /**
  * @module ledger-client
  *
- * HTTP client for the Canton JSON Ledger API V2 (port 7575). Provides typed
- * methods for all core ledger operations: DAR upload, command submission,
- * contract queries, party management, and version checks.
- *
- * Uses native `fetch` (injected for testability) and maps HTTP errors to
- * structured {@link CantonctlError} instances with appropriate error codes.
- *
- * All operations require a JWT Bearer token — even local sandboxes decode
- * (but don't validate) the token. Use {@link createSandboxToken} from the
- * `jwt` module to generate tokens for local development.
- *
- * @example
- * ```ts
- * import { createLedgerClient } from './ledger-client.js'
- * import { createSandboxToken } from './jwt.js'
- *
- * const token = await createSandboxToken({ actAs: ['Alice::1234'], readAs: [], applicationId: 'cantonctl' })
- * const client = createLedgerClient({ baseUrl: 'http://localhost:7575', token })
- *
- * const version = await client.getVersion()
- * const { partyDetails } = await client.allocateParty({ displayName: 'Bob' })
- * ```
+ * Compatibility wrapper around the stable ledger adapter. The public API stays
+ * unchanged for current callers while the request/response plumbing now lives
+ * in `src/lib/adapters/ledger.ts`.
  */
 
-import {CantonctlError, ErrorCode} from './errors.js'
-
-// ---------------------------------------------------------------------------
-// Types
-// ---------------------------------------------------------------------------
+import {
+  createLedgerAdapter,
+  type ContractFilter,
+  type SubmitRequest,
+} from './adapters/ledger.js'
 
 /** Fetch function signature (subset of global fetch). */
 export type FetchFn = typeof globalThis.fetch
@@ -42,30 +23,6 @@ export interface LedgerClientOptions {
   /** Fetch implementation. Defaults to global `fetch`. */
   fetch?: FetchFn
 }
-
-/** Command to submit to the ledger. */
-export interface SubmitRequest {
-  /** Command ID for idempotency. */
-  commandId: string
-  /** Parties authorizing the command. */
-  actAs: string[]
-  /** List of commands (create, exercise, etc.). */
-  commands: unknown[]
-  /** User ID for Canton V2 API authentication. */
-  userId?: string
-}
-
-/** Filter for active contract queries. */
-export interface ContractFilter {
-  /** Party whose contracts to query. */
-  party: string
-  /** Template IDs to filter by. */
-  templateIds?: string[]
-}
-
-// ---------------------------------------------------------------------------
-// Interface
-// ---------------------------------------------------------------------------
 
 /** Client for the Canton JSON Ledger API V2. */
 export interface LedgerClient {
@@ -85,10 +42,6 @@ export interface LedgerClient {
   getParties(signal?: AbortSignal): Promise<{partyDetails: Array<Record<string, unknown>>}>
 }
 
-// ---------------------------------------------------------------------------
-// Implementation
-// ---------------------------------------------------------------------------
-
 /**
  * Create a {@link LedgerClient} for the Canton JSON Ledger API V2.
  *
@@ -96,164 +49,43 @@ export interface LedgerClient {
  * @returns A configured LedgerClient instance
  */
 export function createLedgerClient(options: LedgerClientOptions): LedgerClient {
-  const {baseUrl, token} = options
-  const fetchFn = options.fetch ?? globalThis.fetch
-
-  /**
-   * Execute an HTTP request against the ledger API.
-   * Maps HTTP errors to appropriate CantonctlError codes.
-   */
-  async function request<T>(
-    method: string,
-    path: string,
-    body?: unknown,
-    signal?: AbortSignal,
-    errorCode?: ErrorCode,
-  ): Promise<T> {
-    const url = `${baseUrl}${path}`
-    const headers: Record<string, string> = {
-      Authorization: `Bearer ${token}`,
-    }
-
-    const init: RequestInit = {headers, method, signal}
-
-    if (body instanceof Uint8Array) {
-      headers['Content-Type'] = 'application/octet-stream'
-      init.body = body as unknown as BodyInit
-    } else if (body !== undefined) {
-      headers['Content-Type'] = 'application/json'
-      init.body = JSON.stringify(body)
-    }
-
-    let response: Response
-    try {
-      response = await fetchFn(url, init)
-    } catch (err) {
-      if (err instanceof DOMException && err.name === 'AbortError') {
-        throw err
-      }
-
-      throw new CantonctlError(ErrorCode.LEDGER_CONNECTION_FAILED, {
-        cause: err instanceof Error ? err : undefined,
-        context: {url},
-        suggestion: `Cannot connect to ${baseUrl}. Is the Canton sandbox running?`,
-      })
-    }
-
-    if (response.status === 401 || response.status === 403) {
-      throw new CantonctlError(ErrorCode.LEDGER_AUTH_EXPIRED, {
-        context: {status: response.status, url},
-        suggestion: 'Generate a new JWT token. The current token may have expired.',
-      })
-    }
-
-    if (!response.ok) {
-      let errorBody: string
-      try {
-        errorBody = await response.text()
-      } catch {
-        errorBody = `HTTP ${response.status}`
-      }
-
-      const code = errorCode ?? ErrorCode.LEDGER_CONNECTION_FAILED
-      throw new CantonctlError(code, {
-        context: {body: errorBody, status: response.status, url},
-        suggestion: `Ledger API returned HTTP ${response.status}. Check the request and ledger logs.`,
-      })
-    }
-
-    return response.json() as Promise<T>
-  }
+  const adapter = createLedgerAdapter({
+    baseUrl: options.baseUrl,
+    fetch: options.fetch,
+    token: options.token,
+  })
 
   return {
-    async getVersion(signal?: AbortSignal) {
-      return request<Record<string, unknown>>('GET', '/v2/version', undefined, signal)
+    async allocateParty(params, signal) {
+      return adapter.allocateParty(params, signal)
     },
 
-    async getLedgerEnd(signal?: AbortSignal) {
-      return request<{offset: number}>('GET', '/v2/state/ledger-end', undefined, signal)
-    },
-
-    async uploadDar(darBytes: Uint8Array, signal?: AbortSignal) {
-      return request<{mainPackageId: string}>(
-        'POST', '/v2/dars', darBytes, signal, ErrorCode.DEPLOY_UPLOAD_FAILED,
-      )
-    },
-
-    async submitAndWait(req: SubmitRequest, signal?: AbortSignal) {
-      return request<{transaction: Record<string, unknown>}>(
-        'POST', '/v2/commands/submit-and-wait', req, signal, ErrorCode.LEDGER_COMMAND_REJECTED,
-      )
-    },
-
-    async getActiveContracts(params: {filter: ContractFilter}, signal?: AbortSignal) {
-      // Canton V2 requires activeAtOffset — get current ledger end first
-      const ledgerEnd = await request<{offset: number}>('GET', '/v2/state/ledger-end', undefined, signal)
-
-      // Build Canton V2 filtersByParty format with correct nested structure
-      const {party, templateIds} = params.filter
-
-      // Build identifier filter — use WildcardFilter for all, or TemplateFilter for specific
-      let identifierFilter: Record<string, unknown>
-      if (templateIds && templateIds.length > 0) {
-        identifierFilter = {TemplateFilter: {value: {templateId: templateIds[0], includeCreatedEventBlob: false}}}
-      } else {
-        identifierFilter = {WildcardFilter: {value: {includeCreatedEventBlob: false}}}
+    async getActiveContracts(params, signal) {
+      const result = await adapter.getActiveContracts(params, signal)
+      return {
+        activeContracts: result.activeContracts.map(contract => ({...contract})),
       }
-
-      const body = {
-        activeAtOffset: ledgerEnd.offset,
-        filter: {
-          filtersByParty: {
-            [party]: {
-              cumulative: [{identifierFilter}],
-            },
-          },
-        },
-        verbose: true,
-      }
-
-      // Canton V2 returns an array of contract entries
-      const result = await request<unknown>(
-        'POST', '/v2/state/active-contracts', body, signal,
-      )
-
-      // Normalize Canton V2 response to our interface
-      const activeContracts: Array<Record<string, unknown>> = []
-      const items = Array.isArray(result) ? result : []
-      for (const item of items) {
-        if (item && typeof item === 'object' && 'contractEntry' in (item as Record<string, unknown>)) {
-          const entry = (item as Record<string, unknown>).contractEntry as Record<string, unknown>
-          const jsActive = entry.JsActiveContract as Record<string, unknown> | undefined
-          const created = jsActive?.createdEvent as Record<string, unknown> | undefined
-          if (created) {
-            activeContracts.push({
-              contractId: created.contractId,
-              createdAt: created.createdAt as string | undefined,
-              offset: created.offset as number | undefined,
-              payload: created.createArgument,
-              templateId: created.templateId,
-            })
-          }
-        }
-      }
-
-      return {activeContracts}
     },
 
-    async allocateParty(params: {displayName: string; identifierHint?: string}, signal?: AbortSignal) {
-      return request<{partyDetails: Record<string, unknown>}>(
-        'POST', '/v2/parties', {
-          displayName: params.displayName,
-          partyIdHint: params.identifierHint ?? params.displayName,
-        }, signal,
-      )
+    async getLedgerEnd(signal) {
+      const response = await adapter.getLedgerEnd(signal)
+      return {offset: response.offset ?? 0}
     },
 
-    async getParties(signal?: AbortSignal) {
-      return request<{partyDetails: Array<Record<string, unknown>>}>(
-        'GET', '/v2/parties', undefined, signal,
-      )
+    async getParties(signal) {
+      return adapter.getParties(signal)
+    },
+
+    async getVersion(signal) {
+      return adapter.getVersion(signal)
+    },
+
+    async submitAndWait(request, signal) {
+      return adapter.submitAndWait(request, signal)
+    },
+
+    async uploadDar(darBytes, signal) {
+      return adapter.uploadDar(darBytes, signal)
     },
   }
 }
