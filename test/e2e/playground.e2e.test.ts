@@ -277,6 +277,90 @@ describeWithSdk('Playground E2E', () => {
     }
   })
 
+  // ── Topology API ────────────────────────────────────────────
+
+  it('returns topology metadata (single-node mode)', async () => {
+    const result = await apiGet<{mode: string; participants: Array<{name: string; port: number}>}>('/api/topology')
+    expect(result.mode).toBe('single')
+    expect(result.participants.length).toBeGreaterThanOrEqual(1)
+    expect(result.participants[0].name).toBe('sandbox')
+  })
+
+  it('returns topology status with health info', async () => {
+    const result = await apiGet<{participants: Array<{name: string; healthy: boolean; port: number}>}>('/api/topology/status')
+    expect(result.participants.length).toBeGreaterThanOrEqual(1)
+    expect(result.participants[0].healthy).toBe(true)
+    expect(result.participants[0].port).toBe(JSON_API_PORT)
+  })
+
+  // ── Project API ────────────────────────────────────────────
+
+  it('returns project metadata from daml.yaml', async () => {
+    const result = await apiGet<{name: string; version: string}>('/api/project')
+    expect(result.name).toBe('playground-test')
+    expect(result.version).toBe('1.0.0')
+  })
+
+  // ── Contract Creation + Query ──────────────────────────────
+
+  it('creates a Token contract via API and queries it back', async () => {
+    // Build first to upload DAR
+    await apiPost('/api/build', {})
+
+    // Get a party
+    const parties = await apiGet<{partyDetails: Array<{party: string; isLocal: boolean}>}>('/api/parties')
+    const localParty = parties.partyDetails.find(p => p.isLocal)
+    if (!localParty) return // skip if no local party
+
+    const partyId = localParty.party
+
+    // Create a Token
+    const createResult = await apiPost<{updateId?: string}>('/api/commands', {
+      actAs: [partyId],
+      commands: [{
+        CreateCommand: {
+          templateId: '#playground-test:Main:Token',
+          createArguments: {owner: partyId, symbol: 'E2E', amount: '999'},
+        },
+      }],
+    })
+    expect(createResult.updateId).toBeDefined()
+
+    // Query contracts back
+    const contracts = await apiGet<{activeContracts: Array<{contractId: string; payload: Record<string, unknown>}>}>(`/api/contracts?party=${partyId}`)
+    expect(contracts.activeContracts.length).toBeGreaterThanOrEqual(1)
+
+    const token = contracts.activeContracts.find(c => {
+      const p = c.payload as Record<string, unknown>
+      return p.symbol === 'E2E'
+    })
+    expect(token).toBeDefined()
+    expect(token!.payload.amount).toContain('999')
+  })
+
+  // ── Proposal/Accept Template Discovery ─────────────────────
+
+  it('discovers TokenTransferOffer template from Daml source', async () => {
+    const result = await apiGet<{templates: Array<{name: string; choices: Array<{name: string}>}>}>('/api/templates')
+
+    const offer = result.templates.find(t => t.name === 'TokenTransferOffer')
+    expect(offer).toBeDefined()
+
+    const choiceNames = offer!.choices.map(c => c.name)
+    expect(choiceNames).toContain('AcceptTransfer')
+    expect(choiceNames).toContain('CancelTransfer')
+  })
+
+  it('TokenTransferOffer has correct fields', async () => {
+    const result = await apiGet<{templates: Array<{name: string; fields: Array<{name: string; type: string}>}>}>('/api/templates')
+
+    const offer = result.templates.find(t => t.name === 'TokenTransferOffer')
+    expect(offer).toBeDefined()
+    expect(offer!.fields.map(f => f.name)).toContain('from')
+    expect(offer!.fields.map(f => f.name)).toContain('to')
+    expect(offer!.fields.map(f => f.name)).toContain('transferAmount')
+  })
+
   // ── Daml Parser Unit Integration ───────────────────────────
 
   it('parser matches actual scaffolded Daml source', async () => {
@@ -284,12 +368,16 @@ describeWithSdk('Playground E2E', () => {
     const result = parseDamlSource(source)
 
     expect(result.module).toBe('Main')
-    expect(result.templates.length).toBeGreaterThanOrEqual(1)
+    expect(result.templates.length).toBeGreaterThanOrEqual(2) // Token + TokenTransferOffer
 
     const token = result.templates.find(t => t.name === 'Token')
     expect(token).toBeDefined()
     expect(token!.signatory).toBe('owner')
     expect(token!.fields.length).toBe(3)
     expect(token!.choices.length).toBeGreaterThanOrEqual(3)
+
+    const offer = result.templates.find(t => t.name === 'TokenTransferOffer')
+    expect(offer).toBeDefined()
+    expect(offer!.choices.length).toBeGreaterThanOrEqual(2)
   })
 }, 120_000)
