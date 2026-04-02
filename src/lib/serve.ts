@@ -191,6 +191,20 @@ export function createServeServer(deps: ServeServerDeps): ServeServer {
       // Default client (first participant or single sandbox)
       const client = participantClients[0].client
 
+      // Find the client where a party is local (for multi-node routing)
+      async function clientForParty(partyId: string): Promise<LedgerClientLike> {
+        if (!isMultiNode) return client
+        for (const pc of participantClients) {
+          try {
+            const parties = await pc.client.getParties()
+            if (parties.partyDetails.some((p: Record<string, unknown>) => p.party === partyId && p.isLocal === true)) {
+              return pc.client
+            }
+          } catch { /* skip */ }
+        }
+        return client // fallback
+      }
+
       // Express app
       const app = express()
       app.use(cors())
@@ -427,7 +441,8 @@ export function createServeServer(deps: ServeServerDeps): ServeServer {
           await Promise.all(
             partyIds.map(async (party) => {
               try {
-                const result = await client.getActiveContracts({filter: {party}})
+                const targetClient = await clientForParty(party)
+                const result = await targetClient.getActiveContracts({filter: {party}})
                 results[party] = result.activeContracts
               } catch {
                 results[party] = []
@@ -451,7 +466,8 @@ export function createServeServer(deps: ServeServerDeps): ServeServer {
         }
 
         try {
-          const result = await client.getActiveContracts({
+          const targetClient = await clientForParty(party)
+          const result = await targetClient.getActiveContracts({
             filter: {
               party,
               ...(templateId ? {templateIds: [templateId]} : {}),
@@ -465,7 +481,11 @@ export function createServeServer(deps: ServeServerDeps): ServeServer {
 
       app.post('/api/commands', async (req: Request, res: Response) => {
         try {
-          const result = await client.submitAndWait({
+          // Route to the correct participant based on actAs party
+          const actAsParty = req.body.actAs?.[0] as string | undefined
+          const targetClient = actAsParty ? await clientForParty(actAsParty) : client
+
+          const result = await targetClient.submitAndWait({
             actAs: req.body.actAs,
             commandId: `playground-${Date.now()}-${Math.random().toString(36).slice(2)}`,
             commands: req.body.commands,
