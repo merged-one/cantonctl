@@ -1,7 +1,7 @@
 {
   "name": "cantonctl",
   "description": "Institutional-grade CLI toolchain for building on Canton Network",
-  "version": "0.3.1",
+  "version": "0.3.2",
   "license": "Apache-2.0",
   "author": "Merged One",
   "homepage": "https://github.com/merged-one/cantonctl",
