@@ -151,6 +151,55 @@ cantonctl init my-app --from <github-url>    # Community template
 
 Community templates: any GitHub repo with a `cantonctl-template.yaml` manifest.
 
+## Configuration
+
+`cantonctl.yaml` now supports both the original `networks` shape and a new profile-based shape.
+Existing projects do not need to migrate immediately. Legacy `networks` entries still load unchanged, and cantonctl normalizes them into internal profiles for newer runtime work.
+
+Legacy shape:
+
+```yaml
+version: 1
+
+project:
+  name: my-app
+  sdk-version: "3.4.11"
+
+networks:
+  local:
+    type: sandbox
+    port: 5001
+    json-api-port: 7575
+```
+
+Profile-based shape:
+
+```yaml
+version: 1
+
+project:
+  name: my-app
+  sdk-version: "3.4.11"
+
+default-profile: sandbox
+
+profiles:
+  sandbox:
+    kind: sandbox
+    ledger:
+      port: 5001
+      json-api-port: 7575
+
+networks:
+  local:
+    profile: sandbox
+```
+
+Supported profile kinds are `sandbox`, `canton-multi`, `splice-localnet`, `remote-validator`, and `remote-sv-network`.
+Templates still generate the legacy `networks.local` sandbox config for now.
+
+See [docs/reference/configuration.md](docs/reference/configuration.md) for the full schema, service blocks, and migration guidance.
+
 ## Local Development
 
 ### Sandbox Mode (default)
@@ -203,7 +252,8 @@ See [ADR-0014](docs/adr/0014-dev-full-multi-node-topology.md) for architecture d
 
 | Module | Purpose | Test Coverage |
 |--------|---------|---------------|
-| `src/lib/config.ts` | Hierarchical config: project > user > env > flags. Zod-validated YAML. | 98% |
+| `src/lib/config.ts` | Hierarchical config loading with backward-compatible `networks` plus normalized profiles. | 98% |
+| `src/lib/config-profile.ts` | Canonical profile model and legacy-network normalization for Canton and Splice targets. | 100% |
 | `src/lib/errors.ts` | 24 error codes (E1xxx-E8xxx) with suggestions and docs URLs | 100% |
 | `src/lib/output.ts` | Human/JSON/quiet output modes, spinners, tables | 97% |
 | `src/lib/process-runner.ts` | Subprocess abstraction over execa. Injectable mock for tests. | Mock-tested |
@@ -328,6 +378,7 @@ Plugins are auto-discovered from `node_modules` matching `@cantonctl/plugin-*` o
 | [ADR-0012](docs/adr/0012-test-output-parsing.md) | Test output parsing |
 | [ADR-0013](docs/adr/0013-dar-caching-strategy.md) | DAR caching strategy |
 | [ADR-0014](docs/adr/0014-dev-full-multi-node-topology.md) | Multi-node Docker topology |
+| [ADR-0015](docs/adr/ADR-0015-splice-full-support-architecture.md) | Profile-based Canton + Splice runtime architecture |
 
 ### Research & Design
 

@@ -2,6 +2,7 @@ import * as path from 'node:path'
 import {afterEach, beforeEach, describe, expect, it, vi} from 'vitest'
 
 import {type CantonctlConfig, type ConfigFileSystem, loadConfig, mergeConfigs, resolveConfig} from './config.js'
+import type {NormalizedProfile} from './config-profile.js'
 import {CantonctlError, ErrorCode} from './errors.js'
 
 /**
@@ -155,6 +156,112 @@ networks:
       expect(e.code).toBe(ErrorCode.CONFIG_SCHEMA_VIOLATION)
     }
   })
+
+  it('loads legacy networks unchanged while synthesizing canonical profiles', async () => {
+    const yaml = `
+version: 1
+project:
+  name: my-app
+  sdk-version: "3.4.11"
+networks:
+  local:
+    type: sandbox
+    port: 5001
+    json-api-port: 7575
+  devnet:
+    type: remote
+    url: https://ledger.example.com
+    auth: jwt
+`
+    const fs = createMockFs({'/project/cantonctl.yaml': yaml})
+    const config = await loadConfig({dir: '/project', fs})
+
+    expect(config.networks).toEqual({
+      devnet: {auth: 'jwt', type: 'remote', url: 'https://ledger.example.com'},
+      local: {port: 5001, 'json-api-port': 7575, type: 'sandbox'},
+    })
+    expect(config['default-profile']).toBe('local')
+    expect(config.profiles?.local.kind).toBe('sandbox')
+    expect(config.profiles?.local.services.ledger).toEqual({
+      port: 5001,
+      'json-api-port': 7575,
+    })
+    expect(config.profiles?.devnet.kind).toBe('remote-validator')
+  })
+
+  it('loads profile-based config and normalizes network references', async () => {
+    const yaml = `
+version: 1
+project:
+  name: my-app
+  sdk-version: "3.4.11"
+default-profile: sandbox
+profiles:
+  sandbox:
+    kind: sandbox
+    ledger:
+      port: 5001
+      json-api-port: 7575
+  splice:
+    kind: remote-validator
+    ledger:
+      url: https://ledger.example.com
+    validator:
+      url: https://validator.example.com
+    auth:
+      kind: oidc
+      issuer: https://login.example.com
+networks:
+  local:
+    kind: ledger
+    profile: sandbox
+  devnet:
+    profile: splice
+`
+    const fs = createMockFs({'/project/cantonctl.yaml': yaml})
+    const config = await loadConfig({dir: '/project', fs})
+
+    expect(config['default-profile']).toBe('sandbox')
+    expect(config.profiles?.sandbox.kind).toBe('sandbox')
+    expect(config.profiles?.splice.kind).toBe('remote-validator')
+    expect(config.profiles?.splice.services.validator).toEqual({
+      url: 'https://validator.example.com',
+    })
+    expect(config.networks).toEqual({
+      devnet: {type: 'remote', url: 'https://ledger.example.com'},
+      local: {port: 5001, 'json-api-port': 7575, type: 'sandbox'},
+    })
+  })
+
+  it('throws CONFIG_SCHEMA_VIOLATION for invalid profile service combinations', async () => {
+    const yaml = `
+version: 1
+project:
+  name: my-app
+  sdk-version: "3.4.11"
+profiles:
+  sandbox:
+    kind: sandbox
+    ledger:
+      port: 5001
+      json-api-port: 7575
+    scan:
+      url: https://scan.example.com
+`
+    const fs = createMockFs({'/project/cantonctl.yaml': yaml})
+
+    await expect(loadConfig({dir: '/project', fs})).rejects.toThrow(CantonctlError)
+    try {
+      await loadConfig({dir: '/project', fs})
+    } catch (err) {
+      const e = err as CantonctlError
+      expect(e.code).toBe(ErrorCode.CONFIG_SCHEMA_VIOLATION)
+      expect(e.context.issues).toContainEqual({
+        message: 'service "scan" is not allowed for profile kind "sandbox"',
+        path: 'profiles.sandbox.scan',
+      })
+    }
+  })
 })
 
 describe('mergeConfigs', () => {
@@ -214,6 +321,47 @@ describe('mergeConfigs', () => {
       plugins: ['@cantonctl/plugin-a', '@cantonctl/plugin-b'],
     })
     expect(merged.plugins).toEqual(['@cantonctl/plugin-a', '@cantonctl/plugin-b'])
+  })
+
+  it('merges canonical profiles per profile name', () => {
+    const withProfiles: CantonctlConfig = {
+      ...base,
+      profiles: {
+        sandbox: {
+          experimental: false,
+          kind: 'sandbox',
+          name: 'sandbox',
+          services: {
+            ledger: {port: 5001, 'json-api-port': 7575},
+          },
+        } satisfies NormalizedProfile,
+      },
+    }
+    const merged = mergeConfigs(withProfiles, {
+      profiles: {
+        sandbox: {
+          experimental: false,
+          kind: 'sandbox',
+          name: 'sandbox',
+          services: {
+            auth: {kind: 'jwt'},
+          },
+        },
+        remote: {
+          experimental: false,
+          kind: 'remote-validator',
+          name: 'remote',
+          services: {
+            ledger: {url: 'https://ledger.example.com'},
+            validator: {url: 'https://validator.example.com'},
+          },
+        },
+      },
+    })
+
+    expect(merged.profiles?.sandbox.services.ledger).toEqual({port: 5001, 'json-api-port': 7575})
+    expect(merged.profiles?.sandbox.services.auth).toEqual({kind: 'jwt'})
+    expect(merged.profiles?.remote.kind).toBe('remote-validator')
   })
 })
 
@@ -371,7 +519,7 @@ project:
       dir: '/project',
       flags: {'custom.deep.value': 'test'},
       fs,
-    }) as Record<string, unknown>
+    }) as unknown as Record<string, unknown>
     expect((config.custom as Record<string, Record<string, string>>).deep.value).toBe('test')
   })
 
