@@ -1,0 +1,31 @@
+{
+  "version": 1,
+  "sourceId": "canton-json-ledger-api-openapi",
+  "name": "Canton JSON Ledger API OpenAPI",
+  "family": "ledger-json-api",
+  "stability": "stable-external",
+  "format": "openapi",
+  "artifactVersion": "3.5.0-SNAPSHOT",
+  "fetchedAt": "2026-04-02T20:11:16.928Z",
+  "selectorApplied": false,
+  "selector": null,
+  "upstream": {
+    "kind": "git",
+    "path": "community/ledger/ledger-json-api/src/test/resources/json-api-docs/openapi.yaml",
+    "ref": "v3.4.11",
+    "repo": "https://github.com/digital-asset/canton",
+    "url": "https://raw.githubusercontent.com/digital-asset/canton/v3.4.11/community/ledger/ledger-json-api/src/test/resources/json-api-docs/openapi.yaml"
+  },
+  "files": {
+    "source": "source.yaml",
+    "selected": "selected.yaml"
+  },
+  "mirror": {
+    "entry": "mirror/community/ledger/ledger-json-api/src/test/resources/json-api-docs/openapi.yaml",
+    "dependencies": []
+  },
+  "hashes": {
+    "sourceSha256": "72760bdd836ab6316430590d353dbe05c0d7953eb8e59344beced0665e8c0f0d",
+    "selectedSha256": "72760bdd836ab6316430590d353dbe05c0d7953eb8e59344beced0665e8c0f0d"
+  }
+}

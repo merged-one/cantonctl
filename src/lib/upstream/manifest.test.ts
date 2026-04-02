@@ -8,6 +8,9 @@ import {
   UPSTREAM_SOURCES,
   UPSTREAM_SOURCES_BY_ID,
   getUpstreamSource,
+  isStableGeneratedOpenApiSource,
+  isStableGeneratedOpenRpcSource,
+  isStableGeneratedSource,
 } from './manifest.js'
 
 const REQUIRED_SOURCE_IDS = [
@@ -110,5 +113,27 @@ describe('UPSTREAM_MANIFEST', () => {
   it('has no duplicate source ids', () => {
     const sourceIds = UPSTREAM_SOURCES.map(source => source.id)
     expect(new Set(sourceIds).size).toBe(sourceIds.length)
+  })
+
+  it('identifies stable generated sources from manifest policy', () => {
+    const stableGeneratedIds = UPSTREAM_SOURCES.filter(isStableGeneratedSource).map(source => source.id)
+    const stableOpenApiIds = UPSTREAM_SOURCES.filter(isStableGeneratedOpenApiSource).map(source => source.id)
+    const stableOpenRpcIds = UPSTREAM_SOURCES.filter(isStableGeneratedOpenRpcSource).map(source => source.id)
+
+    expect(stableGeneratedIds).toEqual(
+      expect.arrayContaining([
+        'canton-json-ledger-api-openapi',
+        'splice-scan-external-openapi',
+        'splice-ans-external-openapi',
+        'splice-wallet-external-openapi',
+        'splice-dapp-api-openrpc',
+      ]),
+    )
+    expect(stableGeneratedIds).not.toContain('splice-scan-proxy-openapi')
+    expect(stableGeneratedIds).not.toContain('splice-validator-internal-openapi')
+    expect(stableOpenApiIds).toContain('canton-json-ledger-api-openapi')
+    expect(stableOpenApiIds).not.toContain('splice-dapp-api-openrpc')
+    expect(stableOpenRpcIds).toContain('splice-dapp-api-openrpc')
+    expect(stableOpenRpcIds).not.toContain('splice-wallet-user-api-openrpc')
   })
 })

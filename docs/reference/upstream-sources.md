@@ -46,6 +46,18 @@ Inside the repo, direct source imports are also fine during development:
 import {UPSTREAM_MANIFEST} from '../../src/lib/upstream/manifest.js'
 ```
 
+The repeatable sync pipeline now lives in:
+
+- `npm run codegen:fetch-specs` to sync official upstream OpenAPI/OpenRPC files into `third_party/upstream-specs/`
+- `npm run codegen:generate-types` to generate the stable TypeScript artifacts into `src/generated/`
+- `npm run codegen:specs` to run both steps in order
+
+The stable generated tree is intentionally narrower than the synced upstream mirror:
+
+- `third_party/upstream-specs/` may contain reference-only or internal specs when the manifest says they matter for compatibility or manual inspection
+- `src/generated/` must only contain stable external artifacts derived from manifest-approved entries
+- mixed-scope specs such as Splice Scan must be filtered through their manifest selector before type generation
+
 ## Current Coverage
 
 The manifest currently pins:

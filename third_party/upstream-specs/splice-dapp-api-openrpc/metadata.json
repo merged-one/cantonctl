@@ -1,0 +1,28 @@
+{
+  "version": 1,
+  "sourceId": "splice-dapp-api-openrpc",
+  "name": "Splice Wallet Gateway dApp API",
+  "family": "wallet",
+  "stability": "stable-external",
+  "format": "openrpc",
+  "artifactVersion": "0.5.0",
+  "fetchedAt": "2026-04-02T20:11:16.928Z",
+  "selectorApplied": false,
+  "selector": null,
+  "upstream": {
+    "kind": "git",
+    "path": "api-specs/openrpc-dapp-api.json",
+    "ref": "84e89330978979d4df8905bc67939b6473f23d1c",
+    "repo": "https://github.com/hyperledger-labs/splice-wallet-kernel",
+    "url": "https://raw.githubusercontent.com/hyperledger-labs/splice-wallet-kernel/84e89330978979d4df8905bc67939b6473f23d1c/api-specs/openrpc-dapp-api.json"
+  },
+  "files": {
+    "source": "source.json",
+    "selected": "selected.json"
+  },
+  "mirror": null,
+  "hashes": {
+    "sourceSha256": "b55b5b59353426e3aa98918a350f16e9d69da083dc88b2818292638bc023a2cb",
+    "selectedSha256": "b55b5b59353426e3aa98918a350f16e9d69da083dc88b2818292638bc023a2cb"
+  }
+}

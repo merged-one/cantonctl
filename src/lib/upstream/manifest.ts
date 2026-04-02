@@ -511,3 +511,19 @@ export const UPSTREAM_SOURCES_BY_ID = Object.fromEntries(
 export function getUpstreamSource(id: UpstreamSourceId): (typeof UPSTREAM_SOURCES)[number] {
   return UPSTREAM_SOURCES_BY_ID[id]
 }
+
+export function isStableGeneratedSource(source: UpstreamSource): boolean {
+  return source.stability === 'stable-external' && source.intendedUse.includes('generate-client')
+}
+
+export function isStableGeneratedOpenApiSource(
+  source: UpstreamSource,
+): source is UpstreamSource & {format: 'openapi'} {
+  return isStableGeneratedSource(source) && source.format === 'openapi'
+}
+
+export function isStableGeneratedOpenRpcSource(
+  source: UpstreamSource,
+): source is UpstreamSource & {format: 'openrpc'} {
+  return isStableGeneratedSource(source) && source.format === 'openrpc'
+}
