@@ -3,6 +3,14 @@ import {useState} from 'react'
 import type {ActiveContract, DamlChoice, DamlTemplate, PartyDetails} from '../lib/api'
 import {api} from '../lib/api'
 
+function formatRelativeTime(isoDate: string): string {
+  const diff = Date.now() - new Date(isoDate).getTime()
+  if (diff < 60_000) return `${Math.floor(diff / 1000)}s ago`
+  if (diff < 3_600_000) return `${Math.floor(diff / 60_000)}m ago`
+  if (diff < 86_400_000) return `${Math.floor(diff / 3_600_000)}h ago`
+  return new Date(isoDate).toLocaleDateString()
+}
+
 interface DynamicChoiceFormProps {
   contract: ActiveContract
   template: DamlTemplate | undefined
@@ -75,8 +83,13 @@ export function DynamicChoiceForm({contract, template, parties, activeParty, pro
             </div>
           </div>
         </div>
-        <div className="text-[9px] text-zinc-600 font-mono">
-          {contract.contractId.slice(-8)}
+        <div className="text-right">
+          {contract.createdAt && (
+            <div className="text-[9px] text-zinc-500">{formatRelativeTime(contract.createdAt)}</div>
+          )}
+          <div className="text-[9px] text-zinc-600 font-mono">
+            {contract.contractId.slice(-8)}
+          </div>
         </div>
       </button>
 

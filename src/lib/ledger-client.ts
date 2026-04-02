@@ -229,6 +229,8 @@ export function createLedgerClient(options: LedgerClientOptions): LedgerClient {
           if (created) {
             activeContracts.push({
               contractId: created.contractId,
+              createdAt: created.createdAt as string | undefined,
+              offset: created.offset as number | undefined,
               payload: created.createArgument,
               templateId: created.templateId,
             })
