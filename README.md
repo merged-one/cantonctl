@@ -193,7 +193,7 @@ See [ADR-0014](docs/adr/0014-dev-full-multi-node-topology.md) for architecture d
 
 ### Core Principles
 
-- **Test-first TDD**: Tests define the contract, implementation follows (451 tests, 98.18% statement coverage)
+- **Test-first TDD**: Tests define the contract, implementation follows (490 tests, 98.18% statement coverage)
 - **Dependency injection**: Every I/O module accepts injected dependencies. Zero `vi.mock()`.
 - **AbortSignal everywhere**: All long-running operations support graceful cancellation
 - **Structured errors**: Every error is a `CantonctlError` with code (E1xxx-E8xxx), suggestion, and docs URL
@@ -341,11 +341,12 @@ Plugins are auto-discovered from `node_modules` matching `@cantonctl/plugin-*` o
 
 ```bash
 npm install           # Install dependencies
-npm test              # Run unit tests (383 tests)
+npm test              # Run unit tests (399 tests)
 npm run test:watch    # Watch mode
-npm run test:e2e      # Run E2E tests (75 tests, requires Daml SDK + Java 21)
+npm run test:e2e      # Run E2E tests (77 tests, requires Daml SDK + Java 21)
 npm run test:e2e:docker # Run Docker E2E tests (2 tests, requires Docker)
-npm run test:all      # Run all 460 tests
+npm run test:e2e:playground # Run playground E2E tests (14 tests)
+npm run test:all      # Run all 490 tests
 npm run test:coverage # Coverage report (98.18% statements)
 npm run build         # Compile TypeScript
 npm run ci            # Local CI check (mirrors GitHub Actions)
