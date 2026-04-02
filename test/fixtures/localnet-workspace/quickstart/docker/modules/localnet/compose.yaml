@@ -1,0 +1,5 @@
+services:
+  canton:
+    image: ghcr.io/digital-asset/decentralized-canton-sync/docker/canton:0.5.3
+  splice:
+    image: ghcr.io/digital-asset/decentralized-canton-sync/docker/splice-app:0.5.3

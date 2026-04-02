@@ -8,13 +8,13 @@ cantonctl is an institutional-grade CLI toolchain for Canton Network — the ent
 
 ```bash
 npm install                         # Install dependencies
-npm test                            # Run 399 unit tests (project: unit)
+npm test                            # Run 449 unit tests (project: unit)
 npm run test:e2e:sdk                # Run 66 SDK E2E tests (project: e2e-sdk)
 npm run test:e2e:sandbox            # Run 9 sandbox E2E tests (project: e2e-sandbox)
 npm run test:e2e:docker             # Run 2 Docker E2E tests (project: e2e-docker)
 npm run test:e2e:playground         # Run 14 playground E2E tests (project: e2e-playground)
 npm run test:e2e                    # Run SDK + sandbox E2E tests (75 tests)
-npm run test:all                    # Run all 490 tests
+npm run test:all                    # Run all test projects
 npm run test:coverage               # Coverage report
 npm run build                       # Compile TypeScript to dist/
 npm run ci                          # Local CI check (native)
@@ -99,7 +99,7 @@ The GitHub Actions workflow (`.github/workflows/ci.yml`) has four jobs:
 | Module | Factory | Purpose |
 |--------|---------|---------|
 | `config.ts` | `loadConfig()`, `resolveConfig()` | YAML config with hierarchical merge (project > user > env > flags) |
-| `errors.ts` | `new CantonctlError(ErrorCode.XXX, opts)` | 24 error codes organized E1xxx-E8xxx |
+| `errors.ts` | `new CantonctlError(ErrorCode.XXX, opts)` | 30 error codes organized E1xxx-E8xxx |
 | `output.ts` | `createOutput({json, quiet, noColor})` | Human/JSON/quiet output modes |
 | `process-runner.ts` | `createProcessRunner()` | execa wrapper. Mock with `vi.fn()` stubs. |
 | `daml.ts` | `createDamlSdk({runner})` | SDK abstraction: detect, build, test, codegen, startSandbox |
@@ -118,6 +118,8 @@ The GitHub Actions workflow (`.github/workflows/ci.yml`) has four jobs:
 | `topology.ts` | `generateTopology(opts)` | Pure function: generates Docker Compose + Canton HOCON + bootstrap script from config |
 | `docker.ts` | `createDockerManager(deps)` | Docker Compose lifecycle: checkAvailable, composeUp, composeDown, composeLogs |
 | `dev-server-full.ts` | `createFullDevServer(deps)` | Multi-node dev server: Docker topology, multi-participant health, cross-node hot-reload |
+| `localnet-workspace.ts` | `createLocalnetWorkspaceDetector(deps)` | Detects official Splice LocalNet workspace layout and derives service URLs |
+| `localnet.ts` | `createLocalnet(deps)` | Thin wrapper around upstream LocalNet `make` targets plus validator health/status parsing |
 | `cleaner.ts` | `createCleaner(deps)` | Build artifact cleanup (.daml/, dist/, node_modules/) |
 | `keytar-backend.ts` | `createBackendWithFallback()` | OS keychain backend via keytar with in-memory fallback |
 | `serve.ts` | `createServeServer(deps)` | Canton IDE Protocol server: REST + WebSocket API for any IDE client |
@@ -204,7 +206,7 @@ vi.spyOn(process.stdout, 'write').mockReturnValue(true)
 
 - E1xxx: Configuration (E1001 not found, E1002 invalid YAML, E1003 schema violation, E1004 directory exists)
 - E2xxx: SDK/Tools (E2001 not installed, E2002 version mismatch, E2003 command failed)
-- E3xxx: Sandbox (E3001 start failed, E3002 port in use, E3003 health timeout, E3004 Docker not available, E3005 Docker Compose failed)
+- E3xxx: Sandbox and local runtimes (E3001 start failed, E3002 port in use, E3003 health timeout, E3004 Docker not available, E3005 Docker Compose failed, E3006 LocalNet workspace invalid, E3007 LocalNet command failed)
 - E4xxx: Build (E4001 Daml error, E4002 DAR not found)
 - E5xxx: Test (E5001 execution failed)
 - E6xxx: Deploy (E6001 auth failed, E6002 unreachable, E6003 upload failed, E6004 exists)

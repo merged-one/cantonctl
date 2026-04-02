@@ -52,6 +52,8 @@ export enum ErrorCode {
   SANDBOX_HEALTH_TIMEOUT = 'E3003',
   DOCKER_NOT_AVAILABLE = 'E3004',
   DOCKER_COMPOSE_FAILED = 'E3005',
+  LOCALNET_WORKSPACE_INVALID = 'E3006',
+  LOCALNET_COMMAND_FAILED = 'E3007',
 
   // E4xxx: Build
   BUILD_DAML_ERROR = 'E4001',
@@ -94,6 +96,8 @@ const ERROR_MESSAGES: Record<ErrorCode, string> = {
   [ErrorCode.SANDBOX_HEALTH_TIMEOUT]: 'Canton sandbox did not become healthy within the timeout.',
   [ErrorCode.DOCKER_NOT_AVAILABLE]: 'Docker is not installed or not running.',
   [ErrorCode.DOCKER_COMPOSE_FAILED]: 'Docker Compose operation failed.',
+  [ErrorCode.LOCALNET_WORKSPACE_INVALID]: 'The LocalNet workspace does not match the expected upstream layout.',
+  [ErrorCode.LOCALNET_COMMAND_FAILED]: 'The upstream LocalNet workspace command failed.',
   [ErrorCode.BUILD_DAML_ERROR]: 'Daml compilation failed.',
   [ErrorCode.BUILD_DAR_NOT_FOUND]: 'Expected .dar file was not produced by the build.',
   [ErrorCode.TEST_EXECUTION_FAILED]: 'One or more Daml Script tests failed.',

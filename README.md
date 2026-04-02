@@ -20,11 +20,11 @@ cantonctl eliminates the "infrastructure engineer before product builder" proble
 | **Daml SDK** | 3.4.11 | Smart contract compilation, testing, sandbox | `curl -sSL https://get.daml.com/ \| sh -s 3.4.11` |
 | **Java** | 21 (LTS) | JVM runtime required by Daml SDK and Canton | See below |
 
-### Optional (for `dev --full`)
+### Optional (for `dev --full` and `localnet`)
 
 | Dependency | Version | Purpose | Install |
 |-----------|---------|---------|---------|
-| **Docker** | ≥ 24 | Multi-node topology via Docker Compose | [docker.com](https://docs.docker.com/get-docker/) |
+| **Docker** | ≥ 24 | Canton multi-node topology and upstream LocalNet workspaces | [docker.com](https://docs.docker.com/get-docker/) |
 | **Canton image** | 0.5.3 | Canton runtime for multi-node mode | `docker pull ghcr.io/digital-asset/decentralized-canton-sync/docker/canton:0.5.3` |
 
 ### Verify your environment
@@ -117,7 +117,8 @@ cantonctl serve                        # Headless API only (for VS Code, Neovim)
 |---------|-------------|--------|
 | `cantonctl init [name]` | Scaffold a new project (interactive prompts when no args) | Implemented |
 | `cantonctl dev` | Start local Canton sandbox with hot-reload | Implemented |
-| `cantonctl dev --full` | Multi-node Docker topology (synchronizer + N participants) | Implemented |
+| `cantonctl dev --full` | Canton-only multi-node Docker topology (generated under `.cantonctl/`) | Implemented |
+| `cantonctl localnet up/down/status` | Wrap an official Splice LocalNet workspace without redefining `dev --full` | Implemented |
 | `cantonctl build` | Compile Daml + generate TypeScript bindings | Implemented |
 | `cantonctl build --watch` | Continuous compilation on `.daml` file changes (chokidar) | Implemented |
 | `cantonctl test` | Run Daml Script tests with structured output | Implemented |
@@ -246,15 +247,16 @@ cantonctl dev --port 6001        # Custom Canton node port
 cantonctl dev --json             # JSON output for CI
 ```
 
-### Multi-Node Mode (`--full`)
+### Canton Multi-Node Mode (`--full`)
 
-`cantonctl dev --full` launches a realistic multi-node Canton topology via Docker:
+`cantonctl dev --full` launches a realistic Canton-only multi-node topology via Docker:
 
 - **Single Canton container** hosting synchronizer + multiple participants (conformance kit pattern)
 - **Auto-generated configs** — Docker Compose, Canton HOCON, and bootstrap scripts from `cantonctl.yaml`
 - **Party-to-participant mapping** — `operator` → participant1, `participant` → participant2
 - **Cross-node hot-reload** — DAR changes uploaded to all participants simultaneously
 - **In-memory storage** — Fastest startup, no Postgres required
+- **Generated workspace** — files live under `.cantonctl/` and are regenerated on each run
 
 ```bash
 cantonctl dev --full                          # Multi-node on default ports (10000+)
@@ -263,6 +265,24 @@ cantonctl dev --full --canton-image <image>   # Custom Canton Docker image
 ```
 
 See [ADR-0014](docs/adr/0014-dev-full-multi-node-topology.md) for architecture details.
+
+### Splice LocalNet Workspace Wrapper
+
+`cantonctl localnet ...` is a separate workflow for official Splice LocalNet workspaces. It does not generate topology files in this repo and it does not change `dev --full`.
+
+- **Delegates upstream** — runs the workspace's own `make start|stop|status` flow
+- **Detects official layout** — expects a `Makefile`, root compose file, `.env`, config directory, and LocalNet module files
+- **Health checks** — probes validator `readyz`
+- **Endpoint discovery** — reports ledger, scan, wallet, and validator URLs derived from the upstream workspace
+
+```bash
+cantonctl localnet up --workspace ../quickstart
+cantonctl localnet up --workspace ../quickstart --profile app-provider
+cantonctl localnet status --workspace ../quickstart
+cantonctl localnet down --workspace ../quickstart
+```
+
+See [docs/reference/localnet.md](docs/reference/localnet.md) for command details and workspace expectations.
 
 ## Architecture
 
