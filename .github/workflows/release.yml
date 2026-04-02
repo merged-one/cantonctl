@@ -35,6 +35,15 @@ jobs:
       - run: npm ci
       - run: npm run build
 
+      # Build playground frontend and bundle into dist/
+      - name: Build playground UI
+        run: |
+          cd playground
+          npm ci
+          npm run build
+          mkdir -p ../dist/playground
+          cp -r dist/* ../dist/playground/
+
       # Verify the version in package.json matches the tag
       - name: Verify version matches tag
         run: |

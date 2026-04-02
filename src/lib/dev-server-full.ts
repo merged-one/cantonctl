@@ -190,11 +190,20 @@ export function createFullDevServer(deps: FullDevServerDeps): FullDevServer {
             continue
           }
 
-          try {
-            await client.allocateParty({displayName: partyName})
-            output.info(`  Provisioned party: ${partyName}`)
-          } catch {
-            output.warn(`  Failed to provision party: ${partyName}`)
+          // Retry party allocation — synchronizer may still be connecting
+          let allocated = false
+          for (let attempt = 0; attempt < 3 && !allocated; attempt++) {
+            try {
+              await client.allocateParty({displayName: partyName})
+              output.info(`  Provisioned party: ${partyName}`)
+              allocated = true
+            } catch {
+              if (attempt < 2) {
+                await new Promise(r => setTimeout(r, 2000))
+              } else {
+                output.warn(`  Failed to provision party: ${partyName}`)
+              }
+            }
           }
         }
       }
