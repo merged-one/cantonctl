@@ -8,12 +8,13 @@ cantonctl is an institutional-grade CLI toolchain for Canton Network — the ent
 
 ```bash
 npm install                         # Install dependencies
-npm test                            # Run 374 unit tests (project: unit)
+npm test                            # Run 399 unit tests (project: unit)
 npm run test:e2e:sdk                # Run 66 SDK E2E tests (project: e2e-sdk)
 npm run test:e2e:sandbox            # Run 9 sandbox E2E tests (project: e2e-sandbox)
 npm run test:e2e:docker             # Run 2 Docker E2E tests (project: e2e-docker)
-npm run test:e2e                    # Run all 75 E2E tests
-npm run test:all                    # Run all 451 tests
+npm run test:e2e:playground         # Run 14 playground E2E tests (project: e2e-playground)
+npm run test:e2e                    # Run SDK + sandbox E2E tests (75 tests)
+npm run test:all                    # Run all 490 tests
 npm run test:coverage               # Coverage report
 npm run build                       # Compile TypeScript to dist/
 npm run ci                          # Local CI check (native)
@@ -48,17 +49,19 @@ Run `./scripts/ci-local.sh --docker` (or `npm run ci` for native). The `--docker
 
 ### Test project structure
 
-Tests are organized into three vitest projects in `vitest.config.ts`:
+Tests are organized into five vitest projects in `vitest.config.ts`:
 
 | Project | Files | Isolation | Purpose |
 |---------|-------|-----------|---------|
 | `unit` | `src/**/*.test.ts` | Default (threads) | Fast, no external deps |
 | `e2e-sdk` | `test/e2e/{init,build,test-cmd}.e2e.test.ts` (includes build --watch E2E) | Default (threads) | Requires Daml SDK + Java |
 | `e2e-sandbox` | `test/e2e/{dev,deploy,status}.e2e.test.ts` | `pool: 'forks'`, `singleFork: true` | Requires Canton sandbox (JVM) |
+| `e2e-docker` | `test/e2e/dev-full.e2e.test.ts` | `pool: 'forks'`, `singleFork: true` | Requires Docker + Canton image |
+| `e2e-playground` | `test/e2e/playground.e2e.test.ts` | `pool: 'forks'`, `singleFork: true` | Playground serve API + sandbox |
 
-**Why forks for sandbox tests**: Vitest's default thread pool kills JVM child processes when a test file completes. The `forks` pool isolates each file in its own Node.js process, preventing cross-file interference between Canton sandbox JVM process trees.
+**Why forks for sandbox/docker/playground tests**: Vitest's default thread pool kills JVM child processes when a test file completes. The `forks` pool isolates each file in its own Node.js process, preventing cross-file interference between Canton sandbox JVM process trees.
 
-**Adding new E2E tests**: Add the file path to the appropriate project's `include` array in `vitest.config.ts`. If the test starts a Canton sandbox, it goes in `e2e-sandbox`. If it only needs the Daml SDK CLI, it goes in `e2e-sdk`.
+**Adding new E2E tests**: Add the file path to the appropriate project's `include` array in `vitest.config.ts`. If the test starts a Canton sandbox, it goes in `e2e-sandbox`. If it only needs the Daml SDK CLI, it goes in `e2e-sdk`. If it starts a playground serve server, it goes in `e2e-playground`.
 
 ### SpawnedProcess lifecycle
 
@@ -96,7 +99,7 @@ The GitHub Actions workflow (`.github/workflows/ci.yml`) has four jobs:
 | Module | Factory | Purpose |
 |--------|---------|---------|
 | `config.ts` | `loadConfig()`, `resolveConfig()` | YAML config with hierarchical merge (project > user > env > flags) |
-| `errors.ts` | `new CantonctlError(ErrorCode.XXX, opts)` | 21 error codes organized E1xxx-E8xxx |
+| `errors.ts` | `new CantonctlError(ErrorCode.XXX, opts)` | 24 error codes organized E1xxx-E8xxx |
 | `output.ts` | `createOutput({json, quiet, noColor})` | Human/JSON/quiet output modes |
 | `process-runner.ts` | `createProcessRunner()` | execa wrapper. Mock with `vi.fn()` stubs. |
 | `daml.ts` | `createDamlSdk({runner})` | SDK abstraction: detect, build, test, codegen, startSandbox |

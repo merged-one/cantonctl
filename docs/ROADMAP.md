@@ -4,13 +4,13 @@
 
 ## Current State: Feature-Complete CLI (March 2026)
 
-cantonctl is a production-quality CLI with 11 commands, 22 foundation libraries, 5 project templates, and 460 tests at 98.18% coverage. Every command works, every error is structured, every output except `console` supports `--json`. The core developer workflow — `init → dev → build → test → deploy` — works end-to-end.
+cantonctl is a production-quality CLI with 14 commands, 24 foundation libraries, 5 project templates, and 490 tests at 98.18% coverage. Every command works, every error is structured, every output except `console` and `playground` supports `--json`. The core developer workflow — `init → dev → build → test → deploy` — works end-to-end.
 
 | Metric | Value |
 |--------|-------|
-| Commands | 12 (init, dev, build, test, deploy, console, status, auth, clean) |
+| Commands | 14 (init, dev, build, test, deploy, console, status, auth, clean, doctor, serve, playground) |
 | Templates | 5 (basic, token, defi-amm, api-service, zenith-evm) |
-| Tests | 451 (383 unit + 77 E2E), 100% pass rate |
+| Tests | 490 (399 unit + 91 E2E), 100% pass rate |
 | Coverage | 98.18% statements, 91.11% branches |
 | Documentation | 24 docs (9 reference, 5 task guides, 4 concept docs, error index, llms.txt, JSON Schema) |
 | ADRs | 14 architecture decision records |
