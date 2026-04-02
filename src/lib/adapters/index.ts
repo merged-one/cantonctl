@@ -5,8 +5,10 @@ export {
   type LedgerActiveContract,
   type LedgerAdapter,
   type LedgerAdapterOptions,
+  type LedgerDisclosedContract,
   type LedgerGetActiveContractsResponse,
   type LedgerGetLedgerEndResponse,
+  type LedgerInterfaceView,
   type LedgerGetVersionResponse,
   type LedgerSubmitAndWaitRequestBody,
   type LedgerSubmitAndWaitResponse,
@@ -18,14 +20,20 @@ export {
   normalizeScanUpdateHistoryItem,
   normalizeScanUpdateHistoryResponse,
   type NormalizedScanUpdate,
+  type ScanAcsRequest,
+  type ScanAcsResponse,
+  type ScanAcsSnapshotTimestampResponse,
   type ScanAdapter,
   type ScanAdapterOptions,
   type ScanGetClosedRoundsResponse,
   type ScanGetDsoInfoResponse,
   type ScanGetOpenAndIssuingMiningRoundsRequest,
   type ScanGetOpenAndIssuingMiningRoundsResponse,
+  type ScanListEntriesResponse,
   type ScanListDsoScansResponse,
   type ScanListValidatorLicensesResponse,
+  type ScanLookupEntryByNameResponse,
+  type ScanLookupEntryByPartyResponse,
   type ScanUpdateHistoryItem,
   type ScanUpdateHistoryRequest,
   type ScanUpdateHistoryResponse,
@@ -73,6 +81,15 @@ export {
   type AnsListEntriesResponse,
   type NormalizedAnsEntry,
 } from './ans.js'
+
+export {
+  createValidatorUserAdapter,
+  type CreateBuyTrafficRequest,
+  type CreateBuyTrafficRequestResponse,
+  type GetBuyTrafficRequestStatusResponse,
+  type ValidatorUserAdapter,
+  type ValidatorUserAdapterOptions,
+} from './validator-user.js'
 
 export type {
   AdapterFetchFn,

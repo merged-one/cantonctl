@@ -257,7 +257,7 @@ function buildRequestUrl(
   path: string,
   query?: Record<string, AdapterQueryValue>,
 ): string {
-  const url = new URL(normalizeRequestPath(path), `${baseUrl}/`)
+  const url = new URL(normalizeRelativeRequestPath(path), `${baseUrl}/`)
   if (query) {
     for (const [key, rawValue] of Object.entries(query)) {
       appendQueryValue(url.searchParams, key, rawValue)
@@ -309,9 +309,8 @@ async function safeReadText(response: Response): Promise<string> {
   }
 }
 
-function normalizeRequestPath(path: string): string {
-  if (path.startsWith('/')) return path
-  return `/${path}`
+function normalizeRelativeRequestPath(path: string): string {
+  return path.replace(/^\/+/, '')
 }
 
 function resolveServiceBaseUrl(

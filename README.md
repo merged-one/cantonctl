@@ -125,6 +125,10 @@ cantonctl serve                        # Headless API only (for VS Code, Neovim)
 | `cantonctl deploy <network>` | 6-step DAR deployment pipeline for local and remote networks | Implemented |
 | `cantonctl console` | Interactive REPL for querying and submitting ledger commands | Implemented |
 | `cantonctl status` | Show ledger health plus profile-aware service endpoints (`--profile` supported) | Implemented |
+| `cantonctl scan updates/acs/current-state` | Query stable public Scan history, ACS snapshots, and current state via scan or scan-proxy | Implemented |
+| `cantonctl token holdings/transfer` | Read holdings and move tokens through stable holding and transfer-factory surfaces | Implemented |
+| `cantonctl ans list/create` | Read or create ANS entries through stable external ANS, scan, or scan-proxy surfaces | Implemented |
+| `cantonctl validator traffic-buy/traffic-status` | Use stable validator-user wallet-backed traffic purchase endpoints | Implemented |
 | `cantonctl profiles list/show/validate` | Inspect and validate resolved runtime profiles | Implemented |
 | `cantonctl compat check [profile]` | Check profile compatibility against stable tracked upstream surfaces | Implemented |
 | `cantonctl codegen sync` | Sync upstream specs and regenerate stable generated clients | Implemented |
@@ -226,6 +230,70 @@ For repository maintainers, `cantonctl codegen sync` wraps the existing manifest
 ```bash
 cantonctl codegen sync
 ```
+
+## Stable Splice Surfaces
+
+Remote validator profiles can now drive first-class stable public Splice commands without relying on app-internal validator APIs.
+
+```yaml
+version: 1
+
+default-profile: splice-devnet
+
+project:
+  name: my-app
+  sdk-version: "3.4.11"
+
+profiles:
+  splice-devnet:
+    kind: remote-validator
+    experimental: false
+    ledger:
+      url: https://ledger.example.com
+    scan:
+      url: https://scan.example.com
+    scanProxy:
+      url: https://validator.example.com/api/validator
+    tokenStandard:
+      url: https://tokens.example.com
+    ans:
+      url: https://ans.example.com
+    validator:
+      url: https://validator.example.com/api/validator
+```
+
+### Scan
+
+```bash
+cantonctl scan updates --profile splice-devnet --page-size 20 --json
+cantonctl scan acs --profile splice-devnet --migration-id 7 --page-size 25 --json
+cantonctl scan current-state --profile splice-devnet
+cantonctl scan current-state --scan-proxy-url https://validator.example.com/api/validator --json
+```
+
+- `scan updates` reads stable public history and keeps parsing tolerant of unknown upstream fields.
+- `scan acs` resolves snapshot timestamps when `--record-time` is omitted, then reads the corresponding stable ACS page.
+- `scan current-state` prefers direct Scan when available and falls back to scan-proxy for stable public read access.
+
+See [docs/reference/scan.md](docs/reference/scan.md) for the full flag reference.
+
+### Token, ANS, And Validator User
+
+```bash
+cantonctl token holdings --profile splice-devnet --party Alice --token eyJ...
+cantonctl token transfer --profile splice-devnet --sender Alice --receiver Bob --amount 10.0 --instrument-admin Registry --instrument-id USD --token eyJ...
+cantonctl ans list --profile splice-devnet --token eyJ...
+cantonctl ans create --profile splice-devnet --name alice.unverified.ans --description "Alice profile" --url https://alice.example.com --token eyJ...
+cantonctl validator traffic-buy --profile splice-devnet --receiving-validator-party-id AliceValidator --domain-id domain::1 --traffic-amount 4096 --token eyJ...
+cantonctl validator traffic-status --profile splice-devnet --tracking-id traffic-123 --token eyJ...
+```
+
+- `token holdings` reads the stable holding Daml interface through the public JSON Ledger API.
+- `token transfer` uses the stable token-standard transfer factory plus a ledger interface-choice submission. cantonctl does not default to deprecated transfer-offer workflows.
+- `ans list` can read from stable ANS, Scan, or scan-proxy depending on the selected surface.
+- `ans create`, `validator traffic-buy`, and `validator traffic-status` stay on the stable external service surfaces intended for downstream clients.
+
+See [docs/reference/token-standard.md](docs/reference/token-standard.md) for token command details.
 
 ## Local Development
 

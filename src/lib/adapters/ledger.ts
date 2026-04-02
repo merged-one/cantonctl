@@ -26,6 +26,8 @@ export interface SubmitRequest {
   actAs: string[]
   commandId: string
   commands: unknown[]
+  disclosedContracts?: LedgerDisclosedContract[]
+  packageIdSelectionPreference?: string[]
   readAs?: string[]
   submissionId?: string
   synchronizerId?: string
@@ -34,15 +36,31 @@ export interface SubmitRequest {
 }
 
 export interface ContractFilter {
+  interfaceIds?: string[]
   party: string
   templateIds?: string[]
+}
+
+export interface LedgerDisclosedContract {
+  contractId: string
+  createdEventBlob: string
+  synchronizerId: string
+  templateId: string
+}
+
+export interface LedgerInterfaceView {
+  interfaceId?: string
+  viewStatus?: Record<string, unknown>
+  viewValue?: unknown
 }
 
 export interface LedgerActiveContract {
   contractId?: string
   createdAt?: string
+  interfaceViews?: LedgerInterfaceView[]
   offset?: number
   payload?: unknown
+  synchronizerId?: string
   templateId?: string
 }
 
@@ -116,17 +134,30 @@ export function createLedgerAdapter(options: LedgerAdapterOptions): LedgerAdapte
         signal,
       })
 
-      const cumulative = (params.filter.templateIds?.length ?? 0) > 0
-        ? params.filter.templateIds!.map(templateId => ({
-          identifierFilter: {
-            TemplateFilter: {
-              value: {
-                includeCreatedEventBlob: false,
-                templateId,
-              },
+      const templateFilters = params.filter.templateIds?.map(templateId => ({
+        identifierFilter: {
+          TemplateFilter: {
+            value: {
+              includeCreatedEventBlob: false,
+              templateId,
             },
           },
-        }))
+        },
+      })) ?? []
+      const interfaceFilters = params.filter.interfaceIds?.map(interfaceId => ({
+        identifierFilter: {
+          InterfaceFilter: {
+            value: {
+              includeCreatedEventBlob: false,
+              includeInterfaceView: true,
+              interfaceId,
+            },
+          },
+        },
+      })) ?? []
+      const cumulative = [...templateFilters, ...interfaceFilters]
+      const filterValue = cumulative.length > 0
+        ? cumulative
         : [{
           identifierFilter: {
             WildcardFilter: {
@@ -142,7 +173,7 @@ export function createLedgerAdapter(options: LedgerAdapterOptions): LedgerAdapte
         filter: {
           filtersByParty: {
             [params.filter.party]: {
-              cumulative,
+              cumulative: filterValue,
             },
           },
         },
@@ -196,6 +227,9 @@ export function createLedgerAdapter(options: LedgerAdapterOptions): LedgerAdapte
           actAs: request.actAs,
           commandId: request.commandId,
           commands: request.commands as CantonJsonLedgerApiComponents['schemas']['Command'][],
+          disclosedContracts:
+            request.disclosedContracts as CantonJsonLedgerApiComponents['schemas']['DisclosedContract'][] | undefined,
+          packageIdSelectionPreference: request.packageIdSelectionPreference,
           readAs: request.readAs,
           submissionId: request.submissionId,
           synchronizerId: request.synchronizerId,
@@ -253,11 +287,27 @@ export function normalizeLedgerActiveContractsResponse(
     activeContracts.push({
       contractId: readString(createdEvent, 'contractId'),
       createdAt: readString(createdEvent, 'createdAt'),
+      interfaceViews: normalizeLedgerInterfaceViews(createdEvent.interfaceViews),
       offset: readNumber(createdEvent, 'offset'),
       payload: createdEvent.createArgument,
+      synchronizerId: activeContract ? readString(activeContract, 'synchronizerId') : undefined,
       templateId: readString(createdEvent, 'templateId'),
     })
   }
 
   return activeContracts
+}
+
+function normalizeLedgerInterfaceViews(value: unknown): LedgerInterfaceView[] | undefined {
+  if (!Array.isArray(value)) {
+    return undefined
+  }
+
+  return value
+    .filter(isRecord)
+    .map(view => ({
+      interfaceId: readString(view, 'interfaceId'),
+      viewStatus: readRecord(view, 'viewStatus'),
+      viewValue: view.viewValue,
+    }))
 }

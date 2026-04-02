@@ -13,11 +13,12 @@ describe('stable adapter index', () => {
     expect(typeof adapters.createScanProxyAdapter).toBe('function')
     expect(typeof adapters.createTokenStandardAdapter).toBe('function')
     expect(typeof adapters.createAnsAdapter).toBe('function')
+    expect(typeof adapters.createValidatorUserAdapter).toBe('function')
   })
 
   it('keeps stable adapters isolated from experimental module imports', () => {
     const dir = path.dirname(fileURLToPath(import.meta.url))
-    const stableFiles = ['ans.ts', 'index.ts', 'ledger.ts', 'scan-proxy.ts', 'scan.ts', 'token-standard.ts']
+    const stableFiles = ['ans.ts', 'index.ts', 'ledger.ts', 'scan-proxy.ts', 'scan.ts', 'token-standard.ts', 'validator-user.ts']
 
     for (const file of stableFiles) {
       const source = fs.readFileSync(path.join(dir, file), 'utf8')

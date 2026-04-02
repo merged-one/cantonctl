@@ -38,6 +38,14 @@ export interface ScanUpdateHistoryResult {
 }
 
 export interface ScanAdapter {
+  getAcsSnapshot(
+    request: ScanAcsRequest,
+    signal?: AbortSignal,
+  ): Promise<ScanAcsResponse>
+  getAcsSnapshotTimestampBefore(
+    params: {before: string; migrationId: number},
+    signal?: AbortSignal,
+  ): Promise<ScanAcsSnapshotTimestampResponse>
   getClosedRounds(signal?: AbortSignal): Promise<ScanGetClosedRoundsResponse>
   getDsoInfo(signal?: AbortSignal): Promise<ScanGetDsoInfoResponse>
   getOpenAndIssuingMiningRounds(
@@ -48,11 +56,23 @@ export interface ScanAdapter {
     request: ScanUpdateHistoryRequest,
     signal?: AbortSignal,
   ): Promise<ScanUpdateHistoryResult>
+  listAnsEntries(
+    params: {namePrefix?: string; pageSize: number},
+    signal?: AbortSignal,
+  ): Promise<ScanListEntriesResponse>
   listDsoScans(signal?: AbortSignal): Promise<ScanListDsoScansResponse>
   listValidatorLicenses(
     params?: {after?: number; limit?: number},
     signal?: AbortSignal,
   ): Promise<ScanListValidatorLicensesResponse>
+  lookupAnsEntryByName(
+    name: string,
+    signal?: AbortSignal,
+  ): Promise<ScanLookupEntryByNameResponse | null>
+  lookupAnsEntryByParty(
+    party: string,
+    signal?: AbortSignal,
+  ): Promise<ScanLookupEntryByPartyResponse | null>
   metadata: AdapterMetadata<'scan'> & {
     generatedSpec: typeof spliceScanExternalMetadata
   }
@@ -66,6 +86,11 @@ export type ScanListValidatorLicensesResponse =
   SpliceScanExternalOperations['listValidatorLicenses']['responses'][200]['content']['application/json']
 export type ScanGetClosedRoundsResponse =
   SpliceScanExternalOperations['getClosedRounds']['responses'][200]['content']['application/json']
+export type ScanAcsRequest = SpliceScanExternalComponents['schemas']['AcsRequest']
+export type ScanAcsResponse =
+  SpliceScanExternalOperations['getAcsSnapshotAt']['responses'][200]['content']['application/json']
+export type ScanAcsSnapshotTimestampResponse =
+  SpliceScanExternalComponents['schemas']['AcsSnapshotTimestampResponse']
 export type ScanGetOpenAndIssuingMiningRoundsRequest =
   SpliceScanExternalComponents['schemas']['GetOpenAndIssuingMiningRoundsRequest']
 export type ScanGetOpenAndIssuingMiningRoundsResponse =
@@ -74,6 +99,9 @@ export type ScanUpdateHistoryRequest = SpliceScanExternalComponents['schemas']['
 export type ScanUpdateHistoryResponse =
   SpliceScanExternalOperations['getUpdateHistoryV2']['responses'][200]['content']['application/json']
 export type ScanUpdateHistoryItem = SpliceScanExternalComponents['schemas']['UpdateHistoryItemV2']
+export type ScanListEntriesResponse = SpliceScanExternalComponents['schemas']['ListEntriesResponse']
+export type ScanLookupEntryByNameResponse = SpliceScanExternalComponents['schemas']['LookupEntryByNameResponse']
+export type ScanLookupEntryByPartyResponse = SpliceScanExternalComponents['schemas']['LookupEntryByPartyResponse']
 
 export function createScanAdapter(options: ScanAdapterOptions): ScanAdapter {
   const transport = createAdapterTransport({
@@ -92,6 +120,27 @@ export function createScanAdapter(options: ScanAdapterOptions): ScanAdapter {
 
   return {
     metadata,
+
+    async getAcsSnapshot(request, signal) {
+      return transport.requestJson<ScanAcsResponse>({
+        body: request,
+        method: 'POST',
+        path: '/v0/state/acs',
+        signal,
+      })
+    },
+
+    async getAcsSnapshotTimestampBefore(params, signal) {
+      return transport.requestJson<ScanAcsSnapshotTimestampResponse>({
+        method: 'GET',
+        path: '/v0/state/acs/snapshot-timestamp',
+        query: {
+          before: params.before,
+          migration_id: params.migrationId,
+        },
+        signal,
+      })
+    },
 
     async getClosedRounds(signal) {
       return transport.requestJson<ScanGetClosedRoundsResponse>({
@@ -132,6 +181,18 @@ export function createScanAdapter(options: ScanAdapterOptions): ScanAdapter {
       }
     },
 
+    async listAnsEntries(params, signal) {
+      return transport.requestJson<ScanListEntriesResponse>({
+        method: 'GET',
+        path: '/v0/ans-entries',
+        query: {
+          name_prefix: params.namePrefix,
+          page_size: params.pageSize,
+        },
+        signal,
+      })
+    },
+
     async listDsoScans(signal) {
       return transport.requestJson<ScanListDsoScansResponse>({
         method: 'GET',
@@ -148,6 +209,22 @@ export function createScanAdapter(options: ScanAdapterOptions): ScanAdapter {
           after: params?.after,
           limit: params?.limit,
         },
+        signal,
+      })
+    },
+
+    async lookupAnsEntryByName(name, signal) {
+      return transport.requestOptionalJson<ScanLookupEntryByNameResponse>({
+        method: 'GET',
+        path: `/v0/ans-entries/by-name/${encodeURIComponent(name)}`,
+        signal,
+      })
+    },
+
+    async lookupAnsEntryByParty(party, signal) {
+      return transport.requestOptionalJson<ScanLookupEntryByPartyResponse>({
+        method: 'GET',
+        path: `/v0/ans-entries/by-party/${encodeURIComponent(party)}`,
         signal,
       })
     },

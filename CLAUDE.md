@@ -8,12 +8,12 @@ cantonctl is an institutional-grade CLI toolchain for Canton Network — the ent
 
 ```bash
 npm install                         # Install dependencies
-npm test                            # Run 449 unit tests (project: unit)
-npm run test:e2e:sdk                # Run 66 SDK E2E tests (project: e2e-sdk)
+npm test                            # Run 462 unit tests (project: unit)
+npm run test:e2e:sdk                # Run 75 SDK E2E tests (project: e2e-sdk)
 npm run test:e2e:sandbox            # Run 9 sandbox E2E tests (project: e2e-sandbox)
 npm run test:e2e:docker             # Run 2 Docker E2E tests (project: e2e-docker)
 npm run test:e2e:playground         # Run 14 playground E2E tests (project: e2e-playground)
-npm run test:e2e                    # Run SDK + sandbox E2E tests (75 tests)
+npm run test:e2e                    # Run SDK + sandbox E2E tests (84 tests)
 npm run test:all                    # Run all test projects
 npm run test:coverage               # Coverage report
 npm run build                       # Compile TypeScript to dist/
@@ -54,7 +54,7 @@ Tests are organized into five vitest projects in `vitest.config.ts`:
 | Project | Files | Isolation | Purpose |
 |---------|-------|-----------|---------|
 | `unit` | `src/**/*.test.ts` | Default (threads) | Fast, no external deps |
-| `e2e-sdk` | `test/e2e/{init,build,test-cmd}.e2e.test.ts` (includes build --watch E2E) | Default (threads) | Requires Daml SDK + Java |
+| `e2e-sdk` | `test/e2e/{init,build,build-watch,test-cmd,scan,token-standard,ans}.e2e.test.ts` | Default (threads) | Daml SDK E2E plus stable public Splice command integrations |
 | `e2e-sandbox` | `test/e2e/{dev,deploy,status}.e2e.test.ts` | `pool: 'forks'`, `singleFork: true` | Requires Canton sandbox (JVM) |
 | `e2e-docker` | `test/e2e/dev-full.e2e.test.ts` | `pool: 'forks'`, `singleFork: true` | Requires Docker + Canton image |
 | `e2e-playground` | `test/e2e/playground.e2e.test.ts` | `pool: 'forks'`, `singleFork: true` | Playground serve API + sandbox |
@@ -125,6 +125,7 @@ The GitHub Actions workflow (`.github/workflows/ci.yml`) has four jobs:
 | `serve.ts` | `createServeServer(deps)` | Canton IDE Protocol server: REST + WebSocket API for any IDE client |
 | `doctor.ts` | `createDoctor(deps)` | Environment diagnostics: Node, Java, SDK, Docker, ports |
 | `daml-parser.ts` | `parseDamlSource(source)` | Regex-based Daml source parser: templates, fields, choices, signatories |
+| `splice-public.ts` | `createStableSplice(deps)` | Stable public Splice surface orchestration for scan, token-standard, ANS, and validator-user flows |
 
 ## Playground (`playground/`)
 

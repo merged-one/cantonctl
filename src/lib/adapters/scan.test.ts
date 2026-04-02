@@ -96,4 +96,66 @@ describe('createScanAdapter', () => {
     expect(url.searchParams.get('after')).toBe('10')
     expect(url.searchParams.get('limit')).toBe('25')
   })
+
+  it('supports ANS lookups and ACS snapshot queries on stable scan endpoints', async () => {
+    const fetch = vi.fn()
+      .mockResolvedValueOnce(createJsonResponse({
+        entry: {
+          name: 'alice.unverified.ans',
+          user: 'Alice',
+        },
+      }))
+      .mockResolvedValueOnce(createJsonResponse({
+        record_time: '2026-04-02T20:15:00Z',
+      }))
+      .mockResolvedValueOnce(createJsonResponse({
+        created_events: [
+          {
+            contract_id: 'cid-1',
+            created_at: '2026-04-02T20:15:00Z',
+            template_id: 'Pkg:Main:Entry',
+          },
+        ],
+        migration_id: 7,
+        record_time: '2026-04-02T20:15:00Z',
+      }))
+
+    const adapter = createScanAdapter({
+      baseUrl: 'https://scan.example.com',
+      fetch,
+    })
+
+    const entry = await adapter.lookupAnsEntryByName('alice.unverified.ans')
+    const snapshot = await adapter.getAcsSnapshotTimestampBefore({
+      before: '2026-04-02T20:16:00Z',
+      migrationId: 7,
+    })
+    const acs = await adapter.getAcsSnapshot({
+      migration_id: 7,
+      page_size: 25,
+      record_time: snapshot.record_time,
+      record_time_match: 'exact',
+    })
+
+    expect(entry).toEqual({
+      entry: {
+        name: 'alice.unverified.ans',
+        user: 'Alice',
+      },
+    })
+    expect(fetch.mock.calls[0][0]).toBe(
+      'https://scan.example.com/v0/ans-entries/by-name/alice.unverified.ans',
+    )
+    expect(fetch.mock.calls[1][0]).toBe(
+      'https://scan.example.com/v0/state/acs/snapshot-timestamp?before=2026-04-02T20%3A16%3A00Z&migration_id=7',
+    )
+    expect(fetch.mock.calls[2][0]).toBe('https://scan.example.com/v0/state/acs')
+    expect(JSON.parse(String(fetch.mock.calls[2][1].body))).toEqual({
+      migration_id: 7,
+      page_size: 25,
+      record_time: '2026-04-02T20:15:00Z',
+      record_time_match: 'exact',
+    })
+    expect(acs.created_events[0].contract_id).toBe('cid-1')
+  })
 })

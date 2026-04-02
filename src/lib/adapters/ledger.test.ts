@@ -143,6 +143,155 @@ describe('createLedgerAdapter', () => {
       verbose: true,
     })
   })
+
+  it('supports interface filters and preserves interface views for stable Daml interface lookups', async () => {
+    const fetch = vi.fn()
+      .mockResolvedValueOnce(createJsonResponse({offset: 42}))
+      .mockResolvedValueOnce(createJsonResponse([
+        {
+          contractEntry: {
+            JsActiveContract: {
+              createdEvent: {
+                contractId: 'cid-1',
+                createArgument: {raw: true},
+                createdAt: '2026-04-02T20:00:00Z',
+                interfaceViews: [
+                  {
+                    interfaceId: '#splice-api-token-holding-v1:Splice.Api.Token.HoldingV1:Holding',
+                    viewStatus: {code: 0, message: 'OK'},
+                    viewValue: {
+                      amount: '10.0000000000',
+                      instrumentId: {admin: 'Registry', id: 'USD'},
+                      owner: 'Alice',
+                    },
+                  },
+                ],
+                templateId: 'Registry:Holding',
+              },
+              synchronizerId: 'sync::1',
+            },
+          },
+        },
+      ]))
+
+    const adapter = createLedgerAdapter({
+      baseUrl: 'https://ledger.example.com',
+      fetch,
+      token: 'jwt-token',
+    })
+
+    const result = await adapter.getActiveContracts({
+      filter: {
+        interfaceIds: ['#splice-api-token-holding-v1:Splice.Api.Token.HoldingV1:Holding'],
+        party: 'Alice',
+      },
+    })
+
+    expect(result.activeContracts).toEqual([{
+      contractId: 'cid-1',
+      createdAt: '2026-04-02T20:00:00Z',
+      interfaceViews: [
+        {
+          interfaceId: '#splice-api-token-holding-v1:Splice.Api.Token.HoldingV1:Holding',
+          viewStatus: {code: 0, message: 'OK'},
+          viewValue: {
+            amount: '10.0000000000',
+            instrumentId: {admin: 'Registry', id: 'USD'},
+            owner: 'Alice',
+          },
+        },
+      ],
+      offset: undefined,
+      payload: {raw: true},
+      synchronizerId: 'sync::1',
+      templateId: 'Registry:Holding',
+    }])
+
+    const [, init] = fetch.mock.calls[1]
+    expect(JSON.parse(String(init.body))).toEqual({
+      activeAtOffset: 42,
+      filter: {
+        filtersByParty: {
+          Alice: {
+            cumulative: [
+              {
+                identifierFilter: {
+                  InterfaceFilter: {
+                    value: {
+                      includeCreatedEventBlob: false,
+                      includeInterfaceView: true,
+                      interfaceId: '#splice-api-token-holding-v1:Splice.Api.Token.HoldingV1:Holding',
+                    },
+                  },
+                },
+              },
+            ],
+          },
+        },
+      },
+      verbose: true,
+    })
+  })
+
+  it('forwards disclosed contracts for interface-choice submissions', async () => {
+    const fetch = vi.fn().mockResolvedValue(createJsonResponse({
+      transaction: {transactionId: 'tx-2'},
+    }))
+
+    const adapter = createLedgerAdapter({
+      baseUrl: 'https://ledger.example.com',
+      fetch,
+      token: 'jwt-token',
+    })
+
+    await adapter.submitAndWait({
+      actAs: ['Alice'],
+      commandId: 'cmd-token-transfer',
+      commands: [{
+        ExerciseCommand: {
+          choice: 'TransferFactory_Transfer',
+          choiceArgument: {expectedAdmin: 'Registry'},
+          contractId: 'factory-1',
+          templateId: '#splice-api-token-transfer-instruction-v1:Splice.Api.Token.TransferInstructionV1:TransferFactory',
+        },
+      }],
+      disclosedContracts: [{
+        contractId: 'disclosed-1',
+        createdEventBlob: 'blob-1',
+        synchronizerId: 'sync::1',
+        templateId: '#splice-api-token-transfer-instruction-v1:Splice.Api.Token.TransferInstructionV1:TransferInstruction',
+      }],
+      userId: 'alice-user',
+    })
+
+    const [, init] = fetch.mock.calls[0]
+    expect(JSON.parse(String(init.body))).toEqual({
+      commands: {
+        actAs: ['Alice'],
+        commandId: 'cmd-token-transfer',
+        commands: [{
+          ExerciseCommand: {
+            choice: 'TransferFactory_Transfer',
+            choiceArgument: {expectedAdmin: 'Registry'},
+            contractId: 'factory-1',
+            templateId: '#splice-api-token-transfer-instruction-v1:Splice.Api.Token.TransferInstructionV1:TransferFactory',
+          },
+        }],
+        disclosedContracts: [{
+          contractId: 'disclosed-1',
+          createdEventBlob: 'blob-1',
+          synchronizerId: 'sync::1',
+          templateId: '#splice-api-token-transfer-instruction-v1:Splice.Api.Token.TransferInstructionV1:TransferInstruction',
+        }],
+        packageIdSelectionPreference: undefined,
+        readAs: undefined,
+        submissionId: undefined,
+        synchronizerId: undefined,
+        userId: 'alice-user',
+        workflowId: undefined,
+      },
+    })
+  })
 })
 
 describe('normalizeLedgerActiveContractsResponse', () => {
@@ -151,6 +300,14 @@ describe('normalizeLedgerActiveContractsResponse', () => {
       {contractEntry: {JsEmpty: {}}},
       {contractEntry: {JsActiveContract: {}}},
       {contractEntry: {JsActiveContract: {createdEvent: {contractId: 'cid-1'}}}},
-    ])).toEqual([{contractId: 'cid-1', createdAt: undefined, offset: undefined, payload: undefined, templateId: undefined}])
+    ])).toEqual([{
+      contractId: 'cid-1',
+      createdAt: undefined,
+      interfaceViews: undefined,
+      offset: undefined,
+      payload: undefined,
+      synchronizerId: undefined,
+      templateId: undefined,
+    }])
   })
 })
