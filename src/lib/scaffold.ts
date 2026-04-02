@@ -526,6 +526,8 @@ template Hello
 
 const DAML_TOKEN = `module Main where
 
+-- | A fungible token with mint, transfer, and burn capabilities.
+-- Demonstrates Canton's party-based authorization and proposal/accept pattern.
 template Token
   with
     owner : Party
@@ -534,7 +536,7 @@ template Token
   where
     signatory owner
 
-    choice Transfer : (ContractId Token, ContractId Token)
+    choice Transfer : ContractId TokenTransferOffer
       with
         newOwner : Party
         transferAmount : Decimal
@@ -542,9 +544,13 @@ template Token
       do
         assert (transferAmount > 0.0)
         assert (transferAmount <= amount)
-        remaining <- create this with amount = amount - transferAmount
-        transferred <- create Token with owner = newOwner, symbol, amount = transferAmount
-        return (remaining, transferred)
+        create TokenTransferOffer with
+          from = owner
+          to = newOwner
+          symbol
+          transferAmount
+          remainingAmount = amount - transferAmount
+          originalToken = self
 
     choice Burn : ()
       controller owner
@@ -557,6 +563,34 @@ template Token
       do
         assert (mintAmount > 0.0)
         create this with amount = amount + mintAmount
+
+-- | A transfer offer that must be accepted by the recipient.
+-- This is Canton's proposal/accept pattern: the sender proposes,
+-- the recipient decides. Both parties must agree.
+template TokenTransferOffer
+  with
+    from : Party
+    to : Party
+    symbol : Text
+    transferAmount : Decimal
+    remainingAmount : Decimal
+    originalToken : ContractId Token
+  where
+    signatory from
+    observer to
+
+    choice AcceptTransfer : (ContractId Token, ContractId Token)
+      controller to
+      do
+        archive originalToken
+        remaining <- create Token with owner = from, symbol, amount = remainingAmount
+        transferred <- create Token with owner = to, symbol, amount = transferAmount
+        return (remaining, transferred)
+
+    choice CancelTransfer : ContractId Token
+      controller from
+      do
+        return originalToken
 `
 
 const DAML_DEFI_AMM = `module Main where

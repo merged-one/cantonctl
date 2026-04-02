@@ -161,10 +161,12 @@ export function createServeServer(deps: ServeServerDeps): ServeServer {
         readAs: ['Alice', 'Bob'],
       })
 
-      // Use explicit multiNode flag to avoid binding to stale .cantonctl/ artifacts
-      // from a previous --full run. Only detect topology when explicitly requested.
-      const topology = opts.multiNode ? await detectTopology(projectDir) : null
-      const isMultiNode = opts.multiNode === true && topology !== null && topology.participants.length > 0
+      // Detect multi-node topology:
+      // - multiNode === true: explicitly requested (playground --full)
+      // - multiNode === undefined: auto-detect from .cantonctl/ (serve --no-sandbox)
+      // - multiNode === false: explicitly single-node, skip detection
+      const topology = opts.multiNode !== false ? await detectTopology(projectDir) : null
+      const isMultiNode = topology !== null && topology.participants.length > 0
 
       // Create ledger clients — one per participant in multi-node, or single
       const participantClients: Array<{client: LedgerClientLike; name: string; port: number}> = []
@@ -531,6 +533,25 @@ export function createServeServer(deps: ServeServerDeps): ServeServer {
         // Send initial status
         ws.send(JSON.stringify({type: 'connected'}))
       })
+
+      // Auto-build on startup — compile DAR and upload to all participants
+      // so contracts are immediately available when the browser connects
+      try {
+        const buildResult = await builder.build({projectDir})
+        if (buildResult.darPath) {
+          broadcast({dar: buildResult.darPath, durationMs: buildResult.durationMs, type: buildResult.cached ? 'build:cached' : 'build:success'})
+          if (!buildResult.cached) {
+            const darBytes = await fs.promises.readFile(buildResult.darPath)
+            for (const pc of participantClients) {
+              try { await pc.client.uploadDar(new Uint8Array(darBytes)) }
+              catch { /* upload may fail during sandbox init — will retry on next build */ }
+            }
+          }
+        }
+      } catch (err) {
+        output.warn(`Initial build failed: ${err}`)
+        broadcast({output: String(err), type: 'build:error'})
+      }
 
       return new Promise<void>((resolve) => {
         httpServer!.listen(port, () => {

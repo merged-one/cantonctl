@@ -15,6 +15,8 @@ export interface ActiveContract {
   contractId: string
   templateId: string
   payload: Record<string, unknown>
+  createdAt?: string
+  offset?: number
 }
 
 export interface DamlField {
