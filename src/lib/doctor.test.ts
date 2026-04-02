@@ -1,6 +1,7 @@
 import {describe, expect, it, vi} from 'vitest'
 
 import {createDoctor, type DoctorDeps} from './doctor.js'
+import type {CantonctlConfig} from './config.js'
 import type {OutputWriter} from './output.js'
 import type {ProcessRunner} from './process-runner.js'
 
@@ -78,6 +79,31 @@ function createMockRunner(overrides: Partial<{
       if (cmd === 'docker') return opts.dockerAvailable ? '/usr/bin/docker' : null
       return null
     }),
+  }
+}
+
+function createProfileConfig(): CantonctlConfig {
+  return {
+    'default-profile': 'splice-devnet',
+    networks: {
+      local: {port: 5001, 'json-api-port': 7575, type: 'sandbox'},
+    },
+    profiles: {
+      'splice-devnet': {
+        experimental: false,
+        kind: 'remote-validator',
+        name: 'splice-devnet',
+        services: {
+          auth: {issuer: 'https://login.example.com', kind: 'oidc'},
+          ledger: {url: 'https://ledger.example.com'},
+          scan: {url: 'https://scan.example.com'},
+          scanProxy: {url: 'https://scan-proxy.example.com'},
+          validator: {url: 'https://validator.example.com'},
+        },
+      },
+    },
+    project: {name: 'demo', 'sdk-version': '3.4.11'},
+    version: 1,
   }
 }
 
@@ -209,6 +235,27 @@ describe('Doctor', () => {
 
       expect(required.map(c => c.name)).toEqual(['Node.js', 'Java 21', 'Daml SDK'])
       expect(optional.map(c => c.name)).toEqual(['Docker', 'Docker Compose', 'Canton image', 'Port 5001', 'Port 7575'])
+    })
+
+    it('adds profile and service compatibility checks when config is provided', async () => {
+      const runner = createMockRunner()
+      const output = createMockOutput()
+      const doctor = createDoctor({
+        checkPort: async () => true,
+        config: createProfileConfig(),
+        output,
+        profileName: 'splice-devnet',
+        runner,
+      } as DoctorDeps & {config: CantonctlConfig; profileName: string})
+
+      const result = await doctor.check()
+
+      expect(result.checks).toEqual(expect.arrayContaining([
+        expect.objectContaining({name: 'Profile', status: 'pass'}),
+        expect.objectContaining({name: 'Service ledger', status: 'pass'}),
+        expect.objectContaining({name: 'Service scanProxy', status: 'warn'}),
+        expect.objectContaining({name: 'Service validator', status: 'warn'}),
+      ]))
     })
   })
 })

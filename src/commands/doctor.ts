@@ -11,9 +11,12 @@ import {execSync} from 'node:child_process'
 import * as readline from 'node:readline'
 import pc from 'picocolors'
 
+import {type CantonctlConfig, loadConfig} from '../lib/config.js'
+import {resolveProfile} from '../lib/compat.js'
 import {createDoctor, type CheckResult} from '../lib/doctor.js'
+import {CantonctlError, ErrorCode} from '../lib/errors.js'
 import {createOutput} from '../lib/output.js'
-import {createProcessRunner} from '../lib/process-runner.js'
+import {createProcessRunner, type ProcessRunner} from '../lib/process-runner.js'
 
 const BANNER = `
    ___          _                  _   _
@@ -41,13 +44,39 @@ export default class Doctor extends Command {
       default: false,
       description: 'Output result as JSON',
     }),
+    profile: Flags.string({
+      description: 'Run profile-aware diagnostics for the selected profile',
+    }),
   }
 
   async run(): Promise<void> {
     const {flags} = await this.parse(Doctor)
     const out = createOutput({json: flags.json})
-    const runner = createProcessRunner()
-    const doctor = createDoctor({output: out, runner})
+    const runner = this.createRunner()
+
+    let config: CantonctlConfig | undefined
+    try {
+      config = await this.loadProjectConfig()
+    } catch (err) {
+      if (!(err instanceof CantonctlError)) {
+        throw err
+      }
+
+      if (flags.profile || err.code !== ErrorCode.CONFIG_NOT_FOUND) {
+        out.result({
+          error: {code: err.code, message: err.message, suggestion: err.suggestion},
+          success: false,
+        })
+        this.exit(1)
+      }
+    }
+
+    const doctor = createDoctor({
+      config,
+      output: out,
+      profileName: flags.profile,
+      runner,
+    })
 
     if (!flags.json && process.stdout.isTTY) {
       process.stdout.write(pc.cyan(BANNER))
@@ -61,6 +90,9 @@ export default class Doctor extends Command {
     }
 
     const result = await doctor.check()
+    const resolvedProfile = config
+      ? this.resolveProfileSummary(config, flags.profile)
+      : undefined
 
     if (!flags.json) {
       for (const check of result.checks) {
@@ -113,6 +145,7 @@ export default class Doctor extends Command {
           })),
           failed: result.failed,
           passed: result.passed,
+          profile: resolvedProfile,
           warned: result.warned,
         },
         success: result.failed === 0,
@@ -132,6 +165,30 @@ export default class Doctor extends Command {
         resolve(answer.toLowerCase() === 'y' || answer.toLowerCase() === 'yes')
       })
     })
+  }
+
+  protected createRunner(): ProcessRunner {
+    return createProcessRunner()
+  }
+
+  protected async loadProjectConfig(): Promise<CantonctlConfig> {
+    return loadConfig()
+  }
+
+  protected resolveProfileSummary(
+    config: CantonctlConfig,
+    profileName?: string,
+  ): {experimental: boolean; kind: string; name: string} | undefined {
+    try {
+      const {profile} = resolveProfile(config, profileName)
+      return {
+        experimental: profile.experimental,
+        kind: profile.kind,
+        name: profile.name,
+      }
+    } catch {
+      return undefined
+    }
   }
 
   private printCheck(check: CheckResult): void {

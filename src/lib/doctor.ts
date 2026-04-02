@@ -16,6 +16,8 @@
 
 import * as net from 'node:net'
 
+import type {CantonctlConfig} from './config.js'
+import {createCompatibilityReport} from './compat.js'
 import type {OutputWriter} from './output.js'
 import type {ProcessRunner} from './process-runner.js'
 
@@ -46,7 +48,9 @@ export interface DoctorResult {
 }
 
 export interface DoctorDeps {
+  config?: CantonctlConfig
   output: OutputWriter
+  profileName?: string
   runner: ProcessRunner
   /** Override for testing — check if port is free. */
   checkPort?: (port: number) => Promise<boolean>
@@ -76,7 +80,7 @@ function isPortFree(port: number): Promise<boolean> {
 // ---------------------------------------------------------------------------
 
 export function createDoctor(deps: DoctorDeps): Doctor {
-  const {checkPort = isPortFree, output, runner} = deps
+  const {checkPort = isPortFree, config, output, profileName, runner} = deps
 
   return {
     async check(): Promise<DoctorResult> {
@@ -132,6 +136,31 @@ export function createDoctor(deps: DoctorDeps): Doctor {
         required: false,
         status: port7575Free ? 'pass' : 'warn',
       })
+
+      if (config) {
+        try {
+          const report = createCompatibilityReport(config, profileName)
+          checks.push({
+            detail: `${report.profile.name} (${report.profile.kind})${report.profile.experimental ? ', experimental' : ''}`,
+            name: 'Profile',
+            required: false,
+            status: report.profile.experimental ? 'warn' : 'pass',
+          })
+
+          for (const check of report.checks) {
+            checks.push({
+              detail: check.detail,
+              fix: undefined,
+              name: check.name,
+              required: false,
+              status: check.status,
+            })
+          }
+        } catch {
+          // Profile diagnostics are best-effort. Doctor should still report the
+          // environment even when no resolvable profile is available.
+        }
+      }
 
       const passed = checks.filter(c => c.status === 'pass').length
       const failed = checks.filter(c => c.status === 'fail').length

@@ -9,8 +9,10 @@
 import * as fs from 'node:fs'
 import * as os from 'node:os'
 import * as path from 'node:path'
-import {afterAll, beforeAll, describe, expect, it} from 'vitest'
+import {captureOutput} from '@oclif/test'
+import {afterAll, beforeAll, describe, expect, it, vi} from 'vitest'
 
+import Status from '../../src/commands/status.js'
 import {createDamlSdk} from '../../src/lib/daml.js'
 import {createDevServer, type DevServer} from '../../src/lib/dev-server.js'
 import {createSandboxToken} from '../../src/lib/jwt.js'
@@ -29,6 +31,7 @@ const JSON_API_PORT = 7611
 
 const SDK_AVAILABLE = hasDaml()
 const describeWithSdk = SDK_AVAILABLE ? describe : describe.skip
+const CLI_ROOT = process.cwd()
 
 // ---------------------------------------------------------------------------
 // Shared sandbox
@@ -46,6 +49,27 @@ describeWithSdk('status E2E', () => {
     workDir = fs.mkdtempSync(path.join(os.tmpdir(), 'cantonctl-e2e-status-'))
     const projectDir = path.join(workDir, 'project')
     await scaffoldProject({dir: projectDir, name: 'status-e2e', sdkVersion: SDK_VERSION, template: 'basic'})
+    fs.writeFileSync(
+      path.join(projectDir, 'cantonctl.yaml'),
+      `version: 1
+
+project:
+  name: status-e2e
+  sdk-version: "${SDK_VERSION}"
+
+parties:
+  - name: Alice
+    role: operator
+  - name: Bob
+    role: participant
+
+networks:
+  local:
+    type: sandbox
+    port: ${CANTON_PORT}
+    json-api-port: ${JSON_API_PORT}
+`,
+    )
 
     devServer = createDevServer({
       config: {
@@ -120,5 +144,41 @@ describeWithSdk('status E2E', () => {
     // Sandbox may or may not have parties depending on provisioning timing
     expect(result).toHaveProperty('partyDetails')
     expect(Array.isArray(result.partyDetails)).toBe(true)
+  }, 30_000)
+
+  it('status --json reports profile-aware services against the running sandbox', async () => {
+    const cwdSpy = vi.spyOn(process, 'cwd').mockReturnValue(path.join(workDir, 'project'))
+
+    try {
+      const result = await captureOutput(() => Status.run(['--json'], {root: CLI_ROOT}))
+      expect(result.error).toBeUndefined()
+
+      const json = JSON.parse(result.stdout) as {
+        data: {
+          healthy: boolean
+          profile?: {kind: string; name: string}
+          services?: Array<{endpoint?: string; name: string; status: string}>
+          version?: string
+        }
+        success: boolean
+      }
+
+      expect(json.success).toBe(true)
+      expect(json.data.healthy).toBe(true)
+      expect(json.data.profile).toEqual(expect.objectContaining({
+        kind: 'sandbox',
+        name: 'local',
+      }))
+      expect(json.data.services).toEqual(expect.arrayContaining([
+        expect.objectContaining({
+          endpoint: `http://localhost:${JSON_API_PORT}`,
+          name: 'ledger',
+          status: 'healthy',
+        }),
+      ]))
+      expect(json.data.version).toBeTruthy()
+    } finally {
+      cwdSpy.mockRestore()
+    }
   }, 30_000)
 })

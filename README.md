@@ -72,6 +72,8 @@ cantonctl build
 cantonctl build --watch   # Continuous compilation on .daml changes
 cantonctl test
 cantonctl status          # Multi-node aware via .cantonctl/ directory
+cantonctl profiles list   # Inspect resolved runtime profiles
+cantonctl compat check    # Check stable-surface compatibility for a profile
 
 # Deploy to local sandbox
 cantonctl deploy
@@ -121,10 +123,13 @@ cantonctl serve                        # Headless API only (for VS Code, Neovim)
 | `cantonctl test` | Run Daml Script tests with structured output | Implemented |
 | `cantonctl deploy <network>` | 6-step DAR deployment pipeline for local and remote networks | Implemented |
 | `cantonctl console` | Interactive REPL for querying and submitting ledger commands | Implemented |
-| `cantonctl status` | Show node health, version, and active parties (multi-node aware) | Implemented |
+| `cantonctl status` | Show ledger health plus profile-aware service endpoints (`--profile` supported) | Implemented |
+| `cantonctl profiles list/show/validate` | Inspect and validate resolved runtime profiles | Implemented |
+| `cantonctl compat check [profile]` | Check profile compatibility against stable tracked upstream surfaces | Implemented |
+| `cantonctl codegen sync` | Sync upstream specs and regenerate stable generated clients | Implemented |
 | `cantonctl auth login/logout/status` | Manage JWT credentials per network | Implemented |
 | `cantonctl clean` | Remove build artifacts (.daml/, dist/, .cantonctl/) | Implemented |
-| `cantonctl doctor` | Check prerequisites (Node, Java, SDK, Docker, ports) | Implemented |
+| `cantonctl doctor` | Check prerequisites plus optional profile-aware diagnostics | Implemented |
 | `cantonctl serve` | Start Canton IDE Protocol server (REST + WebSocket) | Implemented |
 | `cantonctl playground` | Open Remix-like browser IDE with Monaco editor | Implemented |
 
@@ -199,6 +204,27 @@ Supported profile kinds are `sandbox`, `canton-multi`, `splice-localnet`, `remot
 Templates still generate the legacy `networks.local` sandbox config for now.
 
 See [docs/reference/configuration.md](docs/reference/configuration.md) for the full schema, service blocks, and migration guidance.
+
+## Profiles And Compatibility
+
+Use the profile commands to inspect the resolved control plane without starting new runtimes:
+
+```bash
+cantonctl profiles list
+cantonctl profiles show sandbox
+cantonctl profiles validate
+cantonctl status --profile sandbox
+cantonctl doctor --profile splice-devnet
+cantonctl compat check splice-devnet
+```
+
+`cantonctl compat check` stays on stable-surface-only policy. Stable tracked surfaces pass, reference-only or operator-only surfaces warn, and the project SDK version is checked against the pinned Canton compatibility baseline in the upstream manifest.
+
+For repository maintainers, `cantonctl codegen sync` wraps the existing manifest-driven spec sync and generation steps:
+
+```bash
+cantonctl codegen sync
+```
 
 ## Local Development
 
