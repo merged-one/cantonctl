@@ -121,6 +121,7 @@ type RawConfig = z.infer<typeof RawConfigSchema>
 export interface CantonctlConfig {
   'default-profile'?: string
   networks?: Record<string, LegacyNetworkConfig>
+  networkProfiles?: Record<string, string>
   parties?: Array<z.infer<typeof PartySchema>>
   plugins?: string[]
   profiles?: Record<string, NormalizedProfile>
@@ -132,6 +133,7 @@ export interface CantonctlConfig {
 export type PartialConfig = {
   'default-profile'?: string
   networks?: Record<string, NetworkConfigInput>
+  networkProfiles?: Record<string, string>
   parties?: Array<z.infer<typeof PartySchema>>
   plugins?: string[]
   profiles?: Record<string, Partial<NormalizedProfile>>
@@ -289,6 +291,13 @@ function mergeConfigsRaw(base: PartialConfig | CantonctlConfig, overrides: Parti
     }
 
     result.networks = mergedNetworks
+  }
+
+  if (overrides.networkProfiles || base.networkProfiles) {
+    result.networkProfiles = {
+      ...(base.networkProfiles ?? {}),
+      ...(overrides.networkProfiles ?? {}),
+    }
   }
 
   // Merge parties (concatenate)
@@ -456,6 +465,7 @@ function validateConfigObject(parsed: unknown): CantonctlConfig {
   }
 
   const normalized = normalizeConfigProfiles(result.data)
+  const networkProfiles = collectNetworkProfiles(result.data, normalized)
   const {
     'default-profile': _rawDefaultProfile,
     networks: _rawNetworks,
@@ -471,12 +481,42 @@ function validateConfigObject(parsed: unknown): CantonctlConfig {
     ...rest,
     'default-profile': normalized.defaultProfile,
     networks: Object.keys(normalized.networks).length > 0 ? normalized.networks : undefined,
+    networkProfiles: Object.keys(networkProfiles).length > 0 ? networkProfiles : undefined,
     parties,
     plugins,
     profiles: Object.keys(normalized.profiles).length > 0 ? normalized.profiles : undefined,
     project,
     version,
   }
+}
+
+function collectNetworkProfiles(
+  raw: RawConfig,
+  normalized: ReturnType<typeof normalizeConfigProfiles>,
+): Record<string, string> {
+  const networkProfiles: Record<string, string> = {}
+
+  for (const [name, network] of Object.entries(raw.networks ?? {})) {
+    if ('profile' in network) {
+      networkProfiles[name] = network.profile
+      continue
+    }
+
+    if (normalized.profiles[name]) {
+      networkProfiles[name] = name
+    }
+  }
+
+  if (
+    !raw.networks?.local
+    && normalized.defaultProfile
+    && normalized.networks.local
+    && normalized.profiles[normalized.defaultProfile]
+  ) {
+    networkProfiles.local = normalized.defaultProfile
+  }
+
+  return networkProfiles
 }
 
 function readRawProjectConfig(options: LoadConfigOptions = {}): RawConfig {

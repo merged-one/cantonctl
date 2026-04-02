@@ -7,6 +7,7 @@
 
 import {Command, Flags} from '@oclif/core'
 
+import {resolveAuthProfile} from '../../lib/auth-profile.js'
 import {loadConfig} from '../../lib/config.js'
 import {createCredentialStore} from '../../lib/credential-store.js'
 import {CantonctlError} from '../../lib/errors.js'
@@ -36,21 +37,44 @@ export default class AuthStatus extends Command {
       const config = await loadConfig()
       const networks = Object.keys(config.networks ?? {})
 
-      const {backend} = await createBackendWithFallback()
+      const {backend, isKeychain} = await createBackendWithFallback()
       const store = createCredentialStore({backend, env: process.env})
+      const storedSource = isKeychain ? 'keychain' : 'memory'
 
-      const statuses: Array<{authenticated: boolean; network: string; source: string | null}> = []
+      const statuses: Array<{
+        authenticated: boolean
+        mode: string
+        network: string
+        source: string | null
+        warnings: string[]
+      }> = []
+      const globalWarnings: string[] = []
 
       for (const network of networks) {
-        const token = await store.resolve(network)
-        const envVar = `CANTONCTL_JWT_${network.toUpperCase().replace(/-/g, '_')}`
-        const fromEnv = !!process.env[envVar]
+        const authProfile = resolveAuthProfile({config, network})
+        const resolved = await store.resolveRecord(network)
+        const warnings = [...authProfile.warnings]
+        const storedMode = resolved?.source === 'stored' ? resolved.mode : undefined
+        const mode = storedMode ?? authProfile.mode
+        if (storedMode && storedMode !== authProfile.mode) {
+          warnings.unshift(
+            `Stored credential mode "${storedMode}" overrides the inferred "${authProfile.mode}" profile.`,
+          )
+        }
+
+        const authenticated = mode === 'localnet-unsafe-hmac' ? true : !!resolved
+        const source = mode === 'localnet-unsafe-hmac'
+          ? (resolved ? (resolved.source === 'env' ? 'env' : storedSource) : 'generated')
+          : (resolved ? (resolved.source === 'env' ? 'env' : storedSource) : null)
 
         statuses.push({
-          authenticated: !!token,
+          authenticated,
+          mode,
           network,
-          source: token ? (fromEnv ? 'env' : 'keychain') : null,
+          source,
+          warnings,
         })
+        globalWarnings.push(...warnings.map(warning => `${network}: ${warning}`))
       }
 
       if (!flags.json) {
@@ -58,19 +82,28 @@ export default class AuthStatus extends Command {
           out.info('No networks configured in cantonctl.yaml')
         } else {
           out.table(
-            ['Network', 'Authenticated', 'Source'],
+            ['Network', 'Mode', 'Authenticated', 'Source'],
             statuses.map(s => [
               s.network,
+              s.mode,
               s.authenticated ? 'yes' : 'no',
               s.source ?? '-',
             ]),
           )
+          for (const status of statuses) {
+            for (const warning of status.warnings) {
+              out.warn(`${status.network}: ${warning}`)
+            }
+          }
         }
       }
 
       out.result({
-        data: {networks: statuses},
+        data: {
+          networks: statuses.map(({warnings, ...status}) => status),
+        },
         success: true,
+        warnings: flags.json && globalWarnings.length > 0 ? globalWarnings : undefined,
       })
     } catch (err) {
       if (err instanceof CantonctlError) {

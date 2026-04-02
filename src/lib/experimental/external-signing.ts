@@ -81,7 +81,8 @@ export function createExternalSigningAdapter(
     sourceIds: [cantonJsonLedgerApiMetadata.sourceId],
     token: options.token,
     warnings: [
-      'external-signing stays experimental until cantonctl defines a stable trust model and user-facing workflow for prepared transactions.',
+      'experimental: external-signing stays internal until cantonctl defines a stable trust model and user-facing workflow for prepared transactions.',
+      'Do not treat prepared transaction helper flows as a GA cantonctl contract yet.',
     ],
   })
 

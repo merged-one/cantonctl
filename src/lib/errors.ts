@@ -40,6 +40,7 @@ export enum ErrorCode {
   CONFIG_SCHEMA_VIOLATION = 'E1003',
   CONFIG_DIRECTORY_EXISTS = 'E1004',
   SERVICE_NOT_CONFIGURED = 'E1005',
+  EXPERIMENTAL_CONFIRMATION_REQUIRED = 'E1006',
 
   // E2xxx: SDK/Tools
   SDK_NOT_INSTALLED = 'E2001',
@@ -88,6 +89,7 @@ const ERROR_MESSAGES: Record<ErrorCode, string> = {
   [ErrorCode.CONFIG_SCHEMA_VIOLATION]: 'cantonctl.yaml does not match the expected schema.',
   [ErrorCode.CONFIG_DIRECTORY_EXISTS]: 'Target directory already exists.',
   [ErrorCode.SERVICE_NOT_CONFIGURED]: 'The requested service endpoint is not configured in the active profile.',
+  [ErrorCode.EXPERIMENTAL_CONFIRMATION_REQUIRED]: 'This command requires explicit experimental confirmation.',
   [ErrorCode.SDK_NOT_INSTALLED]: 'Neither dpm nor daml CLI found on PATH.',
   [ErrorCode.SDK_VERSION_MISMATCH]: 'Installed SDK version is incompatible with this project.',
   [ErrorCode.SDK_COMMAND_FAILED]: 'SDK command exited with a non-zero status.',

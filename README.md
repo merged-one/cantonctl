@@ -132,13 +132,24 @@ cantonctl serve                        # Headless API only (for VS Code, Neovim)
 | `cantonctl profiles list/show/validate` | Inspect and validate resolved runtime profiles | Implemented |
 | `cantonctl compat check [profile]` | Check profile compatibility against stable tracked upstream surfaces | Implemented |
 | `cantonctl codegen sync` | Sync upstream specs and regenerate stable generated clients | Implemented |
-| `cantonctl auth login/logout/status` | Manage JWT credentials per network | Implemented |
+| `cantonctl auth login/logout/status` | Manage network auth profiles and stored bearer credentials, with explicit warnings for unsafe/operator modes | Implemented |
+| `cantonctl validator experimental ...` | Operator-only validator-internal onboarding, external-party, and setup-proposal flows | Experimental |
 | `cantonctl clean` | Remove build artifacts (.daml/, dist/, .cantonctl/) | Implemented |
 | `cantonctl doctor` | Check prerequisites plus optional profile-aware diagnostics | Implemented |
 | `cantonctl serve` | Start Canton IDE Protocol server (REST + WebSocket) | Implemented |
 | `cantonctl playground` | Open Remix-like browser IDE with Monaco editor | Implemented |
 
 All commands except `console` and `playground` support `--json` for CI pipeline integration. All errors include error codes, suggestions, and documentation links.
+
+## Experimental Operator Surfaces
+
+`cantonctl validator experimental ...` is intentionally separate from the stable validator-user commands. These wrappers target upstream `validator-internal` endpoints that are operator-only and may change without notice.
+
+- Every `validator experimental` command requires `--experimental`.
+- `cantonctl auth login` and `cantonctl auth status` now surface explicit auth profile modes: `env-or-keychain-jwt`, `bearer-token`, `oidc-client-credentials`, and `localnet-unsafe-hmac`.
+- `oidc-client-credentials` and `localnet-unsafe-hmac` emit clear experimental warnings in human output.
+
+See [docs/reference/experimental.md](docs/reference/experimental.md) for the unstable command surface and opt-in rules.
 
 ## Templates
 
