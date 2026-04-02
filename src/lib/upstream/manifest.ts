@@ -512,6 +512,18 @@ export function getUpstreamSource(id: UpstreamSourceId): (typeof UPSTREAM_SOURCE
   return UPSTREAM_SOURCES_BY_ID[id]
 }
 
+export function getPinnedCantonSdkVersion(): string {
+  const source = getUpstreamSource('canton-json-ledger-api-openapi').source
+  const version = source.kind === 'git' ? source.ref : source.version
+  return version.replace(/^v/, '').split('-')[0]
+}
+
+export function getPinnedPublicSdkVersion(
+  id: 'canton-network-dapp-sdk' | 'canton-network-wallet-sdk',
+): string {
+  return UPSTREAM_SOURCES_BY_ID[id].source.version
+}
+
 export function isStableGeneratedSource(source: UpstreamSource): boolean {
   return source.stability === 'stable-external' && source.intendedUse.includes('generate-client')
 }

@@ -1,22 +1,35 @@
 import * as path from 'node:path'
 import {describe, expect, it, vi} from 'vitest'
 
+import {loadConfig, type ConfigFileSystem} from './config.js'
+import {CantonctlError, ErrorCode} from './errors.js'
 import type {ProcessRunner} from './process-runner.js'
 import {
   type ScaffoldFileSystem,
-  type ScaffoldResult,
-  type Template,
   generateConfig,
   generateDamlSource,
   generateDamlTest,
   scaffoldProject,
+  type Template,
 } from './scaffold.js'
-import {CantonctlError, ErrorCode} from './errors.js'
-import {loadConfig, type ConfigFileSystem} from './config.js'
+import {getUpstreamSource} from './upstream/manifest.js'
 
-// ---------------------------------------------------------------------------
-// Mock filesystem that records all writes
-// ---------------------------------------------------------------------------
+const BUILTIN_TEMPLATES: Template[] = [
+  'basic',
+  'token',
+  'defi-amm',
+  'api-service',
+  'zenith-evm',
+  'splice-token-app',
+  'splice-scan-reader',
+  'splice-dapp-sdk',
+]
+
+const PINNED_SDK_VERSION = (() => {
+  const source = getUpstreamSource('canton-json-ledger-api-openapi').source
+  const version = source.kind === 'git' ? source.ref : source.version
+  return version.replace(/^v/, '').split('-')[0]
+})()
 
 interface WrittenFile {
   path: string
@@ -56,9 +69,23 @@ function createMockRunner(): ProcessRunner & {
   }
 }
 
-// ---------------------------------------------------------------------------
-// scaffoldProject
-// ---------------------------------------------------------------------------
+async function loadGeneratedConfig(yaml: string) {
+  const configFs: ConfigFileSystem = {
+    existsSync: (p: string) => p === '/project/cantonctl.yaml',
+    readFileSync: () => yaml,
+  }
+
+  return loadConfig({dir: '/project', fs: configFs})
+}
+
+function getWrittenFile(
+  fs: ReturnType<typeof createMockScaffoldFs>,
+  relPath: string,
+): WrittenFile {
+  const writtenFile = fs.written.find(file => file.path === path.join('/projects/my-app', relPath))
+  expect(writtenFile).toBeDefined()
+  return writtenFile!
+}
 
 describe('scaffoldProject', () => {
   it('creates project directory structure for basic template', () => {
@@ -98,6 +125,7 @@ describe('scaffoldProject', () => {
     const fs = createMockScaffoldFs(new Set(['/projects/my-app']))
     expect(() => scaffoldProject({dir: '/projects/my-app', fs, name: 'my-app', template: 'basic'}))
       .toThrow(CantonctlError)
+
     try {
       scaffoldProject({dir: '/projects/my-app', fs, name: 'my-app', template: 'basic'})
     } catch (err) {
@@ -117,50 +145,91 @@ describe('scaffoldProject', () => {
 
   it('creates api-service specific files', () => {
     const fs = createMockScaffoldFs()
-    scaffoldProject({dir: '/projects/my-api', fs, name: 'my-api', template: 'api-service'})
+    scaffoldProject({dir: '/projects/my-app', fs, name: 'my-app', template: 'api-service'})
     const paths = fs.written.map(f => f.path)
-    // Should have server directory and package.json
-    expect(paths.some(p => p.includes('server'))).toBe(true)
-    expect(paths.some(p => p.includes('package.json'))).toBe(true)
+    expect(paths).toContain(path.join('/projects/my-app', 'server', 'package.json'))
+    expect(paths).toContain(path.join('/projects/my-app', 'server', 'src', 'server.ts'))
+    expect(paths).toContain(path.join('/projects/my-app', 'server', 'tsconfig.json'))
   })
 
   it('creates zenith-evm specific files', () => {
     const fs = createMockScaffoldFs()
-    scaffoldProject({dir: '/projects/my-evm', fs, name: 'my-evm', template: 'zenith-evm'})
+    scaffoldProject({dir: '/projects/my-app', fs, name: 'my-app', template: 'zenith-evm'})
     const paths = fs.written.map(f => f.path)
-    // Should have contracts/ directory with Solidity and hardhat config
-    expect(paths.some(p => p.includes('.sol'))).toBe(true)
-    expect(paths.some(p => p.includes('hardhat.config'))).toBe(true)
+    expect(paths).toContain(path.join('/projects/my-app', 'contracts', 'Token.sol'))
+    expect(paths).toContain(path.join('/projects/my-app', 'hardhat.config.ts'))
+    expect(paths).toContain(path.join('/projects/my-app', 'package.json'))
+  })
+
+  it('creates stable token-standard starter files for splice-token-app', () => {
+    const fs = createMockScaffoldFs()
+    scaffoldProject({dir: '/projects/my-app', fs, name: 'my-app', template: 'splice-token-app'})
+
+    const paths = fs.written.map(f => f.path)
+    expect(paths).toContain(path.join('/projects/my-app', 'frontend', 'package.json'))
+    expect(paths).toContain(path.join('/projects/my-app', 'frontend', 'src', 'token-client.ts'))
+
+    const client = getWrittenFile(fs, path.join('frontend', 'src', 'token-client.ts')).content
+    expect(client).toContain('transfer-instruction')
+    expect(client).toContain('holdings')
+    expect(client).not.toContain('validator-internal')
+    expect(client).not.toContain('burn-mint')
+  })
+
+  it('creates stable scan reader files for splice-scan-reader', () => {
+    const fs = createMockScaffoldFs()
+    scaffoldProject({dir: '/projects/my-app', fs, name: 'my-app', template: 'splice-scan-reader'})
+
+    const paths = fs.written.map(f => f.path)
+    expect(paths).toContain(path.join('/projects/my-app', 'scripts', 'read-scan-updates.mjs'))
+
+    const reader = getWrittenFile(fs, path.join('scripts', 'read-scan-updates.mjs')).content
+    expect(reader).toContain('/v2/updates')
+    expect(reader).not.toContain('validator-internal')
+  })
+
+  it('creates dapp sdk starter files using public packages for splice-dapp-sdk', () => {
+    const fs = createMockScaffoldFs()
+    scaffoldProject({dir: '/projects/my-app', fs, name: 'my-app', template: 'splice-dapp-sdk'})
+
+    const paths = fs.written.map(f => f.path)
+    expect(paths).toContain(path.join('/projects/my-app', 'frontend', 'package.json'))
+    expect(paths).toContain(path.join('/projects/my-app', 'frontend', 'src', 'wallet.ts'))
+
+    const packageJson = getWrittenFile(fs, path.join('frontend', 'package.json')).content
+    expect(packageJson).toContain('@canton-network/dapp-sdk')
+    expect(packageJson).toContain('@canton-network/wallet-sdk')
+    expect(packageJson).not.toContain('validator-internal')
   })
 })
 
-// ---------------------------------------------------------------------------
-// generateConfig
-// ---------------------------------------------------------------------------
-
 describe('generateConfig', () => {
-  it('produces valid YAML that passes schema validation', () => {
-    for (const template of ['basic', 'token', 'defi-amm', 'api-service', 'zenith-evm'] as Template[]) {
-      const yaml = generateConfig('test-project', template)
-      // Verify it passes the Zod schema by loading through config module
-      const configFs: ConfigFileSystem = {
-        existsSync: (p: string) => p === '/project/cantonctl.yaml',
-        readFileSync: () => yaml,
-      }
-      // Should not throw
-      expect(async () => await loadConfig({dir: '/project', fs: configFs})).not.toThrow()
+  it('produces valid YAML that passes schema validation', async () => {
+    for (const template of BUILTIN_TEMPLATES) {
+      const config = await loadGeneratedConfig(generateConfig('test-project', template))
+      expect(config.project.name).toBe('test-project')
+      expect(config.project.template).toBe(template)
     }
   })
 
-  it('includes project name and sdk-version', () => {
+  it('uses the pinned upstream manifest SDK version and profile-based runtime model', async () => {
     const yaml = generateConfig('my-app', 'basic')
-    expect(yaml).toContain('name: my-app')
-    expect(yaml).toContain('sdk-version:')
-  })
+    expect(yaml).toContain(`sdk-version: "${PINNED_SDK_VERSION}"`)
+    expect(yaml).toContain('default-profile: sandbox')
+    expect(yaml).toContain('profiles:')
+    expect(yaml).toContain('kind: sandbox')
+    expect(yaml).toContain('profile: sandbox')
 
-  it('includes template name', () => {
-    const yaml = generateConfig('my-app', 'token')
-    expect(yaml).toContain('template: token')
+    const config = await loadGeneratedConfig(yaml)
+    expect(config.project.name).toBe('my-app')
+    expect(config.project['sdk-version']).toBe(PINNED_SDK_VERSION)
+    expect(config['default-profile']).toBe('sandbox')
+    expect(config.networkProfiles?.local).toBe('sandbox')
+    expect(config.profiles?.sandbox.kind).toBe('sandbox')
+    expect(config.profiles?.sandbox.services.ledger).toEqual({
+      port: 5001,
+      'json-api-port': 7575,
+    })
   })
 
   it('includes default parties (Alice and Bob)', () => {
@@ -169,17 +238,24 @@ describe('generateConfig', () => {
     expect(yaml).toContain('Bob')
   })
 
-  it('includes local sandbox network', () => {
-    const yaml = generateConfig('my-app', 'basic')
-    expect(yaml).toContain('sandbox')
-    expect(yaml).toContain('5001')
-    expect(yaml).toContain('7575')
+  it('includes a stable remote validator profile for splice-token-app', async () => {
+    const yaml = generateConfig('my-app', 'splice-token-app')
+    expect(yaml).toContain('splice-devnet:')
+    expect(yaml).toContain('kind: remote-validator')
+    expect(yaml).toContain('tokenStandard:')
+    expect(yaml).toContain('scan:')
+    expect(yaml).toContain('validator:')
+
+    const config = await loadGeneratedConfig(yaml)
+    expect(config.networkProfiles?.devnet).toBe('splice-devnet')
+    expect(config.profiles?.['splice-devnet']).toMatchObject({
+      kind: 'remote-validator',
+      services: {
+        auth: {kind: 'oidc'},
+      },
+    })
   })
 })
-
-// ---------------------------------------------------------------------------
-// generateDamlSource
-// ---------------------------------------------------------------------------
 
 describe('generateDamlSource', () => {
   it('generates Hello template for basic', () => {
@@ -217,11 +293,25 @@ describe('generateDamlSource', () => {
     expect(source).toContain('template')
     expect(source).toContain('signatory')
   })
-})
 
-// ---------------------------------------------------------------------------
-// generateDamlTest
-// ---------------------------------------------------------------------------
+  it('generates token watchlist contract for splice-token-app', () => {
+    const source = generateDamlSource('splice-token-app')
+    expect(source).toContain('template TokenWatchlist')
+    expect(source).toContain('choice RefreshSnapshot')
+  })
+
+  it('generates scan bookmark contract for splice-scan-reader', () => {
+    const source = generateDamlSource('splice-scan-reader')
+    expect(source).toContain('template ScanBookmark')
+    expect(source).toContain('choice AdvanceCursor')
+  })
+
+  it('generates wallet connection contract for splice-dapp-sdk', () => {
+    const source = generateDamlSource('splice-dapp-sdk')
+    expect(source).toContain('template WalletConnection')
+    expect(source).toContain('choice RememberProvider')
+  })
+})
 
 describe('generateDamlTest', () => {
   it('generates tests for basic template', () => {
@@ -257,11 +347,25 @@ describe('generateDamlTest', () => {
     expect(test).toContain('import Main')
     expect(test).toContain('import Daml.Script')
   })
-})
 
-// ---------------------------------------------------------------------------
-// Community template (--from)
-// ---------------------------------------------------------------------------
+  it('generates tests for splice-token-app template', () => {
+    const test = generateDamlTest('splice-token-app')
+    expect(test).toContain('testCreateWatchlist')
+    expect(test).toContain('testRefreshSnapshot')
+  })
+
+  it('generates tests for splice-scan-reader template', () => {
+    const test = generateDamlTest('splice-scan-reader')
+    expect(test).toContain('testCreateBookmark')
+    expect(test).toContain('testAdvanceCursor')
+  })
+
+  it('generates tests for splice-dapp-sdk template', () => {
+    const test = generateDamlTest('splice-dapp-sdk')
+    expect(test).toContain('testCreateConnection')
+    expect(test).toContain('testRememberProvider')
+  })
+})
 
 describe('scaffoldFromUrl', () => {
   it('clones repo and validates manifest exists', async () => {
@@ -270,12 +374,10 @@ describe('scaffoldFromUrl', () => {
     runner.run.mockResolvedValue({exitCode: 0, stderr: '', stdout: ''})
 
     const fs = createMockScaffoldFs()
-    // Simulate the cloned repo having a cantonctl-template.yaml
     const existsSet = new Set<string>()
     const fsWithManifest: ScaffoldFileSystem = {
       ...fs,
       existsSync(p: string) {
-        // After clone, the manifest should exist
         if (p.includes('cantonctl-template.yaml')) return true
         return existsSet.has(p)
       },
@@ -321,7 +423,7 @@ describe('scaffoldFromUrl', () => {
       dir: '/projects/my-app',
       fs,
       runner,
-      url: 'https://github.com/user/nonexistent',
+      url: 'https://github.com/user/missing-template',
     })).rejects.toThrow(CantonctlError)
   })
 })

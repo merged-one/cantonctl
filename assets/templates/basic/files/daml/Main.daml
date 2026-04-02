@@ -1,0 +1,15 @@
+module Main where
+
+template Hello
+  with
+    owner : Party
+    message : Text
+  where
+    signatory owner
+
+    choice UpdateMessage : ContractId Hello
+      with
+        newMessage : Text
+      controller owner
+      do
+        create this with message = newMessage

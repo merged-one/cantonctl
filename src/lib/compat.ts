@@ -6,7 +6,7 @@ import type {
 import {CantonctlError, ErrorCode} from './errors.js'
 import type {CheckStatus} from './doctor.js'
 import type {UpstreamSourceId, UpstreamStabilityClass} from './upstream/manifest.js'
-import {getUpstreamSource} from './upstream/manifest.js'
+import {getPinnedCantonSdkVersion, getUpstreamSource} from './upstream/manifest.js'
 
 export interface ProfileListEntry {
   experimental: boolean
@@ -273,9 +273,7 @@ function buildServiceDetail(profile: NormalizedProfile, name: ServiceName): stri
 }
 
 function getSupportedSdkVersion(): string {
-  const source = getUpstreamSource('canton-json-ledger-api-openapi').source
-  const ref = source.kind === 'git' ? source.ref : source.version
-  return ref.replace(/^v/, '').split('-')[0]
+  return getPinnedCantonSdkVersion()
 }
 
 function parseVersion(value: string): number[] | null {

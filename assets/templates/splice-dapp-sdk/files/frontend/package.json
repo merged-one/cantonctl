@@ -1,0 +1,17 @@
+{
+  "name": "{{PROJECT_NAME}}-dapp-sdk",
+  "private": true,
+  "type": "module",
+  "version": "0.1.0",
+  "scripts": {
+    "demo:wallet": "tsx src/wallet.ts"
+  },
+  "dependencies": {
+    "@canton-network/dapp-sdk": "{{CANTON_NETWORK_DAPP_SDK_VERSION}}",
+    "@canton-network/wallet-sdk": "{{CANTON_NETWORK_WALLET_SDK_VERSION}}"
+  },
+  "devDependencies": {
+    "tsx": "^4",
+    "typescript": "^5"
+  }
+}

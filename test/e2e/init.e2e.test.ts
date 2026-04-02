@@ -8,19 +8,33 @@
  * Skip condition: Tests are skipped if daml is not available.
  */
 
+import {execSync} from 'node:child_process'
 import * as fs from 'node:fs'
 import * as os from 'node:os'
 import * as path from 'node:path'
 import {afterAll, beforeAll, describe, expect, it} from 'vitest'
-import {execSync} from 'node:child_process'
 
 import {loadConfig} from '../../src/lib/config.js'
 import {scaffoldProject, type Template} from '../../src/lib/scaffold.js'
+import {getUpstreamSource} from '../../src/lib/upstream/manifest.js'
 import {ENV_PATH, hasDaml, SDK_VERSION} from './helpers.js'
 
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
+const BUILTIN_TEMPLATES: Template[] = [
+  'basic',
+  'token',
+  'defi-amm',
+  'api-service',
+  'zenith-evm',
+  'splice-token-app',
+  'splice-scan-reader',
+  'splice-dapp-sdk',
+]
+
+const PINNED_SDK_VERSION = (() => {
+  const source = getUpstreamSource('canton-json-ledger-api-openapi').source
+  const version = source.kind === 'git' ? source.ref : source.version
+  return version.replace(/^v/, '').split('-')[0]
+})()
 
 function run(cmd: string, cwd: string): {stdout: string; stderr: string; exitCode: number} {
   try {
@@ -44,10 +58,6 @@ function run(cmd: string, cwd: string): {stdout: string; stderr: string; exitCod
 const SDK_AVAILABLE = hasDaml()
 const itWithSdk = SDK_AVAILABLE ? it : it.skip
 
-// ---------------------------------------------------------------------------
-// Test workspace
-// ---------------------------------------------------------------------------
-
 let workDir: string
 
 beforeAll(() => {
@@ -58,14 +68,8 @@ afterAll(() => {
   fs.rmSync(workDir, {recursive: true, force: true})
 })
 
-// ---------------------------------------------------------------------------
-// Scaffold tests (no SDK needed)
-// ---------------------------------------------------------------------------
-
 describe('init E2E: scaffold', () => {
-  const templates: Template[] = ['basic', 'token', 'defi-amm', 'api-service', 'zenith-evm']
-
-  for (const template of templates) {
+  for (const template of BUILTIN_TEMPLATES) {
     describe(`template: ${template}`, () => {
       let projectDir: string
 
@@ -98,18 +102,45 @@ describe('init E2E: scaffold', () => {
         expect(fs.existsSync(path.join(projectDir, '.gitignore'))).toBe(true)
       })
 
-      it('generated cantonctl.yaml passes schema validation', async () => {
+      it('generated cantonctl.yaml passes schema validation and normalizes profiles', async () => {
         const config = await loadConfig({dir: projectDir})
         expect(config.version).toBe(1)
         expect(config.project.name).toBe(`test-${template}`)
-        expect(config.project['sdk-version']).toBeDefined()
+        expect(config.project['sdk-version']).toBe(PINNED_SDK_VERSION)
+        expect(config.project.template).toBe(template)
+        expect(config['default-profile']).toBe('sandbox')
+        expect(config.networkProfiles?.local).toBe('sandbox')
+        expect(config.profiles?.sandbox.kind).toBe('sandbox')
+        expect(config.profiles?.sandbox.services.ledger).toEqual({
+          port: 5001,
+          'json-api-port': 7575,
+        })
         expect(config.parties).toBeDefined()
         expect(config.parties!.length).toBeGreaterThan(0)
       })
 
-      it('generated cantonctl.yaml has correct template', async () => {
+      it('writes profile-based runtime config to disk', () => {
+        const raw = fs.readFileSync(path.join(projectDir, 'cantonctl.yaml'), 'utf8')
+        expect(raw).toContain('default-profile: sandbox')
+        expect(raw).toContain('profiles:')
+        expect(raw).toContain('profile: sandbox')
+        expect(raw).toContain(`sdk-version: "${PINNED_SDK_VERSION}"`)
+      })
+
+      it('adds a splice devnet profile for Splice-aware templates', async () => {
         const config = await loadConfig({dir: projectDir})
-        expect(config.project.template).toBe(template)
+        if (template.startsWith('splice-')) {
+          expect(config.networkProfiles?.devnet).toBe('splice-devnet')
+          expect(config.profiles?.['splice-devnet']).toMatchObject({
+            kind: 'remote-validator',
+            services: {
+              auth: {kind: 'oidc'},
+            },
+          })
+          return
+        }
+
+        expect(config.networkProfiles?.devnet).toBeUndefined()
       })
     })
   }
@@ -128,26 +159,48 @@ describe('init E2E: scaffold', () => {
     expect(fs.existsSync(path.join(dir, 'package.json'))).toBe(true)
   })
 
+  it('splice-token-app creates stable token starter files', () => {
+    const dir = path.join(workDir, 'test-splice-token-app')
+    expect(fs.existsSync(path.join(dir, 'frontend', 'package.json'))).toBe(true)
+    expect(fs.existsSync(path.join(dir, 'frontend', 'src', 'token-client.ts'))).toBe(true)
+
+    const tokenClient = fs.readFileSync(path.join(dir, 'frontend', 'src', 'token-client.ts'), 'utf8')
+    expect(tokenClient).toContain('transfer-instruction')
+    expect(tokenClient).not.toContain('burn-mint')
+    expect(tokenClient).not.toContain('validator-internal')
+  })
+
+  it('splice-scan-reader creates stable scan reader files', () => {
+    const dir = path.join(workDir, 'test-splice-scan-reader')
+    expect(fs.existsSync(path.join(dir, 'scripts', 'read-scan-updates.mjs'))).toBe(true)
+
+    const reader = fs.readFileSync(path.join(dir, 'scripts', 'read-scan-updates.mjs'), 'utf8')
+    expect(reader).toContain('/v2/updates')
+    expect(reader).not.toContain('validator-internal')
+  })
+
+  it('splice-dapp-sdk creates public SDK starter files', () => {
+    const dir = path.join(workDir, 'test-splice-dapp-sdk')
+    expect(fs.existsSync(path.join(dir, 'frontend', 'package.json'))).toBe(true)
+    expect(fs.existsSync(path.join(dir, 'frontend', 'src', 'wallet.ts'))).toBe(true)
+
+    const packageJson = fs.readFileSync(path.join(dir, 'frontend', 'package.json'), 'utf8')
+    expect(packageJson).toContain('@canton-network/dapp-sdk')
+    expect(packageJson).toContain('@canton-network/wallet-sdk')
+  })
+
   it('scaffold fails on existing directory', () => {
-    const dir = path.join(workDir, 'test-basic') // already exists
+    const dir = path.join(workDir, 'test-basic')
     expect(() => scaffoldProject({dir, name: 'test-basic', template: 'basic'})).toThrow()
   })
 })
 
-// ---------------------------------------------------------------------------
-// Daml compilation tests (SDK required)
-// ---------------------------------------------------------------------------
-
 describe('init E2E: Daml compilation', () => {
-  // These templates should compile with the real Daml SDK
-  const damlTemplates: Template[] = ['basic', 'token', 'defi-amm', 'api-service', 'zenith-evm']
-
-  for (const template of damlTemplates) {
+  for (const template of BUILTIN_TEMPLATES) {
     itWithSdk(`${template} template compiles with daml build`, () => {
       const projectDir = path.join(workDir, `compile-${template}`)
       scaffoldProject({dir: projectDir, name: `compile-${template}`, template})
 
-      // Fix sdk-version to match installed version
       const damlYaml = fs.readFileSync(path.join(projectDir, 'daml.yaml'), 'utf8')
       fs.writeFileSync(
         path.join(projectDir, 'daml.yaml'),
@@ -156,7 +209,7 @@ describe('init E2E: Daml compilation', () => {
 
       const result = run('daml build --no-legacy-assistant-warning', projectDir)
       expect(result.exitCode).toBe(0)
-      // Verify .dar was actually created
+
       const darDir = path.join(projectDir, '.daml', 'dist')
       expect(fs.existsSync(darDir)).toBe(true)
       const dars = fs.readdirSync(darDir).filter(f => f.endsWith('.dar'))
@@ -164,20 +217,14 @@ describe('init E2E: Daml compilation', () => {
     })
   }
 
-  for (const template of damlTemplates) {
+  for (const template of BUILTIN_TEMPLATES) {
     itWithSdk(`${template} template tests pass with daml test`, () => {
       const projectDir = path.join(workDir, `compile-${template}`)
-      // Project was already built in the previous test
-
       const result = run('daml test --no-legacy-assistant-warning', projectDir)
       expect(result.exitCode).toBe(0)
     })
   }
 })
-
-// ---------------------------------------------------------------------------
-// JSON output test
-// ---------------------------------------------------------------------------
 
 describe('init E2E: JSON output', () => {
   it('scaffold returns structured result with files list', () => {

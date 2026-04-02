@@ -1,0 +1,28 @@
+module Main.Test where
+
+import Daml.Script
+import Main
+
+testCreateConnection : Script ()
+testCreateConnection = script do
+  alice <- allocateParty "Alice"
+  bob <- allocateParty "Bob"
+  submit alice do
+    createCmd WalletConnection with
+      operator = alice
+      walletParty = bob
+      provider = "wallet-ui"
+  pure ()
+
+testRememberProvider : Script ()
+testRememberProvider = script do
+  alice <- allocateParty "Alice"
+  bob <- allocateParty "Bob"
+  connectionId <- submit alice do
+    createCmd WalletConnection with
+      operator = alice
+      walletParty = bob
+      provider = "wallet-ui"
+  submit alice do
+    exerciseCmd connectionId RememberProvider with nextProvider = "remote-wallet-ui"
+  pure ()

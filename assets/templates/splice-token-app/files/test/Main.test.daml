@@ -1,0 +1,28 @@
+module Main.Test where
+
+import Daml.Script
+import Main
+
+testCreateWatchlist : Script ()
+testCreateWatchlist = script do
+  alice <- allocateParty "Alice"
+  submit alice do
+    createCmd TokenWatchlist with
+      owner = alice
+      instrumentAdmin = alice
+      instrumentId = "USD"
+      lastSeenAmount = None
+  pure ()
+
+testRefreshSnapshot : Script ()
+testRefreshSnapshot = script do
+  alice <- allocateParty "Alice"
+  watchlistId <- submit alice do
+    createCmd TokenWatchlist with
+      owner = alice
+      instrumentAdmin = alice
+      instrumentId = "USD"
+      lastSeenAmount = None
+  submit alice do
+    exerciseCmd watchlistId RefreshSnapshot with newAmount = 42.0
+  pure ()

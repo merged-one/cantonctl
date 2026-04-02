@@ -6,6 +6,7 @@
 - Profile-based `profiles` plus optional `networks` references.
 
 Legacy configs are normalized into the canonical internal profile model automatically.
+New `cantonctl init` scaffolds now emit the profile-based shape by default.
 
 ## Legacy Shape
 
@@ -92,6 +93,48 @@ networks:
 
 If `networks:` is omitted and `default-profile` points to a `sandbox` or `canton-multi` profile, cantonctl synthesizes a legacy-compatible `local` network internally so existing local command defaults keep working.
 
+Splice-aware scaffolds typically keep `sandbox` as the default local profile and add a remote `splice-devnet` profile:
+
+```yaml
+version: 1
+
+project:
+  name: my-splice-app
+  sdk-version: "3.4.11"
+  template: splice-token-app
+
+default-profile: sandbox
+
+profiles:
+  sandbox:
+    kind: sandbox
+    ledger:
+      port: 5001
+      json-api-port: 7575
+
+  splice-devnet:
+    kind: remote-validator
+    ledger:
+      url: https://ledger.example.com
+    scan:
+      url: https://scan.example.com
+    validator:
+      url: https://validator.example.com
+    tokenStandard:
+      url: https://tokens.example.com
+    ans:
+      url: https://ans.example.com
+    auth:
+      kind: oidc
+      issuer: https://login.example.com
+
+networks:
+  local:
+    profile: sandbox
+  devnet:
+    profile: splice-devnet
+```
+
 ## Profile Kinds
 
 | Kind | Intended target |
@@ -154,7 +197,7 @@ Invalid combinations fail with `E1003` and include structured issue paths such a
 1. Keep existing `networks:` entries if you only need current Canton commands.
 2. Add `profiles:` when you need explicit runtime kinds or multi-service targets.
 3. Point `networks.<name>.profile` at those profiles as command targeting evolves.
-4. Leave templates alone for now; generated projects still use the legacy local sandbox shape.
+4. Prefer the profile-based shape for new work; `cantonctl init` now emits that shape for bundled templates.
 
 ## Merge Behavior
 

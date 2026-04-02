@@ -21,7 +21,13 @@ import * as path from 'node:path'
 import {CantonctlError, ErrorCode} from '../lib/errors.js'
 import {createOutput} from '../lib/output.js'
 import {createProcessRunner} from '../lib/process-runner.js'
-import {TEMPLATES, type Template, scaffoldFromUrl, scaffoldProject} from '../lib/scaffold.js'
+import {
+  TEMPLATES,
+  TEMPLATE_CHOICES,
+  type Template,
+  scaffoldFromUrl,
+  scaffoldProject,
+} from '../lib/scaffold.js'
 
 /** Prompt the user for project name and template selection. */
 async function promptInteractive(): Promise<{name: string; template: Template}> {
@@ -37,13 +43,11 @@ async function promptInteractive(): Promise<{name: string; template: Template}> 
   })
 
   const template = await select({
-    choices: [
-      {description: 'Minimal Hello contract with UpdateMessage choice', name: 'basic', value: 'basic'},
-      {description: 'Token with Mint/Transfer/Burn choices', name: 'token', value: 'token'},
-      {description: 'Liquidity pool with AddLiquidity/Swap', name: 'defi-amm', value: 'defi-amm'},
-      {description: 'Express.js backend consuming Canton JSON Ledger API', name: 'api-service', value: 'api-service'},
-      {description: 'Solidity + Hardhat for EVM developers via Zenith', name: 'zenith-evm', value: 'zenith-evm'},
-    ],
+    choices: TEMPLATE_CHOICES.map(({description, template}) => ({
+      description,
+      name: template,
+      value: template,
+    })),
     message: 'Select a template:',
   }) as Template
 
@@ -63,6 +67,7 @@ export default class Init extends Command {
   static override examples = [
     '<%= config.bin %> init my-app',
     '<%= config.bin %> init my-defi-app --template token',
+    '<%= config.bin %> init my-splice-app --template splice-token-app',
     '<%= config.bin %> init my-app --from https://github.com/user/template',
     '<%= config.bin %> init',
   ]

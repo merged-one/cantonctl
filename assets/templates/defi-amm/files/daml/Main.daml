@@ -1,0 +1,37 @@
+module Main where
+
+template LiquidityPool
+  with
+    operator : Party
+    tokenA : Text
+    tokenB : Text
+    reserveA : Decimal
+    reserveB : Decimal
+  where
+    signatory operator
+
+    choice AddLiquidity : ContractId LiquidityPool
+      with
+        amountA : Decimal
+        amountB : Decimal
+      controller operator
+      do
+        create this with
+          reserveA = reserveA + amountA
+          reserveB = reserveB + amountB
+
+    choice Swap : (ContractId LiquidityPool, Decimal)
+      with
+        inputToken : Text
+        inputAmount : Decimal
+      controller operator
+      do
+        let (inputReserve, outputReserve) =
+              if inputToken == tokenA then (reserveA, reserveB)
+              else (reserveB, reserveA)
+        let outputAmount = (inputAmount * outputReserve) / (inputReserve + inputAmount)
+        let newPool = if inputToken == tokenA
+              then this with reserveA = reserveA + inputAmount, reserveB = reserveB - outputAmount
+              else this with reserveA = reserveA - outputAmount, reserveB = reserveB + inputAmount
+        poolId <- create newPool
+        return (poolId, outputAmount)

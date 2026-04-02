@@ -1,0 +1,18 @@
+{
+  "name": "{{PROJECT_NAME}}",
+  "version": "0.1.0",
+  "type": "module",
+  "description": "{{PROJECT_NAME}} Zenith EVM project on Canton Network",
+  "scripts": {
+    "compile": "hardhat compile",
+    "deploy": "hardhat run scripts/deploy.ts --network zenith",
+    "test": "hardhat test"
+  },
+  "dependencies": {
+    "ethers": "^6"
+  },
+  "devDependencies": {
+    "@nomicfoundation/hardhat-toolbox": "^4",
+    "hardhat": "^2.19.0"
+  }
+}

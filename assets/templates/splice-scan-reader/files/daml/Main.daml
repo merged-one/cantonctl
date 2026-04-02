@@ -1,0 +1,20 @@
+module Main where
+
+template ScanBookmark
+  with
+    reader : Party
+    label : Text
+    lastMigrationId : Int
+    lastRecordTime : Text
+  where
+    signatory reader
+
+    choice AdvanceCursor : ContractId ScanBookmark
+      with
+        newMigrationId : Int
+        newRecordTime : Text
+      controller reader
+      do
+        create this with
+          lastMigrationId = newMigrationId
+          lastRecordTime = newRecordTime

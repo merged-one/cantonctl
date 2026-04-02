@@ -159,23 +159,36 @@ cantonctl init my-app --template token       # Token with Mint/Transfer/Burn
 cantonctl init my-app --template defi-amm    # Liquidity pool + AMM swap
 cantonctl init my-app --template api-service # Express.js + Ledger API
 cantonctl init my-app --template zenith-evm  # Solidity + Hardhat + Canton bridge
+cantonctl init my-app --template splice-token-app   # Stable token-standard starter
+cantonctl init my-app --template splice-scan-reader # Stable Scan reader starter
+cantonctl init my-app --template splice-dapp-sdk    # Public dApp SDK starter
 cantonctl init my-app --from <github-url>    # Community template
 ```
 
 | Template | Target Audience | What's Generated |
 |----------|----------------|------------------|
-| `basic` | First-time Canton developer | Hello contract, Daml Script test, cantonctl.yaml |
-| `token` | DeFi builder | Token with Transfer/Burn/Mint, 4 test cases, React frontend scaffold |
-| `defi-amm` | AMM / liquidity pool | LiquidityPool with AddLiquidity/Swap, 2 test cases |
+| `basic` | First-time Canton developer | Hello contract, Daml Script test, profile-based `cantonctl.yaml` |
+| `token` | DeFi builder | Token with Transfer/Burn/Mint, 4 test cases, frontend starter directories |
+| `defi-amm` | AMM / liquidity pool | LiquidityPool with AddLiquidity/Swap, 2 test cases, frontend starter directories |
 | `api-service` | Backend developer | Daml Record contract + Express.js server with Ledger API endpoints |
 | `zenith-evm` | EVM developer via Zenith | Solidity ERC-20 token, Hardhat config, Canton bridge contract |
+| `splice-token-app` | Splice token app builder | Local Daml starter plus stable holdings/transfer-instruction example client and remote validator profile |
+| `splice-scan-reader` | Scan ingestion / reporting app | Local Daml starter plus stable Scan `/v2/updates` reader and remote validator profile |
+| `splice-dapp-sdk` | Wallet-connected frontend | Local Daml starter plus public `@canton-network/dapp-sdk` and `@canton-network/wallet-sdk` package starter |
 
 Community templates: any GitHub repo with a `cantonctl-template.yaml` manifest.
 
+Splice example walkthroughs:
+
+- [Splice Token App](docs/examples/splice-token-app.md)
+- [Splice Scan Reader](docs/examples/splice-scan-reader.md)
+- [Splice dApp SDK](docs/examples/splice-dapp-sdk.md)
+
 ## Configuration
 
-`cantonctl.yaml` now supports both the original `networks` shape and a new profile-based shape.
+`cantonctl.yaml` supports both the original `networks` shape and the newer profile-based shape.
 Existing projects do not need to migrate immediately. Legacy `networks` entries still load unchanged, and cantonctl normalizes them into internal profiles for newer runtime work.
+New scaffolds now generate the profile-based shape by default and keep `networks` references for compatibility with existing command defaults.
 
 Legacy shape:
 
@@ -217,7 +230,7 @@ networks:
 ```
 
 Supported profile kinds are `sandbox`, `canton-multi`, `splice-localnet`, `remote-validator`, and `remote-sv-network`.
-Templates still generate the legacy `networks.local` sandbox config for now.
+Splice-aware scaffolds add a `splice-devnet` `remote-validator` profile with stable public service blocks and keep `sandbox` as the local default.
 
 See [docs/reference/configuration.md](docs/reference/configuration.md) for the full schema, service blocks, and migration guidance.
 
@@ -385,7 +398,7 @@ See [docs/reference/localnet.md](docs/reference/localnet.md) for command details
 | `src/lib/daml.ts` | DamlSdk: detect, build, test, codegen, startSandbox | 95% |
 | `src/lib/ledger-client.ts` | HTTP client for Canton JSON Ledger API V2 (6 endpoints) | 100% |
 | `src/lib/jwt.ts` | HS256 JWT generation for sandbox auth (well-known secret) | 100% |
-| `src/lib/scaffold.ts` | Pure scaffolding logic, 5 templates, community template support, interactive mode | 100% |
+| `src/lib/scaffold.ts` | Pure scaffolding logic, 8 templates, community template support, interactive mode | 100% |
 | `src/lib/dev-server.ts` | Dev server orchestration: sandbox + health + parties + hot-reload | 100% |
 | `src/lib/builder.ts` | Build orchestration with DAR caching, codegen, and --watch mode (chokidar) | 100% |
 | `src/lib/test-runner.ts` | Test execution with structured output and ANSI stripping | 100% |

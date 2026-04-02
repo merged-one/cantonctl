@@ -1,0 +1,8 @@
+{
+  "description": "Public Canton Network dApp SDK starter with sandbox + remote Splice profiles",
+  "configPreset": "splice",
+  "extraDirectories": [
+    "frontend",
+    "frontend/src"
+  ]
+}

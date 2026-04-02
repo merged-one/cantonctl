@@ -1,0 +1,14 @@
+{
+  "name": "{{PROJECT_NAME}}-token-app",
+  "private": true,
+  "type": "module",
+  "version": "0.1.0",
+  "scripts": {
+    "demo:holdings": "tsx src/token-client.ts holdings",
+    "demo:transfer": "tsx src/token-client.ts transfer"
+  },
+  "devDependencies": {
+    "tsx": "^4",
+    "typescript": "^5"
+  }
+}
