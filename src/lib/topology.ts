@@ -397,12 +397,27 @@ export async function detectTopology(projectDir: string): Promise<GeneratedTopol
       ports: {admin: 0, jsonApi: Number.parseInt(m[1], 10), ledgerApi: 0},
     }))
 
+    // Parse synchronizer ports from docker-compose port mappings
+    // Format: "HOST:CONTAINER" lines under ports: section
+    // The lowest port range is the synchronizer (basePort+1 admin, basePort+2 publicApi)
+    let syncAdmin = 0
+    let syncPublicApi = 0
+    const allPortMappings = [...composeContent.matchAll(/"(\d+):(\d+)"/g)]
+    if (allPortMappings.length > 0) {
+      const hostPorts = allPortMappings.map(m => Number.parseInt(m[1], 10)).sort((a, b) => a - b)
+      // Synchronizer ports are the two lowest (basePort+1 admin, basePort+2 publicApi)
+      if (hostPorts.length >= 2) {
+        syncAdmin = hostPorts[0]
+        syncPublicApi = hostPorts[1]
+      }
+    }
+
     return {
       bootstrapScript: '',
       cantonConf: '',
       dockerCompose: composeContent,
       participants,
-      synchronizer: {admin: 0, publicApi: 0},
+      synchronizer: {admin: syncAdmin, publicApi: syncPublicApi},
     }
   } catch {
     return null

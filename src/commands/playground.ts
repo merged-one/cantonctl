@@ -227,6 +227,7 @@ export default class Playground extends Command {
 
     await server.start({
       ledgerUrl,
+      multiNode: flags.full,
       port: flags.port,
       projectDir,
       staticDir,
