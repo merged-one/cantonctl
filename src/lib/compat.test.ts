@@ -1,4 +1,4 @@
-import {describe, expect, it} from 'vitest'
+import {describe, expect, it, vi} from 'vitest'
 
 import type {CantonctlConfig} from './config.js'
 import {
@@ -8,6 +8,7 @@ import {
   resolveProfile,
 } from './compat.js'
 import {ErrorCode} from './errors.js'
+import * as manifestModule from './upstream/manifest.js'
 
 function createConfig(overrides: Partial<CantonctlConfig> = {}): CantonctlConfig {
   return {
@@ -99,6 +100,32 @@ describe('compat', () => {
     expect(() => resolveProfile(createConfig(), 'missing-profile')).toThrowError(
       expect.objectContaining({code: ErrorCode.CONFIG_SCHEMA_VIOLATION}),
     )
+  })
+
+  it('fails when the configured default profile is missing', () => {
+    expect(() => resolveProfile(createConfig({
+      'default-profile': 'missing-profile',
+    }))).toThrowError(expect.objectContaining({
+      code: ErrorCode.CONFIG_SCHEMA_VIOLATION,
+      suggestion: expect.stringContaining('Default profile "missing-profile" is not defined'),
+    }))
+  })
+
+  it('fails when no profile can be selected implicitly', () => {
+    expect(() => resolveProfile(createConfig({
+      'default-profile': undefined,
+      profiles: {},
+    }))).toThrowError(expect.objectContaining({
+      code: ErrorCode.CONFIG_SCHEMA_VIOLATION,
+      suggestion: 'Define at least one profile or network in cantonctl.yaml.',
+    }))
+
+    expect(() => resolveProfile(createConfig({
+      'default-profile': undefined,
+    }))).toThrowError(expect.objectContaining({
+      code: ErrorCode.CONFIG_SCHEMA_VIOLATION,
+      suggestion: expect.stringContaining('Choose a profile explicitly. Available:'),
+    }))
   })
 
   it('creates a stable-surface compatibility report for supported services', () => {
@@ -223,5 +250,86 @@ describe('compat', () => {
         stability: 'config-only',
       }),
     ])
+  })
+
+  it('summarizes remote service endpoints and minimal detail when only urls are configured', () => {
+    const services = summarizeProfileServices({
+      experimental: false,
+      kind: 'remote-sv-network',
+      name: 'sv-network',
+      services: {
+        ans: {url: 'https://ans.example.com'},
+        auth: {kind: 'oidc', url: 'https://auth.example.com'},
+        ledger: {url: 'https://ledger.example.com'},
+        scan: {url: 'https://scan.example.com'},
+        scanProxy: {url: 'https://scan-proxy.example.com'},
+        tokenStandard: {url: 'https://tokens.example.com'},
+      },
+    })
+
+    expect(services).toEqual([
+      expect.objectContaining({
+        detail: 'ANS endpoint',
+        endpoint: 'https://ans.example.com',
+        name: 'ans',
+      }),
+      expect.objectContaining({
+        detail: 'oidc',
+        endpoint: 'https://auth.example.com',
+        name: 'auth',
+        stability: 'config-only',
+      }),
+      expect.objectContaining({
+        detail: 'Ledger endpoint',
+        endpoint: 'https://ledger.example.com',
+        name: 'ledger',
+      }),
+      expect.objectContaining({
+        detail: 'Scan endpoint',
+        endpoint: 'https://scan.example.com',
+        name: 'scan',
+      }),
+      expect.objectContaining({
+        detail: 'Scan proxy endpoint',
+        endpoint: 'https://scan-proxy.example.com',
+        name: 'scanProxy',
+      }),
+      expect.objectContaining({
+        detail: 'Token Standard endpoint',
+        endpoint: 'https://tokens.example.com',
+        name: 'tokenStandard',
+      }),
+    ])
+  })
+
+  it('treats public-sdk and stable-daml-interface upstream classes as passing compatibility checks', () => {
+    const getUpstreamSource = manifestModule.getUpstreamSource
+    const getUpstreamSourceSpy = vi.spyOn(manifestModule, 'getUpstreamSource').mockImplementation((id) => {
+      const source = getUpstreamSource(id)
+      if (id === 'splice-ans-external-openapi') {
+        return {...source, stability: 'public-sdk'} as ReturnType<typeof manifestModule.getUpstreamSource>
+      }
+
+      if (id === 'splice-scan-external-openapi') {
+        return {...source, stability: 'stable-daml-interface'} as ReturnType<typeof manifestModule.getUpstreamSource>
+      }
+
+      return source
+    })
+
+    try {
+      const report = createCompatibilityReport(createConfig(), 'splice-devnet')
+
+      expect(report.checks.find(check => check.name === 'Service ans')).toEqual(expect.objectContaining({
+        detail: 'ans should integrate through the published SDK package pinned in the manifest.',
+        status: 'pass',
+      }))
+      expect(report.checks.find(check => check.name === 'Service scan')).toEqual(expect.objectContaining({
+        detail: 'scan is anchored to stable Daml interfaces tracked in the manifest.',
+        status: 'pass',
+      }))
+    } finally {
+      getUpstreamSourceSpy.mockRestore()
+    }
   })
 })

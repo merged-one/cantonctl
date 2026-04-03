@@ -1,6 +1,8 @@
 import {describe, expect, it} from 'vitest'
 
 import {
+  getPinnedCantonSdkVersion,
+  getPinnedPublicSdkVersion,
   UPSTREAM_FORMATS,
   UPSTREAM_INTENDED_USES,
   UPSTREAM_MANIFEST,
@@ -135,5 +137,11 @@ describe('UPSTREAM_MANIFEST', () => {
     expect(stableOpenApiIds).not.toContain('splice-dapp-api-openrpc')
     expect(stableOpenRpcIds).toContain('splice-dapp-api-openrpc')
     expect(stableOpenRpcIds).not.toContain('splice-wallet-user-api-openrpc')
+  })
+
+  it('reports pinned sdk versions from manifest-backed sources', () => {
+    expect(getPinnedCantonSdkVersion()).toBe('3.4.11')
+    expect(getPinnedPublicSdkVersion('canton-network-dapp-sdk')).toBeTruthy()
+    expect(getPinnedPublicSdkVersion('canton-network-wallet-sdk')).toBeTruthy()
   })
 })

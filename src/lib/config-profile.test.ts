@@ -94,6 +94,30 @@ describe('normalizeConfigProfiles', () => {
     })
   })
 
+  it('maps splice-localnet profiles back to legacy docker networks when referenced explicitly', () => {
+    const result = normalizeConfigProfiles({
+      networks: {
+        local: {profile: 'splice'},
+      },
+      profiles: {
+        splice: {
+          kind: 'splice-localnet',
+          ledger: {port: 5001, 'json-api-port': 7575},
+          localnet: {distribution: 'splice', version: '0.5.x'},
+        },
+      },
+      project: {name: 'my-app', 'sdk-version': '3.4.11'},
+      version: 1,
+    })
+
+    expect(result.defaultProfile).toBe('splice')
+    expect(result.networks.local).toEqual({
+      port: 5001,
+      'json-api-port': 7575,
+      type: 'docker',
+    })
+  })
+
   it('fails with structured errors when a profile kind uses invalid services', () => {
     expect(() => normalizeConfigProfiles({
       profiles: {
@@ -129,6 +153,41 @@ describe('normalizeConfigProfiles', () => {
     }
   })
 
+  it('fails when the configured default profile is missing', () => {
+    expect(() => normalizeConfigProfiles({
+      'default-profile': 'missing',
+      profiles: {
+        sandbox: {
+          kind: 'sandbox',
+          ledger: {port: 5001, 'json-api-port': 7575},
+        },
+      },
+      project: {name: 'my-app', 'sdk-version': '3.4.11'},
+      version: 1,
+    })).toThrow(CantonctlError)
+
+    try {
+      normalizeConfigProfiles({
+        'default-profile': 'missing',
+        profiles: {
+          sandbox: {
+            kind: 'sandbox',
+            ledger: {port: 5001, 'json-api-port': 7575},
+          },
+        },
+        project: {name: 'my-app', 'sdk-version': '3.4.11'},
+        version: 1,
+      })
+    } catch (err) {
+      const e = err as CantonctlError
+      expect(e.code).toBe(ErrorCode.CONFIG_SCHEMA_VIOLATION)
+      expect(e.context.issues).toContainEqual({
+        message: 'profile "missing" is not defined',
+        path: 'default-profile',
+      })
+    }
+  })
+
   it('fails when a network references a profile without a ledger service', () => {
     expect(() => normalizeConfigProfiles({
       networks: {
@@ -138,6 +197,67 @@ describe('normalizeConfigProfiles', () => {
         sv: {
           kind: 'remote-sv-network',
           scan: {url: 'https://scan.example.com'},
+        },
+      },
+      project: {name: 'my-app', 'sdk-version': '3.4.11'},
+      version: 1,
+    })).toThrow(CantonctlError)
+  })
+
+  it('fails when required splice-localnet and remote-sv services are missing', () => {
+    expect(() => normalizeConfigProfiles({
+      profiles: {
+        local: {
+          kind: 'splice-localnet',
+          ledger: {port: 5001, 'json-api-port': 7575},
+        },
+        sv: {
+          kind: 'remote-sv-network',
+          ledger: {url: 'https://ledger.example.com'},
+        },
+      },
+      project: {name: 'my-app', 'sdk-version': '3.4.11'},
+      version: 1,
+    })).toThrow(CantonctlError)
+
+    try {
+      normalizeConfigProfiles({
+        profiles: {
+          local: {
+            kind: 'splice-localnet',
+            ledger: {port: 5001, 'json-api-port': 7575},
+          },
+          sv: {
+            kind: 'remote-sv-network',
+            ledger: {url: 'https://ledger.example.com'},
+          },
+        },
+        project: {name: 'my-app', 'sdk-version': '3.4.11'},
+        version: 1,
+      })
+    } catch (err) {
+      const e = err as CantonctlError
+      expect(e.code).toBe(ErrorCode.CONFIG_SCHEMA_VIOLATION)
+      expect(e.context.issues).toContainEqual({
+        message: 'localnet service is required for profile kind "splice-localnet"',
+        path: 'profiles.local.localnet',
+      })
+      expect(e.context.issues).toContainEqual({
+        message: 'scan or scanProxy service is required for profile kind "remote-sv-network"',
+        path: 'profiles.sv',
+      })
+    }
+  })
+
+  it('fails when a network references an undefined profile', () => {
+    expect(() => normalizeConfigProfiles({
+      networks: {
+        devnet: {profile: 'missing'},
+      },
+      profiles: {
+        sandbox: {
+          kind: 'sandbox',
+          ledger: {port: 5001, 'json-api-port': 7575},
         },
       },
       project: {name: 'my-app', 'sdk-version': '3.4.11'},

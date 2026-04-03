@@ -513,9 +513,8 @@ export function getUpstreamSource(id: UpstreamSourceId): (typeof UPSTREAM_SOURCE
 }
 
 export function getPinnedCantonSdkVersion(): string {
-  const source = getUpstreamSource('canton-json-ledger-api-openapi').source
-  const version = source.kind === 'git' ? source.ref : source.version
-  return version.replace(/^v/, '').split('-')[0]
+  const source = UPSTREAM_SOURCES_BY_ID['canton-json-ledger-api-openapi'].source
+  return source.ref.replace(/^v/, '').split('-')[0]
 }
 
 export function getPinnedPublicSdkVersion(

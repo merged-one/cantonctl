@@ -90,6 +90,38 @@ function createKeychainBackend(): KeychainBackend {
 }
 
 describe('core command surface', () => {
+  it('exposes clean and auth command metadata', () => {
+    expect(Clean.description).toContain('Remove build artifacts')
+    expect(Clean.examples).toEqual(expect.arrayContaining([
+      '<%= config.bin %> clean --all',
+      '<%= config.bin %> clean --json',
+    ]))
+    expect(Clean.flags).toEqual(expect.objectContaining({
+      all: expect.any(Object),
+      force: expect.any(Object),
+      json: expect.any(Object),
+    }))
+
+    expect(AuthLogout.args).toEqual(expect.objectContaining({
+      network: expect.any(Object),
+    }))
+    expect(AuthLogout.description).toContain('Remove stored credentials')
+    expect(AuthLogout.examples).toEqual(expect.arrayContaining([
+      '<%= config.bin %> auth logout devnet',
+    ]))
+    expect(AuthLogout.flags).toEqual(expect.objectContaining({
+      json: expect.any(Object),
+    }))
+
+    expect(AuthStatus.description).toContain('Show authentication status')
+    expect(AuthStatus.examples).toEqual(expect.arrayContaining([
+      '<%= config.bin %> auth status --json',
+    ]))
+    expect(AuthStatus.flags).toEqual(expect.objectContaining({
+      json: expect.any(Object),
+    }))
+  })
+
   it('build emits codegen results in json mode', async () => {
     const builder: Builder = {
       build: vi.fn(),
@@ -283,6 +315,41 @@ describe('core command surface', () => {
       code: ErrorCode.CONFIG_DIRECTORY_EXISTS,
       suggestion: 'Delete the directory first',
     }))
+  })
+
+  it('rethrows unexpected clean failures', async () => {
+    class TestClean extends Clean {
+      protected override createCleaner(): Cleaner {
+        return {
+          clean: vi.fn().mockRejectedValue(new Error('boom')),
+        }
+      }
+    }
+
+    await expect(TestClean.run(['--json'], {root: CLI_ROOT})).rejects.toThrow('boom')
+  })
+
+  it('executes clean through the instance run path', async () => {
+    const clean = vi.fn().mockResolvedValue({
+      durationMs: 15,
+      removed: ['.daml'],
+      skipped: [],
+    })
+
+    const command = new Clean([], {} as never)
+    vi.spyOn(command as unknown as {parse: () => Promise<unknown>}, 'parse').mockResolvedValue({
+      flags: {all: false, force: true, json: false},
+    } as never)
+    vi.spyOn(command as unknown as {createCleaner: (json: boolean, out: unknown) => Cleaner}, 'createCleaner')
+      .mockReturnValue({clean})
+
+    const result = await captureOutput(() => command.run())
+    expect(result.error).toBeUndefined()
+    expect(clean).toHaveBeenCalledWith({
+      all: false,
+      force: true,
+      projectDir: process.cwd(),
+    })
   })
 
   it('emits test results in json mode', async () => {
@@ -785,6 +852,90 @@ describe('core command surface', () => {
     expect(result.stdout).toContain('No credentials stored for devnet')
   })
 
+  it('executes auth logout through the instance run path', async () => {
+    const remove = vi.fn().mockResolvedValue(true)
+
+    const command = new AuthLogout([], {} as never)
+    vi.spyOn(command as unknown as {parse: () => Promise<unknown>}, 'parse').mockResolvedValue({
+      args: {network: 'devnet'},
+      flags: {json: false},
+    } as never)
+    vi.spyOn(command as unknown as {createBackend: () => Promise<{backend: KeychainBackend}>}, 'createBackend')
+      .mockResolvedValue({backend: createKeychainBackend()})
+    vi.spyOn(
+      command as unknown as {
+        createCredentialStore: (backend: KeychainBackend) => ReturnType<AuthLogout['createCredentialStore']>
+      },
+      'createCredentialStore',
+    ).mockReturnValue({
+      list: vi.fn(),
+      remove,
+      resolve: vi.fn(),
+      resolveRecord: vi.fn(),
+      retrieve: vi.fn(),
+      retrieveRecord: vi.fn(),
+      store: vi.fn(),
+    })
+
+    const result = await captureOutput(() => command.run())
+    expect(result.error).toBeUndefined()
+    expect(remove).toHaveBeenCalledWith('devnet')
+  })
+
+  it('serializes auth logout failures through CantonctlError', async () => {
+    class TestAuthLogout extends AuthLogout {
+      protected override async createBackend() {
+        return {backend: createKeychainBackend()}
+      }
+
+      protected override createCredentialStore() {
+        return {
+          list: vi.fn(),
+          remove: vi.fn().mockRejectedValue(new CantonctlError(ErrorCode.CONFIG_NOT_FOUND, {
+            suggestion: 'Run auth login first.',
+          })),
+          resolve: vi.fn(),
+          resolveRecord: vi.fn(),
+          retrieve: vi.fn(),
+          retrieveRecord: vi.fn(),
+          store: vi.fn(),
+        }
+      }
+    }
+
+    const result = await captureOutput(() => TestAuthLogout.run(['devnet', '--json'], {root: CLI_ROOT}))
+    expect(result.error).toBeDefined()
+
+    const json = parseJson(result.stdout)
+    expect(json.success).toBe(false)
+    expect(json.error).toEqual(expect.objectContaining({
+      code: ErrorCode.CONFIG_NOT_FOUND,
+      suggestion: 'Run auth login first.',
+    }))
+  })
+
+  it('rethrows unexpected auth logout failures', async () => {
+    class TestAuthLogout extends AuthLogout {
+      protected override async createBackend() {
+        return {backend: createKeychainBackend()}
+      }
+
+      protected override createCredentialStore() {
+        return {
+          list: vi.fn(),
+          remove: vi.fn().mockRejectedValue(new Error('boom')),
+          resolve: vi.fn(),
+          resolveRecord: vi.fn(),
+          retrieve: vi.fn(),
+          retrieveRecord: vi.fn(),
+          store: vi.fn(),
+        }
+      }
+    }
+
+    await expect(TestAuthLogout.run(['devnet', '--json'], {root: CLI_ROOT})).rejects.toThrow('boom')
+  })
+
   it('reports auth status across configured networks', async () => {
     const records = new Map<string, ResolvedCredential | null>([
       ['devnet', {mode: 'oidc-client-credentials', source: 'stored', storedAt: '2026-04-02T20:00:00Z', token: 'jwt'}],
@@ -865,5 +1016,71 @@ describe('core command surface', () => {
     const result = await captureOutput(() => TestAuthStatus.run([], {root: CLI_ROOT}))
     expect(result.error).toBeUndefined()
     expect(result.stdout).toContain('No networks configured in cantonctl.yaml')
+  })
+
+  it('executes auth status through the instance run path', async () => {
+    const resolveRecord = vi.fn<(network: string) => Promise<ResolvedCredential | null>>(async (network: string) => (
+      network === 'devnet'
+        ? {mode: 'oidc-client-credentials', source: 'stored', storedAt: '2026-04-02T20:00:00Z', token: 'jwt'}
+        : null
+    ))
+
+    const command = new AuthStatus([], {} as never)
+    vi.spyOn(command as unknown as {parse: () => Promise<unknown>}, 'parse').mockResolvedValue({flags: {json: false}} as never)
+    vi.spyOn(
+      command as unknown as {createBackend: () => Promise<{backend: KeychainBackend; isKeychain: boolean}>},
+      'createBackend',
+    ).mockResolvedValue({backend: createKeychainBackend(), isKeychain: true})
+    vi.spyOn(
+      command as unknown as {
+        createCredentialStore: (backend: KeychainBackend) => ReturnType<AuthStatus['createCredentialStore']>
+      },
+      'createCredentialStore',
+    ).mockReturnValue({
+      list: vi.fn(),
+      remove: vi.fn(),
+      resolve: vi.fn(),
+      resolveRecord,
+      retrieve: vi.fn(),
+      retrieveRecord: vi.fn(),
+      store: vi.fn(),
+    })
+    vi.spyOn(command as unknown as {loadCommandConfig: () => Promise<CantonctlConfig>}, 'loadCommandConfig')
+      .mockResolvedValue(createConfig())
+
+    const result = await captureOutput(() => command.run())
+    expect(result.error).toBeUndefined()
+    expect(resolveRecord).toHaveBeenCalledWith('devnet')
+    expect(resolveRecord).toHaveBeenCalledWith('local')
+  })
+
+  it('serializes auth status failures through CantonctlError', async () => {
+    class TestAuthStatus extends AuthStatus {
+      protected override async loadCommandConfig(): Promise<CantonctlConfig> {
+        throw new CantonctlError(ErrorCode.CONFIG_NOT_FOUND, {
+          suggestion: 'Create cantonctl.yaml before checking auth status.',
+        })
+      }
+    }
+
+    const result = await captureOutput(() => TestAuthStatus.run(['--json'], {root: CLI_ROOT}))
+    expect(result.error).toBeDefined()
+
+    const json = parseJson(result.stdout)
+    expect(json.success).toBe(false)
+    expect(json.error).toEqual(expect.objectContaining({
+      code: ErrorCode.CONFIG_NOT_FOUND,
+      suggestion: 'Create cantonctl.yaml before checking auth status.',
+    }))
+  })
+
+  it('rethrows unexpected auth status failures', async () => {
+    class TestAuthStatus extends AuthStatus {
+      protected override async loadCommandConfig(): Promise<CantonctlConfig> {
+        throw new Error('boom')
+      }
+    }
+
+    await expect(TestAuthStatus.run(['--json'], {root: CLI_ROOT})).rejects.toThrow('boom')
   })
 })

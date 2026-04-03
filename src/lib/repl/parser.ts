@@ -115,12 +115,6 @@ function parseSubmit(tokens: string[]): ReplCommand {
   const action = tokens[1].toLowerCase()
 
   if (action === 'create') {
-    if (tokens.length < 3) {
-      throw new CantonctlError(ErrorCode.CONSOLE_PARSE_ERROR, {
-        suggestion: 'Usage: submit <party> create <templateId> [payload]',
-      })
-    }
-
     return {
       action: 'create',
       party,

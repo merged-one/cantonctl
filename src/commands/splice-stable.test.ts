@@ -43,6 +43,40 @@ function parseJson(stdout: string): Record<string, unknown> {
 }
 
 describe('stable splice command surface', () => {
+  it('exposes ans command metadata', () => {
+    expect(AnsCreate.description).toContain('Create an ANS entry')
+    expect(AnsCreate.examples).toEqual(expect.arrayContaining([
+      expect.stringContaining('ans create'),
+    ]))
+    expect(AnsCreate.flags).toEqual(expect.objectContaining({
+      'ans-url': expect.any(Object),
+      description: expect.any(Object),
+      json: expect.any(Object),
+      name: expect.any(Object),
+      profile: expect.any(Object),
+      token: expect.any(Object),
+      url: expect.any(Object),
+    }))
+
+    expect(AnsList.description).toContain('List ANS entries')
+    expect(AnsList.examples).toEqual(expect.arrayContaining([
+      expect.stringContaining('ans list'),
+    ]))
+    expect(AnsList.flags).toEqual(expect.objectContaining({
+      'ans-url': expect.any(Object),
+      json: expect.any(Object),
+      name: expect.any(Object),
+      'name-prefix': expect.any(Object),
+      'page-size': expect.any(Object),
+      party: expect.any(Object),
+      profile: expect.any(Object),
+      'scan-proxy-url': expect.any(Object),
+      'scan-url': expect.any(Object),
+      source: expect.any(Object),
+      token: expect.any(Object),
+    }))
+  })
+
   it('emits scan update history in json mode', async () => {
     class TestScanUpdates extends ScanUpdates {
       protected override createStableSplice(): StableSplice {
@@ -250,6 +284,89 @@ describe('stable splice command surface', () => {
     expect(result.stderr).toContain('ownership-check-pending')
   })
 
+  it('executes ans create through the instance run path', async () => {
+    const createAnsEntry = vi.fn().mockResolvedValue({
+      endpoint: 'https://ans.example.com',
+      response: {
+        entryContextCid: 'entry-context-1',
+        name: 'alice.unverified.ans',
+        subscriptionRequestCid: 'subscription-1',
+      },
+      source: 'ans',
+      warnings: [],
+    })
+
+    const command = new AnsCreate([], {} as never)
+    vi.spyOn(command as unknown as {parse: () => Promise<unknown>}, 'parse').mockResolvedValue({
+      flags: {
+        'ans-url': undefined,
+        description: 'Alice profile',
+        json: false,
+        name: 'alice.unverified.ans',
+        profile: 'splice-devnet',
+        token: 'jwt-token',
+        url: 'https://alice.example.com',
+      },
+    } as never)
+    vi.spyOn(command as unknown as {createStableSplice: () => StableSplice}, 'createStableSplice')
+      .mockReturnValue({createAnsEntry} as unknown as StableSplice)
+    vi.spyOn(
+      command as unknown as {
+        maybeLoadProfileContext: (options: {needsProfile: boolean; profileName?: string}) => Promise<unknown>
+      },
+      'maybeLoadProfileContext',
+    ).mockResolvedValue(createConfig().profiles?.['splice-devnet'] as never)
+
+    const result = await captureOutput(() => command.run())
+    expect(result.error).toBeUndefined()
+    expect(createAnsEntry).toHaveBeenCalledWith(expect.objectContaining({
+      description: 'Alice profile',
+      name: 'alice.unverified.ans',
+      token: 'jwt-token',
+      url: 'https://alice.example.com',
+    }))
+  })
+
+  it('routes ans create failures through the shared command error handler', async () => {
+    const failure = new CantonctlError(ErrorCode.CONFIG_NOT_FOUND)
+    const handleCommandError = vi.fn()
+
+    const command = new AnsCreate([], {} as never)
+    vi.spyOn(command as unknown as {parse: () => Promise<unknown>}, 'parse').mockResolvedValue({
+      flags: {
+        'ans-url': undefined,
+        description: 'Alice profile',
+        json: false,
+        name: 'alice.unverified.ans',
+        profile: 'splice-devnet',
+        token: undefined,
+        url: '',
+      },
+    } as never)
+    vi.spyOn(command as unknown as {createStableSplice: () => StableSplice}, 'createStableSplice')
+      .mockReturnValue({
+        createAnsEntry: async () => {
+          throw failure
+        },
+      } as unknown as StableSplice)
+    vi.spyOn(
+      command as unknown as {
+        maybeLoadProfileContext: (options: {needsProfile: boolean; profileName?: string}) => Promise<unknown>
+      },
+      'maybeLoadProfileContext',
+    ).mockResolvedValue(createConfig().profiles?.['splice-devnet'] as never)
+    vi.spyOn(
+      command as unknown as {handleCommandError: (error: unknown, out: unknown) => never},
+      'handleCommandError',
+    ).mockImplementation((error: unknown) => {
+      handleCommandError(error)
+      throw error as never
+    })
+
+    await expect(command.run()).rejects.toBe(failure)
+    expect(handleCommandError).toHaveBeenCalledWith(failure)
+  })
+
   it('emits validator traffic status in json mode', async () => {
     class TestValidatorTrafficStatus extends ValidatorTrafficStatus {
       protected override createStableSplice(): StableSplice {
@@ -358,6 +475,98 @@ describe('stable splice command surface', () => {
     expect(result.stdout).toContain('Source: scanProxy')
     expect(result.stdout).toContain('alice.unverified.ans')
     expect(result.stderr).toContain('using-scan-proxy')
+  })
+
+  it('executes ans list through the instance run path', async () => {
+    const listAnsEntries = vi.fn().mockResolvedValue({
+      endpoint: 'https://ans.example.com',
+      entries: [{
+        contractId: 'ans-1',
+        name: 'alice.unverified.ans',
+        url: 'https://alice.example.com',
+        user: 'Alice',
+      }],
+      source: 'ans',
+      warnings: [],
+    })
+
+    const command = new AnsList([], {} as never)
+    vi.spyOn(command as unknown as {parse: () => Promise<unknown>}, 'parse').mockResolvedValue({
+      flags: {
+        'ans-url': undefined,
+        json: false,
+        name: undefined,
+        'name-prefix': 'alice',
+        'page-size': 20,
+        party: 'Alice',
+        profile: 'splice-devnet',
+        'scan-proxy-url': undefined,
+        'scan-url': undefined,
+        source: 'auto',
+        token: 'jwt-token',
+      },
+    } as never)
+    vi.spyOn(command as unknown as {createStableSplice: () => StableSplice}, 'createStableSplice')
+      .mockReturnValue({listAnsEntries} as unknown as StableSplice)
+    vi.spyOn(
+      command as unknown as {
+        maybeLoadProfileContext: (options: {needsProfile: boolean; profileName?: string}) => Promise<unknown>
+      },
+      'maybeLoadProfileContext',
+    ).mockResolvedValue(createConfig().profiles?.['splice-devnet'] as never)
+
+    const result = await captureOutput(() => command.run())
+    expect(result.error).toBeUndefined()
+    expect(listAnsEntries).toHaveBeenCalledWith(expect.objectContaining({
+      namePrefix: 'alice',
+      party: 'Alice',
+      source: 'auto',
+      token: 'jwt-token',
+    }))
+  })
+
+  it('routes ans list failures through the shared command error handler', async () => {
+    const failure = new CantonctlError(ErrorCode.CONFIG_NOT_FOUND)
+    const handleCommandError = vi.fn()
+
+    const command = new AnsList([], {} as never)
+    vi.spyOn(command as unknown as {parse: () => Promise<unknown>}, 'parse').mockResolvedValue({
+      flags: {
+        'ans-url': undefined,
+        json: false,
+        name: undefined,
+        'name-prefix': undefined,
+        'page-size': 20,
+        party: undefined,
+        profile: 'splice-devnet',
+        'scan-proxy-url': undefined,
+        'scan-url': undefined,
+        source: 'auto',
+        token: undefined,
+      },
+    } as never)
+    vi.spyOn(command as unknown as {createStableSplice: () => StableSplice}, 'createStableSplice')
+      .mockReturnValue({
+        listAnsEntries: async () => {
+          throw failure
+        },
+      } as unknown as StableSplice)
+    vi.spyOn(
+      command as unknown as {
+        maybeLoadProfileContext: (options: {needsProfile: boolean; profileName?: string}) => Promise<unknown>
+      },
+      'maybeLoadProfileContext',
+    ).mockResolvedValue(createConfig().profiles?.['splice-devnet'] as never)
+    vi.spyOn(
+      command as unknown as {handleCommandError: (error: unknown, out: unknown) => never},
+      'handleCommandError',
+    ).mockImplementation((error: unknown) => {
+      handleCommandError(error)
+      throw error as never
+    })
+
+    await expect(command.run()).rejects.toBe(failure)
+    expect(handleCommandError).toHaveBeenCalledWith(failure)
   })
 
   it('renders scan current-state summaries in human mode', async () => {

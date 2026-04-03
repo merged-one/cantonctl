@@ -2,6 +2,8 @@ import {defineConfig} from 'vitest/config'
 
 import {COVERAGE_POLICY, VITEST_PROJECTS} from './scripts/ci/manifest.js'
 
+const coverageProvider = process.env.COVERAGE_PROVIDER ?? 'istanbul'
+
 /**
  * Vitest configuration with focused test projects:
  *
@@ -23,7 +25,10 @@ export default defineConfig({
       exclude: [...COVERAGE_POLICY.exclude],
       experimentalAstAwareRemapping: COVERAGE_POLICY.astAwareRemapping,
       include: [...COVERAGE_POLICY.include],
-      provider: 'v8',
+      // This repo has reproducible V8 misattribution on some TypeScript files.
+      // Default coverage to Istanbul and keep V8 available via COVERAGE_PROVIDER=v8
+      // for diagnostics and provider comparisons.
+      provider: coverageProvider as 'istanbul' | 'v8',
       reporter: [...COVERAGE_POLICY.reporters],
       thresholds: process.env.COVERAGE_STRICT === '1'
         ? {...COVERAGE_POLICY.strictThresholds}

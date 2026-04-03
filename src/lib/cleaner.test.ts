@@ -7,13 +7,20 @@ import type {OutputWriter} from './output.js'
 // Mock factories
 // ---------------------------------------------------------------------------
 
-function createMockFs(existingDirs: string[] = ['.daml', 'dist']): CleanerDeps['fs'] {
+function createMockFs(
+  existingDirs: string[] = ['.daml', 'dist'],
+  existingFiles: string[] = [],
+): CleanerDeps['fs'] {
   return {
     rm: vi.fn().mockResolvedValue(undefined),
     stat: vi.fn().mockImplementation(async (path: string) => {
       const name = path.split('/').pop()!
       if (existingDirs.includes(name)) {
         return {isDirectory: () => true}
+      }
+
+      if (existingFiles.includes(name)) {
+        return {isDirectory: () => false}
       }
 
       throw new Error('ENOENT')
@@ -75,6 +82,19 @@ describe('Cleaner', () => {
       expect(result.removed).toEqual(['.daml'])
       expect(result.skipped).toEqual(['dist', '.cantonctl'])
       expect(fs.rm).toHaveBeenCalledTimes(1)
+    })
+
+    it('skips targets that exist as files instead of directories', async () => {
+      const fs = createMockFs(['.daml'], ['dist'])
+      const output = createMockOutput()
+      const cleaner = createCleaner({fs, output})
+
+      const result = await cleaner.clean({force: true, projectDir: '/project'})
+
+      expect(result.removed).toEqual(['.daml'])
+      expect(result.skipped).toEqual(['dist', '.cantonctl'])
+      expect(fs.rm).toHaveBeenCalledTimes(1)
+      expect(fs.rm).toHaveBeenCalledWith('/project/.daml', {force: true, recursive: true})
     })
 
     it('reports nothing to clean when no targets exist', async () => {

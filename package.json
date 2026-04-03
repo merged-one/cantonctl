@@ -57,8 +57,11 @@
     "test:all": "vitest run",
     "test:watch": "vitest --project unit",
     "test:coverage": "node scripts/verify-coverage-exclusions.mjs && vitest run --project unit --coverage",
+    "test:coverage:compare-providers": "node scripts/coverage-provider-compare.mjs",
     "test:coverage:backlog": "npm run test:coverage && node scripts/coverage-strict-backlog.mjs",
     "test:coverage:strict": "node scripts/verify-coverage-exclusions.mjs && COVERAGE_STRICT=1 vitest run --project unit --coverage",
+    "test:coverage:strict:v8": "node scripts/verify-coverage-exclusions.mjs && COVERAGE_PROVIDER=v8 COVERAGE_STRICT=1 vitest run --project unit --coverage",
+    "test:coverage:v8": "node scripts/verify-coverage-exclusions.mjs && COVERAGE_PROVIDER=v8 vitest run --project unit --coverage",
     "test:upstream": "vitest run --project unit src/lib/upstream/manifest.test.ts"
   },
   "dependencies": {
@@ -85,6 +88,7 @@
     "@types/js-yaml": "^4",
     "@types/node": "^22",
     "@types/ws": "^8.18.1",
+    "@vitest/coverage-istanbul": "^3.2.4",
     "@vitest/coverage-v8": "^3.2.4",
     "memfs": "^4",
     "nock": "^14",

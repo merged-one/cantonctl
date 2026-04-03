@@ -273,6 +273,20 @@ describe('command helper coverage', () => {
     expect(result.stderr).toContain('Stored credential mode "bearer-token" overrides the inferred "oidc-client-credentials" profile.')
   })
 
+  it('covers auth login default backend helper creation', async () => {
+    class Harness extends AuthLogin {
+      public callCreateBackend() {
+        return this.createBackend()
+      }
+    }
+
+    const result = await new Harness([], {} as never).callCreateBackend()
+    expect(result).toEqual(expect.objectContaining({
+      backend: expect.any(Object),
+      isKeychain: expect.any(Boolean),
+    }))
+  })
+
   it('covers dev helper shutdown and cleanup paths in interactive mode', async () => {
     class Harness extends Dev {
       public callCleanupInteractiveInput(json: boolean) {
