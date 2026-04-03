@@ -2,6 +2,18 @@ import {Flags} from '@oclif/core'
 
 import {StableSurfaceCommand} from '../stable-surface-command.js'
 
+interface ValidatorTrafficBuyFlags {
+  'domain-id': string
+  'expires-at'?: string
+  json: boolean
+  profile?: string
+  'receiving-validator-party-id': string
+  token?: string
+  'tracking-id'?: string
+  'traffic-amount': number
+  'validator-url'?: string
+}
+
 export default class ValidatorTrafficBuy extends StableSurfaceCommand {
   static override description = 'Create a stable validator-user traffic purchase request'
 
@@ -48,34 +60,54 @@ export default class ValidatorTrafficBuy extends StableSurfaceCommand {
     const {flags} = await this.parse(ValidatorTrafficBuy)
     const out = this.outputFor(flags.json)
 
-    try {
-      const profile = await this.maybeLoadProfileContext({
-        needsProfile: !flags['validator-url'],
-        profileName: flags.profile,
-      })
-      const result = await this.createStableSplice().createTrafficBuy({
-        domainId: flags['domain-id'],
-        expiresAt: flags['expires-at'],
-        profile,
-        receivingValidatorPartyId: flags['receiving-validator-party-id'],
-        token: flags.token,
-        trackingId: flags['tracking-id'],
-        trafficAmount: flags['traffic-amount'],
-        validatorBaseUrl: flags['validator-url'],
-      })
+    await runValidatorTrafficBuyCommand({
+      createStableSplice: () => this.createStableSplice(),
+      handleCommandError: (error: unknown) => this.handleCommandError(error, out),
+      maybeLoadProfileContext: (options) => this.maybeLoadProfileContext(options),
+      out,
+    }, flags)
+  }
+}
 
-      if (flags.json) {
-        out.result({data: result, success: true, warnings: [...result.warnings]})
-        return
-      }
+async function runValidatorTrafficBuyCommand(
+  command: {
+    createStableSplice: () => ReturnType<ValidatorTrafficBuy['createStableSplice']>
+    handleCommandError: (error: unknown) => never
+    maybeLoadProfileContext: (options: {
+      needsProfile: boolean
+      profileName?: string
+    }) => ReturnType<ValidatorTrafficBuy['maybeLoadProfileContext']>
+    out: ReturnType<ValidatorTrafficBuy['outputFor']>
+  },
+  flags: ValidatorTrafficBuyFlags,
+): Promise<void> {
+  try {
+    const profile = await command.maybeLoadProfileContext({
+      needsProfile: !flags['validator-url'],
+      profileName: flags.profile,
+    })
+    const result = await command.createStableSplice().createTrafficBuy({
+      domainId: flags['domain-id'],
+      expiresAt: flags['expires-at'],
+      profile,
+      receivingValidatorPartyId: flags['receiving-validator-party-id'],
+      token: flags.token,
+      trackingId: flags['tracking-id'],
+      trafficAmount: flags['traffic-amount'],
+      validatorBaseUrl: flags['validator-url'],
+    })
 
-      out.log(`Tracking id: ${result.trackingId}`)
-      out.log(`Request contract: ${result.requestContractId}`)
-      for (const warning of result.warnings) {
-        out.warn(warning)
-      }
-    } catch (error) {
-      this.handleCommandError(error, out)
+    if (flags.json) {
+      command.out.result({data: result, success: true, warnings: [...result.warnings]})
+      return
     }
+
+    command.out.log(`Tracking id: ${result.trackingId}`)
+    command.out.log(`Request contract: ${result.requestContractId}`)
+    for (const warning of result.warnings) {
+      command.out.warn(warning)
+    }
+  } catch (error) {
+    command.handleCommandError(error)
   }
 }

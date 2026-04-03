@@ -7,6 +7,11 @@ import {createLocalnetWorkspaceDetector} from '../../lib/localnet-workspace.js'
 import {createOutput, type OutputWriter} from '../../lib/output.js'
 import {createProcessRunner} from '../../lib/process-runner.js'
 
+interface LocalnetDownFlags {
+  json: boolean
+  workspace: string
+}
+
 export default class LocalnetDown extends Command {
   static override description = 'Stop an upstream Splice LocalNet workspace'
 
@@ -30,24 +35,11 @@ export default class LocalnetDown extends Command {
     const {flags} = await this.parse(LocalnetDown)
     const out = createOutput({json: flags.json})
 
-    try {
-      const result = await this.createLocalnet().down({workspace: flags.workspace})
-
-      if (flags.json) {
-        out.result({
-          data: {
-            target: result.target,
-            workspace: result.workspace.root,
-          },
-          success: true,
-        })
-      } else {
-        out.success('Upstream LocalNet workspace stopped')
-        out.log(`Workspace: ${result.workspace.root}`)
-      }
-    } catch (error) {
-      handleError(error, out, this)
-    }
+    await runLocalnetDownCommand({
+      createLocalnet: () => this.createLocalnet(),
+      handleCommandError: (error: unknown) => handleError(error, out, this),
+      out,
+    }, flags)
   }
 
   protected createLocalnet() {
@@ -74,4 +66,33 @@ function handleError(error: unknown, out: OutputWriter, command: Command): never
   }
 
   throw error
+}
+
+async function runLocalnetDownCommand(
+  command: {
+    createLocalnet: () => ReturnType<LocalnetDown['createLocalnet']>
+    handleCommandError: (error: unknown) => never
+    out: OutputWriter
+  },
+  flags: LocalnetDownFlags,
+): Promise<void> {
+  try {
+    const result = await command.createLocalnet().down({workspace: flags.workspace})
+
+    if (flags.json) {
+      command.out.result({
+        data: {
+          target: result.target,
+          workspace: result.workspace.root,
+        },
+        success: true,
+      })
+      return
+    }
+
+    command.out.success('Upstream LocalNet workspace stopped')
+    command.out.log(`Workspace: ${result.workspace.root}`)
+  } catch (error) {
+    command.handleCommandError(error)
+  }
 }

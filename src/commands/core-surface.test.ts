@@ -9,6 +9,7 @@ import type {Cleaner} from '../lib/cleaner.js'
 import type {CantonctlConfig} from '../lib/config.js'
 import type {DamlSdk} from '../lib/daml.js'
 import type {ProcessRunner} from '../lib/process-runner.js'
+import type {Template} from '../lib/scaffold.js'
 import type {TestRunner} from '../lib/test-runner.js'
 import AuthLogin from './auth/login.js'
 import AuthLogout from './auth/logout.js'
@@ -456,6 +457,55 @@ describe('core command surface', () => {
     })
   })
 
+  it('loads interactive prompts through the base helper', async () => {
+    let inputOptions:
+      | {
+        message: string
+        validate: (value: string) => string | true
+      }
+      | undefined
+    let selectOptions:
+      | {
+        choices: Array<{description: string; name: string; value: string}>
+        message: string
+      }
+      | undefined
+
+    class TestInit extends Init {
+      public async callPromptInteractive() {
+        return this.promptInteractive()
+      }
+
+      protected override async loadInteractivePrompts() {
+        return {
+          input: async (options: {message: string; validate: (value: string) => string | true}) => {
+            inputOptions = options
+            return 'interactive-app'
+          },
+          select: async (options: {
+            choices: Array<{description: string; name: string; value: Template}>
+            message: string
+          }) => {
+            selectOptions = options
+            return 'token' as Template
+          },
+        }
+      }
+    }
+
+    const answers = await new TestInit([], {} as never).callPromptInteractive()
+    expect(answers).toEqual({name: 'interactive-app', template: 'token'})
+    expect(inputOptions?.message).toBe('Project name:')
+    expect(inputOptions?.validate('')).toBe('Project name is required')
+    expect(inputOptions?.validate('bad name')).toBe('Use only letters, numbers, hyphens, and underscores')
+    expect(inputOptions?.validate('good_name')).toBe(true)
+    expect(selectOptions?.message).toBe('Select a template:')
+    expect(selectOptions?.choices).toEqual(expect.arrayContaining([
+      expect.objectContaining({name: 'basic', value: 'basic'}),
+      expect.objectContaining({name: 'token', value: 'token'}),
+    ]))
+  })
+
   it('prints next steps for built-in templates in human mode', async () => {
     class TestInit extends Init {
       protected override resolveProjectDir(projectName: string): string {
@@ -529,6 +579,34 @@ describe('core command surface', () => {
       from: 'https://github.com/example/template',
       projectDir: '/tmp/community-app',
     })
+  })
+
+  it('prints human-mode output for community templates', async () => {
+    const scaffoldFromUrl = vi.fn().mockResolvedValue(undefined)
+
+    class TestInit extends Init {
+      protected override createRunner(): ProcessRunner {
+        return createRunner()
+      }
+
+      protected override resolveProjectDir(projectName: string): string {
+        return `/tmp/${projectName}`
+      }
+
+      protected override scaffoldFromUrl(options: {dir: string; runner: ProcessRunner; url: string}) {
+        return scaffoldFromUrl(options)
+      }
+    }
+
+    const result = await captureOutput(() => TestInit.run([
+      'community-app',
+      '--from',
+      'https://github.com/example/template',
+    ], {root: CLI_ROOT}))
+    expect(result.error).toBeUndefined()
+    expect(result.stdout).toContain('Scaffolding from community template: https://github.com/example/template')
+    expect(result.stdout).toContain('Project created from https://github.com/example/template')
+    expect(result.stdout).toContain('"from": "https://github.com/example/template"')
   })
 
   it('stores auth tokens and reports non-keychain persistence warnings', async () => {

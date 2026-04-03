@@ -23,6 +23,17 @@ import {detectTopology, type GeneratedTopology} from '../lib/topology.js'
 
 const NETWORKS = ['local', 'devnet', 'testnet', 'mainnet'] as const
 
+interface DeployArgs {
+  network?: string
+}
+
+interface DeployFlags {
+  dar?: string
+  'dry-run': boolean
+  json: boolean
+  party?: string
+}
+
 export default class Deploy extends Command {
   static override args = {
     network: Args.string({
@@ -63,34 +74,31 @@ export default class Deploy extends Command {
     const {args, flags} = await this.parse(Deploy)
     const out = createOutput({json: flags.json})
 
-    try {
-      const config = await this.loadProjectConfig()
-      const runner = this.createRunner()
-      const sdk = this.createSdk(runner)
-      const hooks = this.createHooks()
-      const builder = this.createBuilder({hooks, sdk})
-      const projectDir = this.getProjectDir()
+    await runDeployCommand({
+      createBuilder: (deps) => this.createBuilder(deps),
+      createHooks: () => this.createHooks(),
+      createRunner: () => this.createRunner(),
+      createSdk: (runner) => this.createSdk(runner),
+      deployMultiNode: (config, builder, hooks, commandOut, commandFlags, networkName, topology, projectDir) =>
+        this.deployMultiNode(config, builder, hooks, commandOut, commandFlags, networkName, topology, projectDir),
+      deploySingleNode: (config, builder, hooks, commandOut, commandFlags, networkName, projectDir) =>
+        this.deploySingleNode(config, builder, hooks, commandOut, commandFlags, networkName, projectDir),
+      detectProjectTopology: (projectDir) => this.detectProjectTopology(projectDir),
+      getProjectDir: () => this.getProjectDir(),
+      handleCommandError: (error: unknown) => {
+        if (error instanceof CantonctlError) {
+          out.result({
+            error: {code: error.code, message: error.message, suggestion: error.suggestion},
+            success: false,
+          })
+          this.exit(1)
+        }
 
-      // Detect multi-node topology
-      const networkName = args.network ?? 'local'
-      const topology = networkName === 'local' ? await this.detectProjectTopology(projectDir) : null
-
-      if (topology && topology.participants.length > 0) {
-        await this.deployMultiNode(config, builder, hooks, out, flags, networkName, topology, projectDir)
-      } else {
-        await this.deploySingleNode(config, builder, hooks, out, flags, networkName, projectDir)
-      }
-    } catch (err) {
-      if (err instanceof CantonctlError) {
-        out.result({
-          error: {code: err.code, message: err.message, suggestion: err.suggestion},
-          success: false,
-        })
-        this.exit(1)
-      }
-
-      throw err
-    }
+        throw error
+      },
+      loadProjectConfig: () => this.loadProjectConfig(),
+      out,
+    }, args, flags)
   }
 
   private async deployMultiNode(
@@ -238,5 +246,61 @@ export default class Deploy extends Command {
 
   protected async loadProjectConfig(): Promise<CantonctlConfig> {
     return loadConfig()
+  }
+}
+
+async function runDeployCommand(
+  command: {
+    createBuilder: (deps: {hooks: PluginHookManager; sdk: DamlSdk}) => Builder
+    createHooks: () => PluginHookManager
+    createRunner: () => ProcessRunner
+    createSdk: (runner: ProcessRunner) => DamlSdk
+    deployMultiNode: (
+      config: CantonctlConfig,
+      builder: Builder,
+      hooks: PluginHookManager,
+      out: ReturnType<typeof createOutput>,
+      flags: DeployFlags,
+      networkName: string,
+      topology: GeneratedTopology,
+      projectDir: string,
+    ) => Promise<void>
+    deploySingleNode: (
+      config: CantonctlConfig,
+      builder: Builder,
+      hooks: PluginHookManager,
+      out: ReturnType<typeof createOutput>,
+      flags: DeployFlags,
+      networkName: string,
+      projectDir: string,
+    ) => Promise<void>
+    detectProjectTopology: (projectDir: string) => Promise<GeneratedTopology | null>
+    getProjectDir: () => string
+    handleCommandError: (error: unknown) => never
+    loadProjectConfig: () => Promise<CantonctlConfig>
+    out: ReturnType<typeof createOutput>
+  },
+  args: DeployArgs,
+  flags: DeployFlags,
+): Promise<void> {
+  try {
+    const config = await command.loadProjectConfig()
+    const runner = command.createRunner()
+    const sdk = command.createSdk(runner)
+    const hooks = command.createHooks()
+    const builder = command.createBuilder({hooks, sdk})
+    const projectDir = command.getProjectDir()
+
+    const networkName = args.network ?? 'local'
+    const topology = networkName === 'local' ? await command.detectProjectTopology(projectDir) : null
+
+    if (topology && topology.participants.length > 0) {
+      await command.deployMultiNode(config, builder, hooks, command.out, flags, networkName, topology, projectDir)
+      return
+    }
+
+    await command.deploySingleNode(config, builder, hooks, command.out, flags, networkName, projectDir)
+  } catch (error) {
+    command.handleCommandError(error)
   }
 }

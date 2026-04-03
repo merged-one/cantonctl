@@ -29,11 +29,38 @@ import {
   scaffoldProject,
 } from '../lib/scaffold.js'
 
-/** Prompt the user for project name and template selection. */
-async function promptInteractive(): Promise<{name: string; template: Template}> {
-  const {input, select} = await import('@inquirer/prompts')
+interface InteractivePromptModule {
+  input(options: {
+    message: string
+    validate: (value: string) => string | true
+  }): Promise<string>
+  select(options: {
+    choices: Array<{description: string; name: string; value: Template}>
+    message: string
+  }): Promise<Template>
+}
 
-  const name = await input({
+interface InitArgs {
+  name?: string
+}
+
+interface InitFlags {
+  from?: string
+  json: boolean
+  template: Template
+}
+
+async function loadInteractivePrompts(): Promise<InteractivePromptModule> {
+  const prompts = await import('@inquirer/prompts')
+  return {
+    input: prompts.input,
+    select: prompts.select as InteractivePromptModule['select'],
+  }
+}
+
+/** Prompt the user for project name and template selection. */
+async function promptInteractive(prompts: InteractivePromptModule): Promise<{name: string; template: Template}> {
+  const name = await prompts.input({
     message: 'Project name:',
     validate: (value: string) => {
       if (!value.trim()) return 'Project name is required'
@@ -42,7 +69,7 @@ async function promptInteractive(): Promise<{name: string; template: Template}> 
     },
   })
 
-  const template = await select({
+  const template = await prompts.select({
     choices: TEMPLATE_CHOICES.map(({description, template}) => ({
       description,
       name: template,
@@ -94,80 +121,37 @@ export default class Init extends Command {
     const {args, flags} = await this.parse(Init)
     const out = createOutput({json: flags.json})
 
-    try {
-      if (flags.from) {
-        const projectName = args.name
-        if (!projectName) {
-          throw new CantonctlError(ErrorCode.CONFIG_SCHEMA_VIOLATION, {
-            suggestion: 'Provide a project name: cantonctl init my-app --from <url>',
+    await runInitCommand({
+      createRunner: () => this.createRunner(),
+      handleCommandError: (error: unknown) => {
+        if (error instanceof CantonctlError) {
+          out.result({
+            error: {code: error.code, message: error.message, suggestion: error.suggestion},
+            success: false,
           })
+          this.exit(1)
         }
 
-        const projectDir = this.resolveProjectDir(projectName)
-        out.info(`Scaffolding from community template: ${flags.from}`)
-        const runner = this.createRunner()
-        await this.scaffoldFromUrl({dir: projectDir, runner, url: flags.from})
-        out.success(`Project created from ${flags.from}`)
-        out.result({data: {from: flags.from, projectDir}, success: true})
-        return
-      }
-
-      let projectName: string
-      let template: Template
-
-      if (args.name) {
-        // Non-interactive: use flags
-        projectName = args.name
-        template = flags.template as Template
-      } else {
-        // Interactive mode
-        const answers = await this.promptInteractive()
-        projectName = answers.name
-        template = answers.template
-      }
-
-      const projectDir = this.resolveProjectDir(projectName)
-
-      out.info(`Creating new Canton project: ${projectName}`)
-      out.info(`Template: ${template}`)
-
-      const result = this.scaffoldProject({dir: projectDir, name: projectName, template})
-
-      out.success(`Project created at ./${projectName}`)
-      out.log('')
-      out.log('Next steps:')
-      out.log(`  cd ${projectName}`)
-      out.log('  cantonctl dev        # Start local Canton node')
-      out.log('  cantonctl build      # Compile Daml contracts')
-      out.log('  cantonctl test       # Run tests')
-
-      out.result({
-        data: {
-          files: result.files,
-          projectDir: result.projectDir,
-          template: result.template,
-        },
-        success: true,
-      })
-    } catch (err) {
-      if (err instanceof CantonctlError) {
-        out.result({
-          error: {code: err.code, message: err.message, suggestion: err.suggestion},
-          success: false,
-        })
-        this.exit(1)
-      }
-
-      throw err
-    }
+        throw error
+      },
+      out,
+      promptInteractive: () => this.promptInteractive(),
+      resolveProjectDir: (projectName) => this.resolveProjectDir(projectName),
+      scaffoldFromUrl: (options) => this.scaffoldFromUrl(options),
+      scaffoldProject: (options) => this.scaffoldProject(options),
+    }, args, {...flags, template: flags.template as Template})
   }
 
   protected createRunner(): ProcessRunner {
     return createProcessRunner()
   }
 
+  protected async loadInteractivePrompts(): Promise<InteractivePromptModule> {
+    return loadInteractivePrompts()
+  }
+
   protected async promptInteractive(): Promise<{name: string; template: Template}> {
-    return promptInteractive()
+    return promptInteractive(await this.loadInteractivePrompts())
   }
 
   protected resolveProjectDir(projectName: string): string {
@@ -180,5 +164,80 @@ export default class Init extends Command {
 
   protected scaffoldProject(options: {dir: string; name: string; template: Template}) {
     return scaffoldProject(options)
+  }
+}
+
+async function runInitCommand(
+  command: {
+    createRunner: () => ProcessRunner
+    handleCommandError: (error: unknown) => never
+    out: ReturnType<typeof createOutput>
+    promptInteractive: () => Promise<{name: string; template: Template}>
+    resolveProjectDir: (projectName: string) => string
+    scaffoldFromUrl: (options: {dir: string; runner: ProcessRunner; url: string}) => Promise<void>
+    scaffoldProject: (options: {dir: string; name: string; template: Template}) => {
+      files: string[]
+      projectDir: string
+      template: Template
+    }
+  },
+  args: InitArgs,
+  flags: InitFlags,
+): Promise<void> {
+  try {
+    if (flags.from) {
+      const projectName = args.name
+      if (!projectName) {
+        throw new CantonctlError(ErrorCode.CONFIG_SCHEMA_VIOLATION, {
+          suggestion: 'Provide a project name: cantonctl init my-app --from <url>',
+        })
+      }
+
+      const projectDir = command.resolveProjectDir(projectName)
+      command.out.info(`Scaffolding from community template: ${flags.from}`)
+      const runner = command.createRunner()
+      await command.scaffoldFromUrl({dir: projectDir, runner, url: flags.from})
+      command.out.success(`Project created from ${flags.from}`)
+      command.out.result({data: {from: flags.from, projectDir}, success: true})
+      return
+    }
+
+    let projectName: string
+    let template: Template
+
+    if (args.name) {
+      projectName = args.name
+      template = flags.template
+    } else {
+      const answers = await command.promptInteractive()
+      projectName = answers.name
+      template = answers.template
+    }
+
+    const projectDir = command.resolveProjectDir(projectName)
+
+    command.out.info(`Creating new Canton project: ${projectName}`)
+    command.out.info(`Template: ${template}`)
+
+    const result = command.scaffoldProject({dir: projectDir, name: projectName, template})
+
+    command.out.success(`Project created at ./${projectName}`)
+    command.out.log('')
+    command.out.log('Next steps:')
+    command.out.log(`  cd ${projectName}`)
+    command.out.log('  cantonctl dev        # Start local Canton node')
+    command.out.log('  cantonctl build      # Compile Daml contracts')
+    command.out.log('  cantonctl test       # Run tests')
+
+    command.out.result({
+      data: {
+        files: result.files,
+        projectDir: result.projectDir,
+        template: result.template,
+      },
+      success: true,
+    })
+  } catch (error) {
+    command.handleCommandError(error)
   }
 }

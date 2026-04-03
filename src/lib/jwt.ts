@@ -86,12 +86,39 @@ export interface SandboxTokenClaims {
  * @param options - Token claims and configuration
  * @returns Compact JWS string (three dot-separated base64url segments)
  */
-export function createSandboxToken(options: SandboxTokenOptions): Promise<string> {
-  const secret = new TextEncoder().encode(SANDBOX_SECRET)
-  const expiresIn = typeof options.expiresInSeconds === 'number'
-    ? options.expiresInSeconds
-    : DEFAULT_EXPIRY_SECONDS
+export async function createSandboxToken(options: SandboxTokenOptions): Promise<string> {
+  const signer = new jose.SignJWT(buildSandboxClaims(options))
+    .setProtectedHeader({alg: 'HS256'})
+    .setSubject('admin')
+    .setIssuedAt()
+    .setExpirationTime(`${resolveExpirySeconds(options.expiresInSeconds)}s`)
 
+  return signer.sign(getSandboxSecretBytes())
+}
+
+/**
+ * Decode and verify a sandbox JWT signed with the well-known secret.
+ *
+ * @param token - Compact JWS string
+ * @returns Decoded claims from the token
+ * @throws If the token is malformed or signature verification fails
+ */
+export async function decodeSandboxToken(token: string): Promise<SandboxTokenClaims> {
+  const {payload} = await jose.jwtVerify(token, getSandboxSecretBytes())
+  return toSandboxTokenClaims(payload)
+}
+
+function getSandboxSecretBytes(): Uint8Array {
+  return new TextEncoder().encode(SANDBOX_SECRET)
+}
+
+function resolveExpirySeconds(expiresInSeconds?: number): number {
+  return typeof expiresInSeconds === 'number'
+    ? expiresInSeconds
+    : DEFAULT_EXPIRY_SECONDS
+}
+
+function buildSandboxClaims(options: SandboxTokenOptions): Record<string, unknown> {
   const claims: Record<string, unknown> = {
     actAs: options.actAs,
     applicationId: options.applicationId,
@@ -106,27 +133,10 @@ export function createSandboxToken(options: SandboxTokenOptions): Promise<string
     claims.ledgerId = options.ledgerId
   }
 
-  const token = new jose.SignJWT(claims)
-    .setProtectedHeader({alg: 'HS256'})
-    .setSubject('admin')
-    .setIssuedAt()
-    .setExpirationTime(`${expiresIn}s`)
-
-  return token.sign(secret)
+  return claims
 }
 
-/**
- * Decode and verify a sandbox JWT signed with the well-known secret.
- *
- * @param token - Compact JWS string
- * @returns Decoded claims from the token
- * @throws If the token is malformed or signature verification fails
- */
-export async function decodeSandboxToken(token: string): Promise<SandboxTokenClaims> {
-  const secret = new TextEncoder().encode(SANDBOX_SECRET)
-  const verification = await jose.jwtVerify(token, secret)
-  const payload = verification.payload
-
+function toSandboxTokenClaims(payload: jose.JWTPayload): SandboxTokenClaims {
   return {
     actAs: payload.actAs as string[],
     admin: payload.admin as boolean | undefined,

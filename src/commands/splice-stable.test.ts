@@ -388,6 +388,52 @@ describe('stable splice command surface', () => {
     expect(result.stderr).toContain('fallback-to-scan-proxy')
   })
 
+  it('emits scan current-state summaries in json mode when explicit endpoints bypass profile resolution', async () => {
+    const getScanCurrentState = vi.fn(async () => ({
+      dsoInfo: {dso_party_id: null},
+      endpoint: 'https://scan.example.com',
+      issuingMiningRounds: [{round: 1}],
+      openMiningRounds: [],
+      source: 'scan',
+      warnings: ['direct-scan-read'],
+    }))
+
+    class TestScanCurrentState extends ScanCurrentState {
+      protected override createStableSplice(): StableSplice {
+        return {
+          getScanCurrentState,
+        } as unknown as StableSplice
+      }
+
+      protected override async loadCommandConfig(): Promise<CantonctlConfig> {
+        throw new Error('config should not load when explicit endpoints are supplied')
+      }
+    }
+
+    const result = await captureOutput(() => TestScanCurrentState.run([
+      '--json',
+      '--scan-url',
+      'https://scan.example.com',
+      '--scan-proxy-url',
+      'https://scan-proxy.example.com',
+    ], {root: CLI_ROOT}))
+    expect(result.error).toBeUndefined()
+    expect(getScanCurrentState).toHaveBeenCalledWith({
+      profile: undefined,
+      scanBaseUrl: 'https://scan.example.com',
+      scanProxyBaseUrl: 'https://scan-proxy.example.com',
+    })
+
+    const json = parseJson(result.stdout)
+    expect(json.success).toBe(true)
+    expect(json.warnings).toEqual(['direct-scan-read'])
+    expect(json.data).toEqual(expect.objectContaining({
+      dsoInfo: {dso_party_id: null},
+      endpoint: 'https://scan.example.com',
+      source: 'scan',
+    }))
+  })
+
   it('emits scan acs snapshots in json mode', async () => {
     class TestScanAcs extends ScanAcs {
       protected override createStableSplice(): StableSplice {

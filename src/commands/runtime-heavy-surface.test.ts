@@ -217,6 +217,61 @@ describe('runtime-heavy command surface', () => {
     })
   })
 
+  it('deploy renders single-node progress in human mode', async () => {
+    class TestDeploy extends Deploy {
+      protected override createBuilder(): Builder {
+        return {
+          build: vi.fn(),
+          buildWithCodegen: vi.fn(),
+          watch: vi.fn(),
+        }
+      }
+
+      protected override createDeployer(): Deployer {
+        return {
+          deploy: vi.fn().mockResolvedValue({
+            darPath: '/repo/.daml/dist/demo.dar',
+            dryRun: true,
+            durationMs: 35,
+            mainPackageId: 'pkg-1',
+            network: 'local',
+            success: true,
+          }),
+        }
+      }
+
+      protected override createHooks() {
+        return {emit: vi.fn()} as never
+      }
+
+      protected override createRunner(): ProcessRunner {
+        return createRunner()
+      }
+
+      protected override createSdk(): DamlSdk {
+        return createSdk()
+      }
+
+      protected override async detectProjectTopology(): Promise<null> {
+        return null
+      }
+
+      protected override getProjectDir(): string {
+        return '/repo'
+      }
+
+      protected override async loadProjectConfig(): Promise<CantonctlConfig> {
+        return createConfig()
+      }
+    }
+
+    const result = await captureOutput(() => TestDeploy.run(['local', '--dry-run'], {root: CLI_ROOT}))
+    expect(result.error).toBeUndefined()
+    expect(result.stdout).toContain('Deploying to local...')
+    expect(result.stdout).toContain('"darPath": "/repo/.daml/dist/demo.dar"')
+    expect(result.stdout).toContain('Done in 0.0s')
+  })
+
   it('deploy emits multi-node results in json mode', async () => {
     class TestDeploy extends Deploy {
       protected override createBuilder(): Builder {
@@ -276,6 +331,72 @@ describe('runtime-heavy command surface', () => {
         {mainPackageId: '7575', participant: 'participant1', port: 7575},
         {mainPackageId: '7576', participant: 'participant2', port: 7576},
       ],
+    }))
+  })
+
+  it('deploy falls back to single-node mode when topology has no participants', async () => {
+    const deploy = vi.fn().mockResolvedValue({
+      darPath: '/repo/.daml/dist/demo.dar',
+      dryRun: false,
+      durationMs: 35,
+      mainPackageId: 'pkg-1',
+      network: 'local',
+      success: true,
+    })
+
+    class TestDeploy extends Deploy {
+      protected override createBuilder(): Builder {
+        return {
+          build: vi.fn(),
+          buildWithCodegen: vi.fn(),
+          watch: vi.fn(),
+        }
+      }
+
+      protected override createDeployer(): Deployer {
+        return {deploy}
+      }
+
+      protected override createHooks() {
+        return {emit: vi.fn()} as never
+      }
+
+      protected override createRunner(): ProcessRunner {
+        return createRunner()
+      }
+
+      protected override createSdk(): DamlSdk {
+        return createSdk()
+      }
+
+      protected override async detectProjectTopology(): Promise<GeneratedTopology | null> {
+        return {
+          bootstrapScript: '',
+          cantonConf: '',
+          dockerCompose: '',
+          participants: [],
+          synchronizer: {admin: 10001, publicApi: 10002},
+        }
+      }
+
+      protected override getProjectDir(): string {
+        return '/repo'
+      }
+
+      protected override async loadProjectConfig(): Promise<CantonctlConfig> {
+        return createConfig()
+      }
+    }
+
+    const result = await captureOutput(() => TestDeploy.run(['local', '--json'], {root: CLI_ROOT}))
+    expect(result.error).toBeUndefined()
+    expect(deploy).toHaveBeenCalledOnce()
+
+    const json = parseJson(result.stdout)
+    expect(json.success).toBe(true)
+    expect(json.data).toEqual(expect.objectContaining({
+      mainPackageId: 'pkg-1',
+      network: 'local',
     }))
   })
 

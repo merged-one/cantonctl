@@ -411,6 +411,34 @@ describe('experimental validator command surface', () => {
     expect(result.stderr).toContain('adapter-warning')
   })
 
+  it('offboards users in json mode', async () => {
+    class TestOffboard extends ValidatorExperimentalOffboardUser {
+      protected override requireExperimentalOptIn(): void {}
+      protected override async resolveExperimentalContext(): Promise<ExperimentalValidatorContext> {
+        return createContext()
+      }
+    }
+
+    const result = await captureOutput(() => TestOffboard.run([
+      'devnet',
+      '--experimental',
+      '--json',
+      '--username',
+      'alice',
+    ], {root: CLI_ROOT}))
+    expect(result.error).toBeUndefined()
+
+    const json = parseJson(result.stdout)
+    expect(json.success).toBe(true)
+    expect(json.warnings).toEqual(['profile-warning', 'adapter-warning'])
+    expect(json.data).toEqual(expect.objectContaining({
+      network: 'devnet',
+      offboarded: true,
+      user: 'alice',
+      validatorUrl: 'https://validator.example.com',
+    }))
+  })
+
   it('emits setup-preapproval contracts in json mode', async () => {
     class TestSetupPreapproval extends ValidatorExperimentalSetupPreapproval {
       protected override requireExperimentalOptIn(): void {}

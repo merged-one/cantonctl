@@ -85,6 +85,21 @@ describe('JWT generation', () => {
       const decoded = await decodeSandboxToken(token1)
       expect(decoded.applicationId).toBe('cantonctl')
     })
+
+    it('omits optional claims when admin and ledgerId are not supplied', async () => {
+      const token = await createSandboxToken({
+        actAs: ['Alice::1234'],
+        applicationId: 'cantonctl',
+        expiresInSeconds: 1,
+        readAs: [],
+      })
+
+      const decoded = await decodeSandboxToken(token)
+      expect(decoded.admin).toBeUndefined()
+      expect(decoded.ledgerId).toBeUndefined()
+      expect(decoded.iat).toBeDefined()
+      expect(decoded.exp).toBeDefined()
+    })
   })
 
   describe('decodeSandboxToken()', () => {
