@@ -2,9 +2,14 @@ import * as fs from 'node:fs/promises'
 import * as net from 'node:net'
 import * as os from 'node:os'
 import * as path from 'node:path'
+import {WebSocket} from 'ws'
 
 import {afterEach, describe, expect, it, vi} from 'vitest'
 
+import * as configModule from './config.js'
+import * as credentialStoreModule from './credential-store.js'
+import * as keytarBackendModule from './keytar-backend.js'
+import * as splicePublicModule from './splice-public.js'
 import type {CantonctlConfig} from './config.js'
 import type {CompatibilityReport} from './compat.js'
 import {
@@ -17,6 +22,7 @@ import {
   scanDamlTemplates,
   type LedgerClientLike,
   type ServeServer,
+  type ServeServerDeps,
   usesLocalLedgerRuntime,
 } from './serve.js'
 import type {StableSplice} from './splice-public.js'
@@ -122,10 +128,21 @@ function createLedgerClientFactory() {
 }
 
 interface TestContext {
+  createLedgerClient: ReturnType<typeof vi.fn>
   createStableSplice: ReturnType<typeof vi.fn<() => StableSplice>>
+  deps: Partial<ServeServerDeps>
   port: number
   projectDir: string
   server: ServeServer
+}
+
+interface StartServerOptions {
+  config?: CantonctlConfig
+  deps?: Partial<ServeServerDeps>
+  multiNode?: boolean
+  omitDeps?: Array<keyof ServeServerDeps>
+  projectDirSetup?: (projectDir: string) => Promise<void>
+  start?: Partial<Parameters<ServeServer['start']>[0]>
 }
 
 async function createProjectDir(options: {multiNode?: boolean} = {}): Promise<string> {
@@ -187,18 +204,16 @@ async function request(
   })
 }
 
-async function startServer(options: {multiNode?: boolean} = {}): Promise<TestContext> {
-  const config = createConfig()
-  const port = await getFreePort()
-  const projectDir = await createProjectDir(options)
+async function startServer(options: StartServerOptions = {}): Promise<TestContext> {
+  const config = options.config ?? createConfig()
+  const port = options.start?.port ?? await getFreePort()
+  const projectDir = options.start?.projectDir ?? await createProjectDir({multiNode: options.multiNode})
+  await options.projectDirSetup?.(projectDir)
   const remoteProfile = config.profiles?.['splice-devnet']
-  if (!remoteProfile) {
-    throw new Error('Expected splice-devnet profile in test config')
-  }
 
   const createStableSplice = vi.fn<() => StableSplice>(() => ({
     listScanUpdates: vi.fn(async (options) => ({
-      endpoint: remoteProfile.services.scan?.url ?? 'https://scan.example.com',
+      endpoint: remoteProfile?.services.scan?.url ?? 'https://scan.example.com',
       source: 'scan',
       updates: [{
         kind: 'transaction',
@@ -209,7 +224,7 @@ async function startServer(options: {multiNode?: boolean} = {}): Promise<TestCon
       warnings: options.profile ? [`scan:${options.profile.name}`] : [],
     })),
     listTokenHoldings: vi.fn(async (options) => ({
-      endpoint: remoteProfile.services.ledger?.url ?? 'https://ledger.example.com',
+      endpoint: remoteProfile?.services.ledger?.url ?? 'https://ledger.example.com',
       holdings: [{
         amount: '5.0000000000',
         contractId: 'holding-1',
@@ -220,7 +235,8 @@ async function startServer(options: {multiNode?: boolean} = {}): Promise<TestCon
     })),
   } as unknown as StableSplice))
 
-  const server = createServeServer({
+  const createLedgerClient = createLedgerClientFactory()
+  const deps: Partial<ServeServerDeps> = {
     builder: {
       build: vi.fn(async () => ({
         cached: false,
@@ -247,7 +263,7 @@ async function startServer(options: {multiNode?: boolean} = {}): Promise<TestCon
       services: [],
       warned: 0,
     })),
-    createLedgerClient: createLedgerClientFactory(),
+    createLedgerClient,
     createStableSplice,
     createToken: vi.fn(async () => 'sandbox-token'),
     loadProjectConfig: vi.fn(async () => config),
@@ -271,16 +287,23 @@ async function startServer(options: {multiNode?: boolean} = {}): Promise<TestCon
       healthy: service !== 'validator',
       status: service === 'validator' ? 'unreachable' as const : 'healthy' as const,
     })),
-  })
+    ...options.deps,
+  }
+  for (const key of options.omitDeps ?? []) {
+    delete deps[key]
+  }
+
+  const server = createServeServer(deps as ServeServerDeps)
 
   await server.start({
     ledgerUrl: 'http://localhost:7575',
     multiNode: options.multiNode ? true : false,
     port,
     projectDir,
+    ...options.start,
   })
 
-  return {createStableSplice, port, projectDir, server}
+  return {createLedgerClient, createStableSplice, deps, port, projectDir, server}
 }
 
 let activeServer: ServeServer | null = null
@@ -293,9 +316,44 @@ afterEach(async () => {
     await fs.rm(activeProjectDir, {force: true, recursive: true})
     activeProjectDir = null
   }
+  vi.restoreAllMocks()
 })
 
 describe('createServeServer', () => {
+  it('covers helper fallbacks, non-daml scans, and healthy service probes', async () => {
+    const projectDir = await createProjectDir()
+    activeProjectDir = projectDir
+    await fs.writeFile(path.join(projectDir, 'daml', 'Notes.txt'), 'skip', 'utf8')
+
+    const sandboxProfile = createConfig().profiles!.sandbox
+
+    expect(await scanDamlTemplates('/definitely/missing')).toEqual([])
+    expect(await scanDamlTemplates(projectDir)).toEqual([
+      expect.objectContaining({name: 'Iou'}),
+    ])
+    expect(getLedgerBaseUrl({
+      ...sandboxProfile,
+      services: {},
+    } as any, 'http://fallback:7575')).toBe('http://fallback:7575')
+    expect(getLedgerBaseUrl({
+      ...sandboxProfile,
+      services: {ledger: {}},
+    } as any, 'http://fallback:7575')).toBe('http://localhost:7575')
+    expect(parsePort('http://ledger.example.com', 7575)).toBe(80)
+
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(new Response('', {status: 200}))
+    await expect(defaultProbeService({
+      endpoint: 'https://service.example.com',
+      service: 'scan',
+    })).resolves.toEqual({
+      detail: 'https://service.example.com',
+      endpoint: 'https://service.example.com',
+      healthy: true,
+      status: 'healthy',
+    })
+    expect(fetchSpy).toHaveBeenCalledWith('https://service.example.com', {method: 'GET'})
+  })
+
   it('builds filtered file trees and scans templates directly', async () => {
     const projectDir = await createProjectDir()
     activeProjectDir = projectDir
@@ -698,5 +756,774 @@ describe('createServeServer', () => {
 
     const traversal = await request(context.port, '/api/files/%2E%2E%2Fsecret.txt')
     expect(traversal.status).toBe(403)
+  })
+
+  it('warns on initial build failures, serves static assets, and still starts the server', async () => {
+    const port = await getFreePort()
+    const projectDir = await createProjectDir()
+    const staticDir = path.join(projectDir, 'playground-dist')
+    await fs.mkdir(staticDir, {recursive: true})
+    await fs.writeFile(path.join(staticDir, 'index.html'), '<html><body>Playground</body></html>', 'utf8')
+
+    const output = {
+      error: vi.fn(),
+      info: vi.fn(),
+      log: vi.fn(),
+      result: vi.fn(),
+      spinner: vi.fn(),
+      success: vi.fn(),
+      table: vi.fn(),
+      warn: vi.fn(),
+    }
+
+    const server = createServeServer({
+      builder: {
+        build: vi.fn().mockRejectedValue(new Error('startup build failed')),
+        buildWithCodegen: vi.fn(async () => ({cached: true, darPath: null, durationMs: 1, success: true})),
+        watch: vi.fn(),
+      },
+      createLedgerClient: createLedgerClientFactory(),
+      createStableSplice: vi.fn(() => ({
+        listScanUpdates: vi.fn(async () => ({source: 'scan', updates: [], warnings: []})),
+        listTokenHoldings: vi.fn(async () => ({holdings: [], interfaceId: 'iface', warnings: []})),
+      }) as unknown as StableSplice),
+      createToken: vi.fn(async () => 'sandbox-token'),
+      loadProjectConfig: vi.fn(async () => createConfig()),
+      output,
+      probeService: vi.fn(async ({endpoint}) => ({
+        detail: endpoint,
+        endpoint,
+        healthy: true,
+        status: 'healthy' as const,
+      })),
+      resolveProfileToken: vi.fn(async () => 'sandbox-token'),
+      testRunner: {
+        run: vi.fn(async () => ({durationMs: 1, output: 'ok', passed: true, success: true})),
+      },
+    })
+
+    activeServer = server
+    activeProjectDir = projectDir
+    await server.start({
+      ledgerUrl: 'http://localhost:7575',
+      multiNode: false,
+      port,
+      projectDir,
+      staticDir,
+    })
+
+    const index = await request(port, '/')
+    expect(index.status).toBe(200)
+    expect(await index.text()).toContain('Playground')
+    expect(output.warn).toHaveBeenCalledWith(expect.stringContaining('Initial build failed'))
+  })
+
+  it('stops cleanly before the server is started', async () => {
+    const server = createServeServer({
+      builder: {
+        build: vi.fn(),
+        buildWithCodegen: vi.fn(),
+        watch: vi.fn(),
+      },
+      createLedgerClient: createLedgerClientFactory(),
+      createStableSplice: vi.fn(() => ({
+        listScanUpdates: vi.fn(),
+        listTokenHoldings: vi.fn(),
+      }) as unknown as StableSplice),
+      createToken: vi.fn(async () => 'sandbox-token'),
+      loadProjectConfig: vi.fn(async () => createConfig()),
+      output: {
+        error: vi.fn(),
+        info: vi.fn(),
+        log: vi.fn(),
+        result: vi.fn(),
+        spinner: vi.fn(),
+        success: vi.fn(),
+        table: vi.fn(),
+        warn: vi.fn(),
+      },
+      testRunner: {run: vi.fn()},
+    })
+
+    await expect(server.stop()).resolves.toBeUndefined()
+  })
+
+  it('uses default dependency resolvers for tokens, project config, probes, and stable splice factories', async () => {
+    const config: CantonctlConfig = {
+      'default-profile': 'shared',
+      networkProfiles: {devnet: 'oidc'},
+      profiles: {
+        shared: {
+          experimental: false,
+          kind: 'remote-validator',
+          name: 'shared',
+          services: {
+            auth: {kind: 'shared-secret'},
+            ledger: {url: 'https://shared.example.com'},
+            validator: {} as never,
+          },
+        },
+        none: {
+          experimental: false,
+          kind: 'remote-validator',
+          name: 'none',
+          services: {
+            auth: {kind: 'none'},
+            ledger: {url: 'https://none.example.com'},
+          },
+        },
+        multi: {
+          experimental: false,
+          kind: 'canton-multi',
+          name: 'multi',
+          services: {
+            ledger: {url: 'https://multi.example.com'},
+          },
+        },
+        localnet: {
+          experimental: true,
+          kind: 'splice-localnet',
+          name: 'localnet',
+          services: {
+            ledger: {url: 'https://localnet.example.com'},
+            localnet: {distribution: 'splice-localnet', version: '0.5.x'},
+          },
+        },
+        oidc: {
+          experimental: false,
+          kind: 'remote-validator',
+          name: 'oidc',
+          services: {
+            auth: {issuer: 'https://login.example.com', kind: 'oidc'},
+            ledger: {url: 'https://oidc.example.com'},
+            ans: {url: 'https://ans.example.com'},
+          },
+        },
+        missing: {
+          experimental: false,
+          kind: 'remote-validator',
+          name: 'missing',
+          services: {
+            auth: {issuer: 'https://login.example.com', kind: 'oidc'},
+            ledger: {url: 'https://missing.example.com'},
+          },
+        },
+      },
+      project: {name: 'serve-test', 'sdk-version': '3.4.11'},
+      version: 1,
+    }
+
+    const resolve = vi.fn(async (networkName: string) => networkName === 'devnet' ? 'stored-token' : undefined)
+    vi.spyOn(configModule, 'loadConfig').mockResolvedValue(config)
+    vi.spyOn(keytarBackendModule, 'createBackendWithFallback').mockResolvedValue({
+      backend: {} as never,
+      isKeychain: false,
+    })
+    vi.spyOn(credentialStoreModule, 'createCredentialStore').mockReturnValue({
+      list: vi.fn(),
+      remove: vi.fn(),
+      resolve,
+      resolveRecord: vi.fn(),
+      retrieve: vi.fn(),
+      retrieveRecord: vi.fn(),
+      store: vi.fn(),
+    } as never)
+    const createStableSpliceSpy = vi.spyOn(splicePublicModule, 'createStableSplice').mockReturnValue({
+      listScanUpdates: vi.fn(async () => ({source: 'scan', updates: [], warnings: []})),
+      listTokenHoldings: vi.fn(async () => ({holdings: [], interfaceId: 'iface', warnings: []})),
+    } as never)
+    const realFetch = globalThis.fetch
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
+      const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url
+      if (url.startsWith('http://127.0.0.1:') || url.startsWith('http://localhost:')) {
+        return realFetch(input as never, init)
+      }
+
+      return new Response('', {status: 200})
+    })
+
+    const createLedgerClient = vi.fn(({baseUrl, token}: {baseUrl: string; token: string}): LedgerClientLike => ({
+      allocateParty: vi.fn(async () => ({partyDetails: {party: 'Alice'}})),
+      getActiveContracts: vi.fn(async () => ({activeContracts: []})),
+      getParties: vi.fn(async () => ({partyDetails: []})),
+      getVersion: vi.fn(async () => ({tokenUsed: token, version: '3.4.11'})),
+      submitAndWait: vi.fn(async () => ({transaction: {updateId: 'tx-1'}})),
+      uploadDar: vi.fn(async () => ({mainPackageId: 'pkg-1'})),
+    }))
+
+    const context = await startServer({
+      deps: {
+        createLedgerClient,
+        createToken: vi.fn(async () => 'sandbox-token'),
+      },
+      omitDeps: ['createStableSplice', 'loadProjectConfig', 'probeService', 'resolveProfileToken'],
+      start: {
+        profileName: 'shared',
+      },
+    })
+    activeServer = context.server
+    activeProjectDir = context.projectDir
+
+    await requestJson(context.port, '/api/profile/status')
+    await requestJson(context.port, '/api/profile', {
+      body: JSON.stringify({profile: 'none'}),
+      method: 'PUT',
+    })
+    await requestJson(context.port, '/api/profile/status')
+    await requestJson(context.port, '/api/profile', {
+      body: JSON.stringify({profile: 'multi'}),
+      method: 'PUT',
+    })
+    await requestJson(context.port, '/api/profile/status')
+    await requestJson(context.port, '/api/profile', {
+      body: JSON.stringify({profile: 'localnet'}),
+      method: 'PUT',
+    })
+    const localnetStatus = await requestJson<{
+      services: Array<{name: string; status: string}>
+    }>(context.port, '/api/service-health')
+    await requestJson(context.port, '/api/profile', {
+      body: JSON.stringify({profile: 'oidc'}),
+      method: 'PUT',
+    })
+    await requestJson(context.port, '/api/profile/status')
+    await requestJson(context.port, '/api/profile', {
+      body: JSON.stringify({profile: 'missing'}),
+      method: 'PUT',
+    })
+    await requestJson(context.port, '/api/profile/status')
+
+    expect(createStableSpliceSpy).toHaveBeenCalledTimes(1)
+    expect(resolve).toHaveBeenCalledWith('devnet')
+    expect(resolve).toHaveBeenCalledWith('missing')
+    expect(fetchSpy).toHaveBeenCalledWith('https://ans.example.com', {method: 'GET'})
+    expect(localnetStatus.services).toEqual(expect.arrayContaining([
+      expect.objectContaining({name: 'localnet', status: 'configured'}),
+    ]))
+    expect(createLedgerClient.mock.calls).toEqual(expect.arrayContaining([
+      [expect.objectContaining({baseUrl: 'https://shared.example.com', token: 'sandbox-token'})],
+      [expect.objectContaining({baseUrl: 'https://none.example.com', token: 'sandbox-token'})],
+      [expect.objectContaining({baseUrl: 'https://multi.example.com', token: 'sandbox-token'})],
+      [expect.objectContaining({baseUrl: 'https://localnet.example.com', token: 'sandbox-token'})],
+      [expect.objectContaining({baseUrl: 'https://oidc.example.com', token: 'stored-token'})],
+      [expect.objectContaining({baseUrl: 'https://missing.example.com', token: ''})],
+    ]))
+  })
+
+  it('reports null profile status when no runtime profiles are configured', async () => {
+    const config: CantonctlConfig = {
+      project: {name: 'serve-test', 'sdk-version': '3.4.11'},
+      version: 1,
+    }
+
+    const context = await startServer({config})
+    activeServer = context.server
+    activeProjectDir = context.projectDir
+
+    const profile = await requestJson<{
+      profiles: unknown[]
+      selectedProfile: null
+      source: null
+    }>(context.port, '/api/profile')
+    const status = await requestJson<{
+      healthy: boolean
+      profile: null
+      services: unknown[]
+    }>(context.port, '/api/profile/status')
+    const serviceHealth = await requestJson<{
+      healthy: boolean
+      profile: null
+      services: unknown[]
+    }>(context.port, '/api/service-health')
+    const health = await requestJson<{
+      healthy: boolean
+      profile: null
+      version?: string
+    }>(context.port, '/api/health')
+    const compat = await request(context.port, '/api/profile/compat')
+
+    expect(profile).toEqual({profiles: [], selectedProfile: null, source: null})
+    expect(status).toEqual({healthy: false, profile: null, services: []})
+    expect(serviceHealth).toEqual({healthy: false, profile: null, services: []})
+    expect(health).toEqual({healthy: false, profile: null, services: [], version: undefined})
+    expect(compat.status).toBe(404)
+  })
+
+  it('reports auth-required and unconfigured services for degraded profiles', async () => {
+    const config: CantonctlConfig = {
+      'default-profile': 'problem',
+      profiles: {
+        problem: {
+          experimental: false,
+          kind: 'remote-validator',
+          name: 'problem',
+          services: {
+            auth: {issuer: 'https://login.example.com', kind: 'oidc'},
+            ledger: {url: 'https://problem.example.com'},
+            validator: {} as never,
+          },
+        },
+      },
+      project: {name: 'serve-test', 'sdk-version': '3.4.11'},
+      version: 1,
+    }
+
+    const context = await startServer({
+      config,
+      deps: {
+        createLedgerClient: vi.fn(({baseUrl}: {baseUrl: string}) => ({
+          allocateParty: vi.fn(async () => ({partyDetails: {party: 'Alice'}})),
+          getActiveContracts: vi.fn(async () => ({activeContracts: []})),
+          getParties: vi.fn(async () => ({partyDetails: []})),
+          getVersion: vi.fn(async () => {
+            if (baseUrl === 'https://problem.example.com') {
+              throw new CantonctlError(ErrorCode.LEDGER_AUTH_EXPIRED)
+            }
+
+            return {version: '3.4.11'}
+          }),
+          submitAndWait: vi.fn(async () => ({transaction: {updateId: 'tx-1'}})),
+          uploadDar: vi.fn(async () => ({mainPackageId: 'pkg-1'})),
+        })),
+      },
+      start: {profileName: 'problem'},
+    })
+    activeServer = context.server
+    activeProjectDir = context.projectDir
+
+    const status = await requestJson<{
+      healthy: boolean
+      services: Array<{name: string; status: string}>
+    }>(context.port, '/api/profile/status')
+    const serviceHealth = await requestJson<{
+      healthy: boolean
+      services: Array<{name: string; status: string}>
+    }>(context.port, '/api/service-health')
+
+    expect(status.healthy).toBe(false)
+    expect(status.services).toEqual(expect.arrayContaining([
+      expect.objectContaining({name: 'auth', status: 'configured'}),
+      expect.objectContaining({name: 'ledger', status: 'auth-required'}),
+      expect.objectContaining({name: 'validator', status: 'unconfigured'}),
+    ]))
+    expect(serviceHealth.services).toEqual(status.services)
+  })
+
+  it('covers multi-node routing fallbacks and degraded participant status', async () => {
+    let failBobContracts = false
+    const participant1: LedgerClientLike = {
+      allocateParty: vi.fn(async () => ({partyDetails: {party: 'Alice'}})),
+      getActiveContracts: vi.fn(async ({filter}) => {
+        if (filter.party === 'Bob' && failBobContracts) throw new Error('bob missing')
+        return {
+          activeContracts: [{contractId: `${filter.party}-contract`}],
+        }
+      }),
+      getParties: vi.fn(async () => ({
+        partyDetails: [
+          {identifier: '', isLocal: true},
+          {party: 'Alice', isLocal: true},
+        ],
+      })),
+      getVersion: vi.fn(async () => ({version: '3.4.11'})),
+      submitAndWait: vi.fn(async () => ({transaction: {updateId: 'tx-1'}})),
+      uploadDar: vi.fn(async () => ({mainPackageId: 'pkg-1'})),
+    }
+    const participant2: LedgerClientLike = {
+      allocateParty: vi.fn(async () => ({partyDetails: {party: 'Bob'}})),
+      getActiveContracts: vi.fn(async () => ({activeContracts: []})),
+      getParties: vi.fn(async () => { throw new Error('participant2 unavailable') }),
+      getVersion: vi.fn(async () => { throw new Error('unhealthy') }),
+      submitAndWait: vi.fn(async () => ({transaction: {updateId: 'tx-2'}})),
+      uploadDar: vi.fn(async () => ({mainPackageId: 'pkg-2'})),
+    }
+    let clientCall = 0
+
+    const context = await startServer({
+      deps: {
+        createLedgerClient: vi.fn(() => {
+          clientCall++
+          return clientCall === 1 ? participant1 : participant2
+        }),
+      },
+      multiNode: true,
+      start: {multiNode: true},
+    })
+    activeServer = context.server
+    activeProjectDir = context.projectDir
+
+    const topologyStatus = await requestJson<{
+      participants: Array<{contractCount: number; healthy: boolean; name: string}>
+    }>(context.port, '/api/topology/status')
+    const filteredContracts = await requestJson<{activeContracts: Array<{contractId: string}>}>(
+      context.port,
+      '/api/contracts?party=Bob&templateId=Remote:Holding',
+    )
+
+    failBobContracts = true
+    const multiContracts = await requestJson<{contracts: Record<string, Array<{contractId: string}>>}>(
+      context.port,
+      '/api/contracts/multi?parties=Alice,Bob',
+    )
+
+    expect(topologyStatus.participants).toEqual([
+      expect.objectContaining({contractCount: 1, healthy: true, name: 'participant1'}),
+      expect.objectContaining({contractCount: 0, healthy: false, name: 'participant2'}),
+    ])
+    expect(filteredContracts.activeContracts).toEqual([
+      {contractId: 'Bob-contract'},
+    ])
+    expect(participant1.getActiveContracts).toHaveBeenCalledWith({
+      filter: {party: 'Bob', templateIds: ['Remote:Holding']},
+    })
+    expect(multiContracts.contracts.Alice).toEqual([{contractId: 'Alice-contract'}])
+    expect(multiContracts.contracts.Bob).toEqual([])
+  })
+
+  it('handles no-profile splice queries and missing project files', async () => {
+    const stableSplice = {
+      listScanUpdates: vi.fn(async (options) => ({
+        source: 'scan',
+        updates: [],
+        warnings: [
+          options.after ? `${options.after.migrationId}:${options.after.recordTime}` : 'none',
+          String(options.pageSize),
+          options.profile ? options.profile.name : 'no-profile',
+        ],
+      })),
+      listTokenHoldings: vi.fn(async (options) => ({
+        holdings: [],
+        interfaceId: 'iface',
+        warnings: [
+          options.instrumentAdmin ?? 'no-admin',
+          options.instrumentId ?? 'no-instrument',
+          options.profile ? options.profile.name : 'no-profile',
+          options.token ?? 'no-token',
+        ],
+      })),
+    }
+    const config: CantonctlConfig = {
+      project: {name: 'serve-test', 'sdk-version': '3.4.11'},
+      version: 1,
+    }
+
+    const context = await startServer({
+      config,
+      deps: {
+        createStableSplice: vi.fn(() => stableSplice as never),
+      },
+    })
+    activeServer = context.server
+    activeProjectDir = context.projectDir
+
+    const holdings = await requestJson<{warnings: string[]}>(context.port, '/api/splice/token-holdings?party=Alice&instrumentAdmin=Admin&instrumentId=Token')
+    const updates = await requestJson<{warnings: string[]}>(context.port, '/api/splice/scan/updates?afterMigrationId=7&afterRecordTime=2026-04-02T20:00:00Z&pageSize=0')
+
+    expect(holdings.warnings).toEqual(['Admin', 'Token', 'no-profile', 'no-token'])
+    expect(updates.warnings).toEqual(['7:2026-04-02T20:00:00Z', '20', 'no-profile'])
+
+    await fs.rm(context.projectDir, {force: true, recursive: true})
+    expect((await request(context.port, '/api/project')).status).toBe(500)
+    expect((await request(context.port, '/api/files')).status).toBe(500)
+  })
+
+  it('surfaces route-level command, build, and test failures and upload warnings', async () => {
+    let failAllocate = false
+    let failBuildRoute = false
+    let failCommands = false
+    let failContracts = false
+    let failParties = false
+    let failTestRoute = false
+    let failUpload = false
+    const projectDir = await createProjectDir()
+
+    const client: LedgerClientLike = {
+      allocateParty: vi.fn(async () => {
+        if (failAllocate) throw new Error('allocate failed')
+        return {partyDetails: {party: 'Alice'}}
+      }),
+      getActiveContracts: vi.fn(async ({filter}) => {
+        if (failContracts) throw new Error('contracts failed')
+        return {activeContracts: [{contractId: `${filter.party}-contract`}]}
+      }),
+      getParties: vi.fn(async () => {
+        if (failParties) throw new Error('parties failed')
+        return {partyDetails: [{party: 'Alice'}]}
+      }),
+      getVersion: vi.fn(async () => ({version: '3.4.11'})),
+      submitAndWait: vi.fn(async () => {
+        if (failCommands) throw new Error('command failed')
+        return {transaction: {updateId: 123 as unknown as string}}
+      }),
+      uploadDar: vi.fn(async () => {
+        if (failUpload) throw new Error('upload failed')
+        return {mainPackageId: 'pkg-1'}
+      }),
+    }
+    const output = {
+      error: vi.fn(),
+      info: vi.fn(),
+      log: vi.fn(),
+      result: vi.fn(),
+      spinner: vi.fn(),
+      success: vi.fn(),
+      table: vi.fn(),
+      warn: vi.fn(),
+    }
+    const builder = {
+      build: vi.fn(async ({force}: {force?: boolean; projectDir: string}) => {
+        if (force && failBuildRoute) throw new Error('build failed')
+        return {
+          cached: false,
+          darPath: path.join(projectDir, '.daml', 'dist', 'serve-test.dar'),
+          durationMs: 1,
+          success: true,
+        }
+      }),
+      buildWithCodegen: vi.fn(async () => ({cached: true, darPath: null, durationMs: 1, success: true})),
+      watch: vi.fn(),
+    }
+    const testRunner = {
+      run: vi.fn(async () => {
+        if (failTestRoute) throw new Error('tests failed')
+        return {durationMs: 1, output: 'ok', passed: true, success: true}
+      }),
+    }
+
+    const context = await startServer({
+      start: {projectDir},
+      deps: {
+        builder,
+        createLedgerClient: vi.fn(() => client),
+        output,
+        testRunner,
+      },
+    })
+    activeServer = context.server
+    activeProjectDir = context.projectDir
+
+    const commandResult = await requestJson<{updateId?: string}>(context.port, '/api/commands', {
+      body: JSON.stringify({commands: []}),
+      method: 'POST',
+    })
+    expect(commandResult.updateId).toBeUndefined()
+
+    failUpload = true
+    const buildResult = await requestJson<{darPath: string}>(context.port, '/api/build', {method: 'POST'})
+    expect(buildResult.darPath).toContain('serve-test.dar')
+    expect(output.warn).toHaveBeenCalledWith('DAR upload to sandbox failed: Error: upload failed')
+
+    failCommands = true
+    expect((await request(context.port, '/api/commands', {
+      body: JSON.stringify({actAs: ['Alice'], commands: []}),
+      method: 'POST',
+    })).status).toBe(500)
+
+    failContracts = true
+    expect((await request(context.port, '/api/contracts?party=Alice')).status).toBe(500)
+
+    failParties = true
+    expect((await request(context.port, '/api/parties')).status).toBe(500)
+
+    failAllocate = true
+    expect((await request(context.port, '/api/parties', {
+      body: JSON.stringify({displayName: 'Bob'}),
+      method: 'POST',
+    })).status).toBe(500)
+
+    failBuildRoute = true
+    expect((await request(context.port, '/api/build', {method: 'POST'})).status).toBe(500)
+
+    failTestRoute = true
+    expect((await request(context.port, '/api/test', {method: 'POST'})).status).toBe(500)
+  })
+
+  it('warns when dar upload fails after saving a daml file', async () => {
+    const output = {
+      error: vi.fn(),
+      info: vi.fn(),
+      log: vi.fn(),
+      result: vi.fn(),
+      spinner: vi.fn(),
+      success: vi.fn(),
+      table: vi.fn(),
+      warn: vi.fn(),
+    }
+    const client: LedgerClientLike = {
+      allocateParty: vi.fn(async () => ({partyDetails: {party: 'Alice'}})),
+      getActiveContracts: vi.fn(async () => ({activeContracts: []})),
+      getParties: vi.fn(async () => ({partyDetails: []})),
+      getVersion: vi.fn(async () => ({version: '3.4.11'})),
+      submitAndWait: vi.fn(async () => ({transaction: {updateId: 'tx-1'}})),
+      uploadDar: vi.fn(async () => { throw new Error('save upload failed') }),
+    }
+
+    const context = await startServer({
+      deps: {
+        createLedgerClient: vi.fn(() => client),
+        output,
+      },
+    })
+    activeServer = context.server
+    activeProjectDir = context.projectDir
+
+    const savedDaml = await requestJson<{path: string; saved: boolean}>(context.port, '/api/files/daml/Model.daml', {
+      body: JSON.stringify({content: 'module Model where\n'}),
+      method: 'PUT',
+    })
+
+    expect(savedDaml).toEqual({path: 'daml/Model.daml', saved: true})
+    await new Promise(resolve => setTimeout(resolve, 50))
+    expect(output.warn).toHaveBeenCalledWith('DAR upload to sandbox failed: Error: save upload failed')
+  })
+
+  it('serves SPA fallbacks and emits websocket connection events', async () => {
+    const projectDir = await createProjectDir()
+    const port = await getFreePort()
+    const staticDir = path.join(projectDir, 'playground-dist')
+    await fs.mkdir(staticDir, {recursive: true})
+    await fs.writeFile(path.join(staticDir, 'index.html'), '<html><body>Fallback</body></html>', 'utf8')
+
+    const context = await startServer({
+      projectDirSetup: async () => undefined,
+      start: {
+        multiNode: false,
+        port,
+        projectDir,
+        staticDir,
+      },
+      deps: {
+        builder: {
+          build: vi.fn(async () => ({
+            cached: true,
+            darPath: path.join(projectDir, '.daml', 'dist', 'serve-test.dar'),
+            durationMs: 1,
+            success: true,
+          })),
+          buildWithCodegen: vi.fn(async () => ({cached: true, darPath: null, durationMs: 1, success: true})),
+          watch: vi.fn(),
+        },
+      },
+    })
+    activeServer = context.server
+    activeProjectDir = context.projectDir
+
+    const connected = await new Promise<string>((resolve, reject) => {
+      const socket = new WebSocket(`ws://127.0.0.1:${context.port}`)
+      socket.once('message', (message) => {
+        resolve(String(message))
+      })
+      socket.once('error', reject)
+    })
+    const fallback = await request(context.port, '/missing-route')
+
+    expect(connected).toBe(JSON.stringify({type: 'connected'}))
+    expect(fallback.status).toBe(200)
+    expect(await fallback.text()).toContain('Fallback')
+  })
+
+  it('surfaces generic profile switch and splice route failures', async () => {
+    const baseProfiles = createConfig().profiles!
+    const config: CantonctlConfig = {
+      ...createConfig(),
+      profiles: new Proxy(baseProfiles, {
+        get(target, prop, receiver) {
+          if (prop === 'boom') {
+            throw new Error('profile exploded')
+          }
+
+          return Reflect.get(target, prop, receiver)
+        },
+      }),
+    }
+    const stableSplice = {
+      listScanUpdates: vi.fn(async () => { throw new Error('scan failed') }),
+      listTokenHoldings: vi.fn(async () => { throw new Error('holdings failed') }),
+    }
+
+    const context = await startServer({
+      config,
+      deps: {
+        createStableSplice: vi.fn(() => stableSplice as never),
+      },
+    })
+    activeServer = context.server
+    activeProjectDir = context.projectDir
+
+    expect((await request(context.port, '/api/profile', {
+      body: JSON.stringify({profile: 'boom'}),
+      method: 'PUT',
+    })).status).toBe(500)
+    expect((await request(context.port, '/api/splice/token-holdings?party=Alice')).status).toBe(500)
+    expect((await request(context.port, '/api/splice/scan/updates?pageSize=5')).status).toBe(500)
+  })
+
+  it('covers file middleware edge cases and daml save failures', async () => {
+    let failFileBuild = false
+    const projectDir = await createProjectDir()
+    const port = await getFreePort()
+    const builder = {
+      build: vi.fn(async () => {
+        if (failFileBuild) throw new Error('watch build failed')
+        return {
+          cached: false,
+          darPath: path.join(projectDir, '.daml', 'dist', 'serve-test.dar'),
+          durationMs: 1,
+          success: true,
+        }
+      }),
+      buildWithCodegen: vi.fn(async () => ({cached: true, darPath: null, durationMs: 1, success: true})),
+      watch: vi.fn(),
+    }
+
+    const context = await startServer({
+      deps: {builder},
+      start: {port, projectDir},
+    })
+    activeServer = context.server
+    activeProjectDir = context.projectDir
+
+    const fileTree = await requestJson<Array<{name: string}>>(context.port, '/api/files/')
+    expect(fileTree).toEqual(expect.arrayContaining([
+      expect.objectContaining({name: 'README.md'}),
+    ]))
+
+    const unsupportedMethod = await request(context.port, '/api/files/README.md', {
+      body: JSON.stringify({content: 'ignored'}),
+      method: 'POST',
+    })
+    expect(unsupportedMethod.status).toBe(404)
+
+    failFileBuild = true
+    const websocketEventsPromise = new Promise<string[]>((resolve, reject) => {
+      const events: string[] = []
+      const socket = new WebSocket(`ws://127.0.0.1:${context.port}`)
+      socket.on('message', (message) => {
+        events.push(String(message))
+        if (events.some(event => event.includes('"type":"build:error"'))) {
+          socket.close()
+          resolve(events)
+        }
+      })
+      socket.once('error', reject)
+    })
+
+    const savedDaml = await requestJson<{path: string; saved: boolean}>(context.port, '/api/files/daml/Model.daml', {
+      body: JSON.stringify({content: 'module Model where\n'}),
+      method: 'PUT',
+    })
+    const websocketEvents = await websocketEventsPromise
+    expect(savedDaml).toEqual({path: 'daml/Model.daml', saved: true})
+    expect(websocketEvents).toEqual(expect.arrayContaining([
+      JSON.stringify({type: 'connected'}),
+      JSON.stringify({type: 'build:start'}),
+      JSON.stringify({output: 'Error: watch build failed', type: 'build:error'}),
+    ]))
+
+    const invalidSave = await request(context.port, '/api/files/daml/Bad.daml', {
+      body: JSON.stringify({}),
+      method: 'PUT',
+    })
+    expect(invalidSave.status).toBe(500)
   })
 })

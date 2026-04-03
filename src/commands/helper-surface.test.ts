@@ -5,7 +5,16 @@ import {PassThrough} from 'node:stream'
 import {captureOutput} from '@oclif/test'
 import {afterEach, describe, expect, it, vi} from 'vitest'
 
+import * as builderModule from '../lib/builder.js'
 import * as configModule from '../lib/config.js'
+import * as damlModule from '../lib/daml.js'
+import * as devServerFullModule from '../lib/dev-server-full.js'
+import * as devServerModule from '../lib/dev-server.js'
+import * as dockerModule from '../lib/docker.js'
+import * as processRunnerModule from '../lib/process-runner.js'
+import * as runtimeSupportModule from '../lib/runtime-support.js'
+import * as serveModule from '../lib/serve.js'
+import * as testRunnerModule from '../lib/test-runner.js'
 import type {ResolvedCredential} from '../lib/credential-store.js'
 import type {CantonctlConfig} from '../lib/config.js'
 import {CantonctlError, ErrorCode} from '../lib/errors.js'
@@ -475,6 +484,340 @@ describe('command helper coverage', () => {
     expect(serve.callProjectExists(path.join(projectDir, 'missing'))).toBe(false)
     expect(playground.callProjectExists(projectDir)).toBe(true)
     expect(playground.callProjectExists(path.join(projectDir, 'missing'))).toBe(false)
+  })
+
+  it('covers runtime command factory helpers and environment lookups', async () => {
+    const config = createConfig()
+    const output = {
+      error: vi.fn(),
+      info: vi.fn(),
+      log: vi.fn(),
+      result: vi.fn(),
+      spinner: vi.fn(),
+      success: vi.fn(),
+      table: vi.fn(),
+      warn: vi.fn(),
+    } as unknown as OutputWriter
+    const runner = {run: vi.fn(), spawn: vi.fn(), which: vi.fn()} as never
+    const sdk = {build: vi.fn(), codegen: vi.fn(), detectCommand: vi.fn(), getVersion: vi.fn(), startSandbox: vi.fn(), test: vi.fn()} as never
+    const docker = {checkAvailable: vi.fn(), composeDown: vi.fn(), composeLogs: vi.fn(), composePs: vi.fn(), composeUp: vi.fn(), ensureImage: vi.fn(), isDockerAvailable: vi.fn()} as never
+    const sandboxServer = {start: vi.fn(), stop: vi.fn()} as never
+    const fullServer = {start: vi.fn(), stop: vi.fn()} as never
+    const builder = {build: vi.fn(), buildWithCodegen: vi.fn(), watch: vi.fn()} as never
+    const testRunner = {run: vi.fn()} as never
+    const serveServer = {broadcast: vi.fn(), start: vi.fn(), stop: vi.fn()} as never
+
+    const loadConfigSpy = vi.spyOn(configModule, 'loadConfig').mockResolvedValue(config)
+    const createRunnerSpy = vi.spyOn(processRunnerModule, 'createProcessRunner').mockReturnValue(runner)
+    const createSdkSpy = vi.spyOn(damlModule, 'createDamlSdk').mockReturnValue(sdk)
+    const createDockerManagerSpy = vi.spyOn(dockerModule, 'createDockerManager').mockReturnValue(docker)
+    const createSandboxServerSpy = vi.spyOn(devServerModule, 'createDevServer').mockReturnValue(sandboxServer)
+    const createFullServerSpy = vi.spyOn(devServerFullModule, 'createFullDevServer').mockReturnValue(fullServer)
+    const createBuilderSpy = vi.spyOn(builderModule, 'createBuilder').mockReturnValue(builder)
+    const createServeServerSpy = vi.spyOn(serveModule, 'createServeServer').mockReturnValue(serveServer)
+    const createTestRunnerSpy = vi.spyOn(testRunnerModule, 'createTestRunner').mockReturnValue(testRunner)
+    const portSpy = vi.spyOn(runtimeSupportModule, 'isTcpPortInUse').mockResolvedValue(true)
+    const openBrowserSpy = vi.spyOn(runtimeSupportModule, 'openBrowserUrl').mockImplementation(() => undefined)
+
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'runtime-helper-'))
+    tempDirs.push(tempDir)
+    const tempFile = path.join(tempDir, 'artifact.dar')
+    await fs.writeFile(tempFile, 'dar', 'utf8')
+
+    class DevHarness extends Dev {
+      public callCreateDockerManager(out: OutputWriter, processRunner: ReturnType<typeof processRunnerModule.createProcessRunner>) {
+        return this.createDockerManager(out, processRunner)
+      }
+
+      public callCreateFullServer() {
+        return this.createFullServer({
+          cantonImage: 'ghcr.io/example/canton:test',
+          config,
+          docker,
+          output,
+          sdk,
+        })
+      }
+
+      public callCreateRunner() {
+        return this.createRunner()
+      }
+
+      public callCreateSandboxServer() {
+        return this.createSandboxServer({config, output, sdk})
+      }
+
+      public callCreateSdk(processRunner: ReturnType<typeof processRunnerModule.createProcessRunner>) {
+        return this.createSdk(processRunner)
+      }
+
+      public callGetProjectDir() {
+        return this.getProjectDir()
+      }
+
+      public callIsManagedPortInUse(port: number) {
+        return this.isManagedPortInUse(port)
+      }
+
+      public callLoadProjectConfig() {
+        return this.loadProjectConfig()
+      }
+    }
+
+    class ServeHarness extends Serve {
+      public callCreateManagedSandboxServer() {
+        return this.createManagedSandboxServer({config, output, sdk})
+      }
+
+      public callCreateRunner() {
+        return this.createRunner()
+      }
+
+      public callCreateSdk(processRunner: ReturnType<typeof processRunnerModule.createProcessRunner>) {
+        return this.createSdk(processRunner)
+      }
+
+      public callCreateServeBuilder(commandSdk: ReturnType<typeof damlModule.createDamlSdk>) {
+        return this.createServeBuilder(commandSdk)
+      }
+
+      public callCreateServeServer(commandBuilder: ReturnType<typeof builderModule.createBuilder>) {
+        return this.createServeServer({builder: commandBuilder, output, testRunner})
+      }
+
+      public callCreateServeTestRunner(commandSdk: ReturnType<typeof damlModule.createDamlSdk>) {
+        return this.createServeTestRunner(commandSdk)
+      }
+
+      public callGetProjectDir() {
+        return this.getProjectDir()
+      }
+
+      public callIsServePortInUse(port: number) {
+        return this.isServePortInUse(port)
+      }
+
+      public callLoadProjectConfig() {
+        return this.loadProjectConfig()
+      }
+    }
+
+    class PlaygroundHarness extends Playground {
+      public callCreateDockerManager(out: OutputWriter, processRunner: ReturnType<typeof processRunnerModule.createProcessRunner>) {
+        return this.createDockerManager(out, processRunner)
+      }
+
+      public callCreateFullServer() {
+        return this.createFullServer({
+          cantonImage: 'ghcr.io/example/canton:test',
+          config,
+          docker,
+          output,
+          sdk,
+        })
+      }
+
+      public callCreateRunner() {
+        return this.createRunner()
+      }
+
+      public callCreateSandboxServer() {
+        return this.createSandboxServer({config, output, sdk})
+      }
+
+      public callCreateSdk(processRunner: ReturnType<typeof processRunnerModule.createProcessRunner>) {
+        return this.createSdk(processRunner)
+      }
+
+      public callCreateServeBuilder(commandSdk: ReturnType<typeof damlModule.createDamlSdk>) {
+        return this.createServeBuilder(commandSdk)
+      }
+
+      public callCreateServeServer(commandBuilder: ReturnType<typeof builderModule.createBuilder>) {
+        return this.createServeServer({builder: commandBuilder, output, testRunner})
+      }
+
+      public callCreateServeTestRunner(commandSdk: ReturnType<typeof damlModule.createDamlSdk>) {
+        return this.createServeTestRunner(commandSdk)
+      }
+
+      public callGetProjectDir() {
+        return this.getProjectDir()
+      }
+
+      public callIsPlaygroundPortInUse(port: number) {
+        return this.isPlaygroundPortInUse(port)
+      }
+
+      public callLoadProjectConfig() {
+        return this.loadProjectConfig()
+      }
+
+      public callOpenBrowser(url: string) {
+        this.openBrowser(url)
+      }
+
+      public callResolveStaticDir() {
+        return this.resolveStaticDir()
+      }
+    }
+
+    const dev = new DevHarness([], {} as never)
+    const serve = new ServeHarness([], {} as never)
+    const playground = new PlaygroundHarness([], {} as never)
+
+    expect(dev.callCreateDockerManager(output, runner)).toBe(docker)
+    expect(dev.callCreateFullServer()).toBe(fullServer)
+    expect(dev.callCreateRunner()).toBe(runner)
+    expect(dev.callCreateSandboxServer()).toBe(sandboxServer)
+    expect(dev.callCreateSdk(runner)).toBe(sdk)
+    expect(dev.callGetProjectDir()).toBe(process.cwd())
+    await expect(dev.callIsManagedPortInUse(4000)).resolves.toBe(true)
+    await expect(dev.callLoadProjectConfig()).resolves.toBe(config)
+
+    expect(serve.callCreateManagedSandboxServer()).toBe(sandboxServer)
+    expect(serve.callCreateRunner()).toBe(runner)
+    expect(serve.callCreateSdk(runner)).toBe(sdk)
+    expect(serve.callCreateServeBuilder(sdk)).toBe(builder)
+    expect(serve.callCreateServeServer(builder)).toBe(serveServer)
+    expect(serve.callCreateServeTestRunner(sdk)).toBe(testRunner)
+    expect(serve.callGetProjectDir()).toBe(process.cwd())
+    await expect(serve.callIsServePortInUse(4001)).resolves.toBe(true)
+    await expect(serve.callLoadProjectConfig()).resolves.toBe(config)
+
+    expect(playground.callCreateDockerManager(output, runner)).toBe(docker)
+    expect(playground.callCreateFullServer()).toBe(fullServer)
+    expect(playground.callCreateRunner()).toBe(runner)
+    expect(playground.callCreateSandboxServer()).toBe(sandboxServer)
+    expect(playground.callCreateSdk(runner)).toBe(sdk)
+    expect(playground.callCreateServeBuilder(sdk)).toBe(builder)
+    expect(playground.callCreateServeServer(builder)).toBe(serveServer)
+    expect(playground.callCreateServeTestRunner(sdk)).toBe(testRunner)
+    expect(playground.callGetProjectDir()).toBe(process.cwd())
+    await expect(playground.callIsPlaygroundPortInUse(4002)).resolves.toBe(true)
+    await expect(playground.callLoadProjectConfig()).resolves.toBe(config)
+    playground.callOpenBrowser('http://localhost:4000')
+    expect(playground.callResolveStaticDir()).toSatisfy((value) => value === undefined || value.includes('playground'))
+
+    const devFullServerDeps = createFullServerSpy.mock.calls[0]![0]
+    await devFullServerDeps.build('/repo')
+    await expect(devFullServerDeps.readFile(tempFile)).resolves.toBeInstanceOf(Buffer)
+    await devFullServerDeps.mkdir(path.join(tempDir, 'nested'))
+    await devFullServerDeps.writeFile(path.join(tempDir, 'generated.txt'), 'value')
+    await devFullServerDeps.watch(tempDir, {ignoreInitial: true}).close()
+    await devFullServerDeps.rmdir(path.join(tempDir, 'nested'))
+
+    const devSandboxDeps = createSandboxServerSpy.mock.calls[0]![0]
+    await expect(devSandboxDeps.readFile(tempFile)).resolves.toBeInstanceOf(Buffer)
+    await expect(devSandboxDeps.isPortInUse!(4003)).resolves.toBe(true)
+    await devSandboxDeps.watch(tempDir, {ignoreInitial: true}).close()
+
+    const serveSandboxDeps = createSandboxServerSpy.mock.calls[1]![0]
+    await expect(serveSandboxDeps.readFile(tempFile)).resolves.toBeInstanceOf(Buffer)
+    await expect(serveSandboxDeps.isPortInUse!(4004)).resolves.toBe(true)
+    await serveSandboxDeps.watch(tempDir, {ignoreInitial: true}).close()
+
+    const serveBuilderDeps = createBuilderSpy.mock.calls[0]![0]
+    await expect(serveBuilderDeps.getDamlSourceMtime(path.join(tempDir, 'daml'))).resolves.toBe(0)
+    await expect(serveBuilderDeps.getFileMtime(tempFile)).resolves.toBeNull()
+
+    const playgroundFullServerDeps = createFullServerSpy.mock.calls[1]![0]
+    await playgroundFullServerDeps.build('/repo')
+    await expect(playgroundFullServerDeps.readFile(tempFile)).resolves.toBeInstanceOf(Buffer)
+    await playgroundFullServerDeps.mkdir(path.join(tempDir, 'nested-2'))
+    await playgroundFullServerDeps.writeFile(path.join(tempDir, 'generated-2.txt'), 'value')
+    await playgroundFullServerDeps.watch(tempDir, {ignoreInitial: true}).close()
+    await playgroundFullServerDeps.rmdir(path.join(tempDir, 'nested-2'))
+
+    const playgroundSandboxDeps = createSandboxServerSpy.mock.calls[2]![0]
+    await expect(playgroundSandboxDeps.readFile(tempFile)).resolves.toBeInstanceOf(Buffer)
+    await expect(playgroundSandboxDeps.isPortInUse!(4005)).resolves.toBe(true)
+    await playgroundSandboxDeps.watch(tempDir, {ignoreInitial: true}).close()
+
+    const playgroundBuilderDeps = createBuilderSpy.mock.calls[1]![0]
+    await expect(playgroundBuilderDeps.getDamlSourceMtime(path.join(tempDir, 'daml'))).resolves.toBe(0)
+    await expect(playgroundBuilderDeps.getFileMtime(tempFile)).resolves.toBeNull()
+
+    expect(createRunnerSpy).toHaveBeenCalledTimes(3)
+    expect(createSdkSpy).toHaveBeenCalledTimes(3)
+    expect(createDockerManagerSpy).toHaveBeenCalledTimes(2)
+    expect(createSandboxServerSpy).toHaveBeenCalledTimes(3)
+    expect(createFullServerSpy).toHaveBeenCalledTimes(2)
+    expect(createBuilderSpy).toHaveBeenCalledTimes(2)
+    expect(createServeServerSpy).toHaveBeenCalledTimes(2)
+    expect(createTestRunnerSpy).toHaveBeenCalledTimes(2)
+    expect(loadConfigSpy).toHaveBeenCalledTimes(3)
+    expect(portSpy).toHaveBeenCalledTimes(6)
+    expect(openBrowserSpy).toHaveBeenCalledWith('http://localhost:4000')
+  })
+
+  it('covers dev helper shutdown paths for ctrl-c and non-interactive json mode', async () => {
+    class Harness extends Dev {
+      public callWaitForShutdown(
+        json: boolean,
+        shutdown: () => Promise<void>,
+        shutdownPromise: Promise<void>,
+      ) {
+        return this.waitForShutdown(json, shutdown, shutdownPromise)
+      }
+    }
+
+    const stdin = process.stdin as NodeJS.ReadStream & {
+      isTTY?: boolean
+      on: typeof process.stdin.on
+      pause: () => void
+      resume: () => void
+      setRawMode: (value: boolean) => void
+    }
+    const originalIsTTY = stdin.isTTY
+    const originalOn = stdin.on
+    const originalResume = stdin.resume
+    const originalSetRawMode = stdin.setRawMode
+    let dataHandler: ((data: Buffer) => Promise<void>) | undefined
+    const resume = vi.fn()
+    const setRawMode = vi.fn()
+    const onSpy = vi.spyOn(process, 'on').mockImplementation(((..._args: Parameters<typeof process.on>) => process) as never)
+
+    try {
+      Object.defineProperty(stdin, 'isTTY', {configurable: true, value: true})
+      stdin.on = vi.fn((event: string, handler: (...args: any[]) => void) => {
+        if (event === 'data') {
+          dataHandler = handler as (data: Buffer) => Promise<void>
+        }
+        return stdin
+      }) as never
+      stdin.resume = resume
+      stdin.setRawMode = setRawMode
+
+      let resolveInteractiveShutdown: (() => void) | undefined
+      const interactiveShutdownPromise = new Promise<void>((resolve) => { resolveInteractiveShutdown = resolve })
+      const interactiveShutdown = vi.fn(async () => {
+        resolveInteractiveShutdown?.()
+      })
+
+      const interactiveWait = new Harness([], {} as never).callWaitForShutdown(
+        false,
+        interactiveShutdown,
+        interactiveShutdownPromise,
+      )
+      await dataHandler?.(Buffer.from('\u0003'))
+      await interactiveWait
+
+      const jsonShutdown = vi.fn(async () => undefined)
+      await new Harness([], {} as never).callWaitForShutdown(true, jsonShutdown, Promise.resolve())
+
+      expect(interactiveShutdown).toHaveBeenCalledTimes(1)
+      expect(jsonShutdown).not.toHaveBeenCalled()
+      expect(onSpy).toHaveBeenCalledWith('SIGINT', expect.any(Function))
+      expect(onSpy).toHaveBeenCalledWith('SIGTERM', expect.any(Function))
+      expect(resume).toHaveBeenCalledTimes(1)
+      expect(setRawMode).toHaveBeenCalledWith(true)
+    } finally {
+      Object.defineProperty(stdin, 'isTTY', {configurable: true, value: originalIsTTY})
+      stdin.on = originalOn
+      stdin.resume = originalResume
+      stdin.setRawMode = originalSetRawMode
+    }
   })
 
   it('covers init, codegen, and localnet factory helpers', async () => {

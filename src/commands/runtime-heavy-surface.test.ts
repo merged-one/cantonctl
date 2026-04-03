@@ -737,6 +737,121 @@ describe('runtime-heavy command surface', () => {
     }))
   })
 
+  it('dev renders full-topology startup in human mode', async () => {
+    const start = vi.fn().mockResolvedValue(undefined)
+
+    class TestDev extends Dev {
+      protected override createDockerManager(): DockerManager {
+        return {
+          composeDown: vi.fn(),
+          composePs: vi.fn(),
+          composeUp: vi.fn(),
+          ensureImage: vi.fn(),
+          isDockerAvailable: vi.fn(),
+        } as never
+      }
+
+      protected override createFullServer(): FullDevServer {
+        return {
+          start,
+          stop: vi.fn(),
+        }
+      }
+
+      protected override createRunner(): ProcessRunner {
+        return createRunner()
+      }
+
+      protected override createSdk(): DamlSdk {
+        return createSdk()
+      }
+
+      protected override async loadProjectConfig(): Promise<CantonctlConfig> {
+        return createConfig()
+      }
+
+      protected override async waitForShutdown(): Promise<void> {}
+    }
+
+    const result = await captureOutput(() => TestDev.run(['--full'], {root: CLI_ROOT}))
+    expect(result.error).toBeUndefined()
+    expect(start).toHaveBeenCalledWith(expect.objectContaining({
+      basePort: 10000,
+      projectDir: process.cwd(),
+    }))
+    expect(result.stdout).not.toContain('"success"')
+  })
+
+  it('dev falls back to empty party lists in sandbox and full json mode', async () => {
+    const configWithoutParties = {...createConfig(), parties: undefined}
+    const sandboxStart = vi.fn().mockResolvedValue(undefined)
+    const fullStart = vi.fn().mockResolvedValue(undefined)
+
+    class SandboxDev extends Dev {
+      protected override createRunner(): ProcessRunner {
+        return createRunner()
+      }
+
+      protected override createSandboxServer(): DevServer {
+        return {
+          start: sandboxStart,
+          stop: vi.fn(),
+        }
+      }
+
+      protected override createSdk(): DamlSdk {
+        return createSdk()
+      }
+
+      protected override async loadProjectConfig(): Promise<CantonctlConfig> {
+        return configWithoutParties
+      }
+
+      protected override async waitForShutdown(): Promise<void> {}
+    }
+
+    class FullDev extends Dev {
+      protected override createDockerManager(): DockerManager {
+        return {
+          composeDown: vi.fn(),
+          composePs: vi.fn(),
+          composeUp: vi.fn(),
+          ensureImage: vi.fn(),
+          isDockerAvailable: vi.fn(),
+        } as never
+      }
+
+      protected override createFullServer(): FullDevServer {
+        return {
+          start: fullStart,
+          stop: vi.fn(),
+        }
+      }
+
+      protected override createRunner(): ProcessRunner {
+        return createRunner()
+      }
+
+      protected override createSdk(): DamlSdk {
+        return createSdk()
+      }
+
+      protected override async loadProjectConfig(): Promise<CantonctlConfig> {
+        return configWithoutParties
+      }
+
+      protected override async waitForShutdown(): Promise<void> {}
+    }
+
+    const sandboxResult = await captureOutput(() => SandboxDev.run(['--json'], {root: CLI_ROOT}))
+    const fullResult = await captureOutput(() => FullDev.run(['--json', '--full'], {root: CLI_ROOT}))
+
+    expect(sandboxResult.error).toBeUndefined()
+    expect(fullResult.error).toBeUndefined()
+    expect(parseJson(sandboxResult.stdout).data).toEqual(expect.objectContaining({parties: []}))
+    expect(parseJson(fullResult.stdout).data).toEqual(expect.objectContaining({parties: []}))
+  })
+
   it('dev emits sandbox stop events when shutdown is requested', async () => {
     const start = vi.fn().mockResolvedValue(undefined)
     const stop = vi.fn().mockResolvedValue(undefined)
@@ -785,6 +900,44 @@ describe('runtime-heavy command surface', () => {
       data: {status: 'stopped'},
       success: true,
     })
+  })
+
+  it('dev shutdown is idempotent when the stop handler runs twice', async () => {
+    const stop = vi.fn().mockResolvedValue(undefined)
+
+    class TestDev extends Dev {
+      protected override createRunner(): ProcessRunner {
+        return createRunner()
+      }
+
+      protected override createSandboxServer(): DevServer {
+        return {
+          start: vi.fn().mockResolvedValue(undefined),
+          stop,
+        }
+      }
+
+      protected override createSdk(): DamlSdk {
+        return createSdk()
+      }
+
+      protected override async loadProjectConfig(): Promise<CantonctlConfig> {
+        return createConfig()
+      }
+
+      protected override async waitForShutdown(
+        _json: boolean,
+        shutdown: () => Promise<void>,
+      ): Promise<void> {
+        await shutdown()
+        await shutdown()
+      }
+    }
+
+    const result = await captureOutput(() => TestDev.run(['--json'], {root: CLI_ROOT}))
+    expect(result.error).toBeUndefined()
+    expect(stop).toHaveBeenCalledTimes(1)
+    expect(parseJsonLines(result.stdout)).toHaveLength(3)
   })
 
   it('dev emits full-topology stop events when shutdown is requested', async () => {
@@ -845,6 +998,18 @@ describe('runtime-heavy command surface', () => {
       data: {status: 'stopped'},
       success: true,
     })
+  })
+
+  it('dev rethrows unexpected setup errors before a server is created', async () => {
+    class TestDev extends Dev {
+      protected override async loadProjectConfig(): Promise<CantonctlConfig> {
+        throw new Error('boom')
+      }
+    }
+
+    const result = await captureOutput(() => TestDev.run(['--json'], {root: CLI_ROOT}))
+    expect(result.error).toBeDefined()
+    expect(result.error?.message).toContain('boom')
   })
 
   it('serve emits connection metadata in json mode', async () => {
@@ -1019,6 +1184,135 @@ describe('runtime-heavy command surface', () => {
     }))
     expect(result.stdout).toContain('API:         http://localhost:4000/api')
     expect(result.stdout).toContain('Connect any IDE client to this server.')
+  })
+
+  it('serve runs without profiles and omits profile details in human mode', async () => {
+    const serverStart = vi.fn().mockResolvedValue(undefined)
+
+    class TestServe extends Serve {
+      protected override createManagedSandboxServer(): DevServer {
+        return {
+          start: vi.fn(),
+          stop: vi.fn(),
+        }
+      }
+
+      protected override createRunner(): ProcessRunner {
+        return createRunner()
+      }
+
+      protected override createSdk(): DamlSdk {
+        return createSdk()
+      }
+
+      protected override createServeBuilder(): Builder {
+        return createServeBuilder()
+      }
+
+      protected override createServeServer(): ServeServer {
+        return {
+          broadcast: vi.fn(),
+          start: serverStart,
+          stop: vi.fn(),
+        }
+      }
+
+      protected override createServeTestRunner(): TestRunner {
+        return createServeTestRunner()
+      }
+
+      protected override getProjectDir(): string {
+        return '/repo'
+      }
+
+      protected override async isServePortInUse(): Promise<boolean> {
+        return false
+      }
+
+      protected override async loadProjectConfig(): Promise<CantonctlConfig> {
+        return {...createConfig(), profiles: undefined}
+      }
+
+      protected override projectExists(): boolean {
+        return true
+      }
+
+      protected override async waitForShutdown(): Promise<void> {}
+    }
+
+    const result = await captureOutput(() => TestServe.run([], {root: CLI_ROOT}))
+    expect(result.error).toBeUndefined()
+    expect(serverStart).toHaveBeenCalledWith(expect.objectContaining({
+      ledgerUrl: 'http://localhost:7575',
+      profileName: undefined,
+      projectDir: '/repo',
+    }))
+    expect(result.stdout).not.toContain('Profile:')
+  })
+
+  it('serve uses a remote profile without starting or stopping a managed sandbox', async () => {
+    const sandboxStart = vi.fn()
+    const sandboxStop = vi.fn()
+    const serverStop = vi.fn().mockResolvedValue(undefined)
+
+    class TestServe extends Serve {
+      protected override createManagedSandboxServer(): DevServer {
+        return {
+          start: sandboxStart,
+          stop: sandboxStop,
+        }
+      }
+
+      protected override createRunner(): ProcessRunner {
+        return createRunner()
+      }
+
+      protected override createSdk(): DamlSdk {
+        return createSdk()
+      }
+
+      protected override createServeBuilder(): Builder {
+        return createServeBuilder()
+      }
+
+      protected override createServeServer(): ServeServer {
+        return {
+          broadcast: vi.fn(),
+          start: vi.fn().mockResolvedValue(undefined),
+          stop: serverStop,
+        }
+      }
+
+      protected override createServeTestRunner(): TestRunner {
+        return createServeTestRunner()
+      }
+
+      protected override getProjectDir(): string {
+        return '/repo'
+      }
+
+      protected override async isServePortInUse(): Promise<boolean> {
+        return false
+      }
+
+      protected override async loadProjectConfig(): Promise<CantonctlConfig> {
+        return createConfig()
+      }
+
+      protected override projectExists(): boolean {
+        return true
+      }
+
+      protected override async waitForShutdown(shutdown: () => Promise<void>): Promise<void> {
+        await shutdown()
+      }
+    }
+
+    const result = await captureOutput(() => TestServe.run(['--profile', 'splice-devnet'], {root: CLI_ROOT}))
+    expect(result.error).toBeUndefined()
+    expect(sandboxStart).not.toHaveBeenCalled()
+    expect(sandboxStop).not.toHaveBeenCalled()
+    expect(serverStop).toHaveBeenCalledTimes(1)
   })
 
   it('playground renders browser endpoints without opening the browser', async () => {
@@ -1231,6 +1525,182 @@ describe('runtime-heavy command surface', () => {
     expect(openBrowser).not.toHaveBeenCalled()
     expect(result.stderr).toContain('Playground UI not found')
     expect(result.stdout).toContain('Press Ctrl+C to stop')
+  })
+
+  it('playground runs without profiles and omits the profile banner', async () => {
+    const start = vi.fn().mockResolvedValue(undefined)
+
+    class TestPlayground extends Playground {
+      protected override createRunner(): ProcessRunner {
+        return createRunner()
+      }
+
+      protected override createSdk(): DamlSdk {
+        return createSdk()
+      }
+
+      protected override createSandboxServer(): DevServer {
+        return {
+          start: vi.fn(),
+          stop: vi.fn(),
+        }
+      }
+
+      protected override createServeBuilder(): Builder {
+        return createServeBuilder()
+      }
+
+      protected override createServeServer(): ServeServer {
+        return {
+          broadcast: vi.fn(),
+          start,
+          stop: vi.fn(),
+        }
+      }
+
+      protected override createServeTestRunner(): TestRunner {
+        return createServeTestRunner()
+      }
+
+      protected override async isPlaygroundPortInUse(): Promise<boolean> {
+        return false
+      }
+
+      protected override async loadProjectConfig(): Promise<CantonctlConfig> {
+        return {...createConfig(), profiles: undefined}
+      }
+
+      protected override openBrowser(): void {
+        throw new Error('should not open browser in test')
+      }
+
+      protected override projectExists(): boolean {
+        return true
+      }
+
+      protected override resolveStaticDir(): string | undefined {
+        return '/repo/playground/dist'
+      }
+
+      protected override async waitForShutdown(): Promise<void> {}
+    }
+
+    const result = await captureOutput(() => TestPlayground.run(['--no-open'], {root: CLI_ROOT}))
+    expect(result.error).toBeUndefined()
+    expect(start).toHaveBeenCalledWith(expect.objectContaining({
+      multiNode: false,
+      profileName: undefined,
+    }))
+    expect(result.stdout).not.toContain('Profile:')
+  })
+
+  it('playground uses a canton-multi profile without starting managed runtimes', async () => {
+    const sandboxStart = vi.fn()
+    const sandboxStop = vi.fn()
+    const fullStart = vi.fn()
+    const fullStop = vi.fn()
+    const serverStart = vi.fn().mockResolvedValue(undefined)
+    const serverStop = vi.fn().mockResolvedValue(undefined)
+
+    class TestPlayground extends Playground {
+      protected override createDockerManager(): DockerManager {
+        return {
+          composeDown: vi.fn(),
+          composePs: vi.fn(),
+          composeUp: vi.fn(),
+          ensureImage: vi.fn(),
+          isDockerAvailable: vi.fn(),
+        } as never
+      }
+
+      protected override createFullServer(): FullDevServer {
+        return {
+          start: fullStart,
+          stop: fullStop,
+        }
+      }
+
+      protected override createRunner(): ProcessRunner {
+        return createRunner()
+      }
+
+      protected override createSdk(): DamlSdk {
+        return createSdk()
+      }
+
+      protected override createSandboxServer(): DevServer {
+        return {
+          start: sandboxStart,
+          stop: sandboxStop,
+        }
+      }
+
+      protected override createServeBuilder(): Builder {
+        return createServeBuilder()
+      }
+
+      protected override createServeServer(): ServeServer {
+        return {
+          broadcast: vi.fn(),
+          start: serverStart,
+          stop: serverStop,
+        }
+      }
+
+      protected override createServeTestRunner(): TestRunner {
+        return createServeTestRunner()
+      }
+
+      protected override async isPlaygroundPortInUse(): Promise<boolean> {
+        return false
+      }
+
+      protected override async loadProjectConfig(): Promise<CantonctlConfig> {
+        return {
+          ...createConfig(),
+          'default-profile': 'multi',
+          profiles: {
+            multi: {
+              experimental: false,
+              kind: 'canton-multi',
+              name: 'multi',
+              services: {
+                ledger: {url: 'https://ledger.example.com'},
+              },
+            },
+          },
+        }
+      }
+
+      protected override openBrowser(): void {
+        throw new Error('should not open browser in test')
+      }
+
+      protected override projectExists(): boolean {
+        return true
+      }
+
+      protected override resolveStaticDir(): string | undefined {
+        return '/repo/playground/dist'
+      }
+
+      protected override async waitForShutdown(shutdown: () => Promise<void>): Promise<void> {
+        await shutdown()
+      }
+    }
+
+    const result = await captureOutput(() => TestPlayground.run(['--no-open'], {root: CLI_ROOT}))
+    expect(result.error).toBeUndefined()
+    expect(sandboxStart).not.toHaveBeenCalled()
+    expect(fullStart).not.toHaveBeenCalled()
+    expect(sandboxStop).not.toHaveBeenCalled()
+    expect(fullStop).not.toHaveBeenCalled()
+    expect(serverStart).toHaveBeenCalledWith(expect.objectContaining({
+      ledgerUrl: 'https://ledger.example.com',
+      multiNode: undefined,
+      profileName: 'multi',
+    }))
+    expect(serverStop).toHaveBeenCalledTimes(1)
   })
 
   it('playground fails fast when the workspace is not a cantonctl project', async () => {

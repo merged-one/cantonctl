@@ -8,7 +8,7 @@ import {afterEach, describe, expect, it, vi} from 'vitest'
 import type {CantonctlConfig} from './config.js'
 import {createFullDevServer, type FileWatcher, type FullDevServerDeps} from './dev-server-full.js'
 import type {DockerManager} from './docker.js'
-import {CantonctlError} from './errors.js'
+import {CantonctlError, ErrorCode} from './errors.js'
 import type {LedgerClient} from './ledger-client.js'
 import type {OutputWriter} from './output.js'
 
@@ -249,6 +249,28 @@ describe('FullDevServer', () => {
       ).rejects.toThrow('Aborted')
     })
 
+    it('respects AbortSignal while polling participant health', async () => {
+      const controller = new AbortController()
+      const deps = createDeps({
+        createClient: vi.fn().mockReturnValue({
+          ...createMockClient(),
+          getVersion: vi.fn().mockRejectedValue(new Error('not ready')),
+        }),
+      })
+      const server = createFullDevServer(deps)
+
+      setTimeout(() => controller.abort(), 0)
+
+      await expect(
+        server.start({
+          ...startOpts,
+          healthRetryDelayMs: 0,
+          healthTimeoutMs: 5_000,
+          signal: controller.signal,
+        }),
+      ).rejects.toThrow('Aborted')
+    })
+
     it('throws on health timeout', async () => {
       const mockClient = createMockClient()
       ;(mockClient.getVersion as ReturnType<typeof vi.fn>).mockRejectedValue(
@@ -277,6 +299,28 @@ describe('FullDevServer', () => {
         expect.objectContaining({
           baseUrl: expect.stringContaining('20013'),
         }),
+      )
+    })
+
+    it('uses the admin token fallback and renders empty participant rows when no parties are configured', async () => {
+      const deps = createDeps({
+        config: {
+          ...CONFIG,
+          parties: undefined,
+        },
+      })
+      const server = createFullDevServer(deps)
+      await server.start(startOpts)
+
+      expect(deps.createToken).toHaveBeenCalledWith(expect.objectContaining({
+        actAs: ['admin'],
+        readAs: [],
+      }))
+      expect(deps.output.table).toHaveBeenCalledWith(
+        ['Node', 'JSON API', 'Parties'],
+        expect.arrayContaining([
+          expect.arrayContaining(['(none)']),
+        ]),
       )
     })
   })
@@ -430,6 +474,61 @@ describe('FullDevServer', () => {
 
       expect(deps.output.error).toHaveBeenCalledWith(
         expect.stringContaining('compilation error'),
+      )
+    })
+
+    it('reports upload failures for each participant without crashing', async () => {
+      const mockWatcher = createMockWatcher()
+      const firstClient = {
+        ...createMockClient(),
+        uploadDar: vi.fn().mockRejectedValue(new CantonctlError(ErrorCode.DEPLOY_UPLOAD_FAILED, {
+          suggestion: 'Retry against a reachable participant.',
+        })),
+      }
+      const secondClient = {
+        ...createMockClient(),
+        uploadDar: vi.fn().mockRejectedValue('socket closed'),
+      }
+      let clientCall = 0
+      const deps = createDeps({
+        createClient: vi.fn().mockImplementation(() => {
+          clientCall++
+          return clientCall === 1 ? firstClient : secondClient
+        }),
+        findDarFile: vi.fn().mockResolvedValue('/project/.daml/dist/test.dar'),
+        readFile: vi.fn().mockResolvedValue(new Uint8Array([1, 2, 3])),
+        watch: vi.fn().mockReturnValue(mockWatcher),
+      })
+      const server = createFullDevServer(deps)
+      await server.start({...startOpts, debounceMs: 0})
+
+      mockWatcher.handlers.get('change')?.('/project/daml/Main.daml')
+      await new Promise(r => setTimeout(r, 50))
+
+      expect(deps.output.error).toHaveBeenCalledWith(
+        expect.stringContaining(`Upload to participant1: ${ErrorCode.DEPLOY_UPLOAD_FAILED}`),
+      )
+      expect(deps.output.error).toHaveBeenCalledWith(
+        'Upload to participant2 failed: socket closed',
+      )
+    })
+
+    it('reports CantonctlError build failures without crashing', async () => {
+      const mockWatcher = createMockWatcher()
+      const deps = createDeps({
+        build: vi.fn().mockRejectedValue(new CantonctlError(ErrorCode.BUILD_DAML_ERROR, {
+          suggestion: 'Check Daml output.',
+        })),
+        watch: vi.fn().mockReturnValue(mockWatcher),
+      })
+      const server = createFullDevServer(deps)
+      await server.start({...startOpts, debounceMs: 0})
+
+      mockWatcher.handlers.get('change')?.('/project/daml/Main.daml')
+      await new Promise(r => setTimeout(r, 50))
+
+      expect(deps.output.error).toHaveBeenCalledWith(
+        expect.stringContaining(ErrorCode.BUILD_DAML_ERROR),
       )
     })
   })
