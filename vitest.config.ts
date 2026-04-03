@@ -16,15 +16,12 @@ import {COVERAGE_POLICY, VITEST_PROJECTS} from './scripts/ci/manifest.js'
  *   from the GA required matrix.
  */
 export default defineConfig({
-  esbuild: {
-    sourcemap: false,
-  },
   test: {
     projects: Object.values(VITEST_PROJECTS).map(test => ({test})),
     coverage: {
       all: true,
       exclude: [...COVERAGE_POLICY.exclude],
-      experimentalAstAwareRemapping: false,
+      experimentalAstAwareRemapping: COVERAGE_POLICY.astAwareRemapping,
       include: [...COVERAGE_POLICY.include],
       provider: 'v8',
       reporter: [...COVERAGE_POLICY.reporters],

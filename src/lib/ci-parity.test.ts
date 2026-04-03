@@ -74,6 +74,9 @@ describe('CI parity manifest', () => {
     expect(packageJson.scripts['test:coverage']).toBe(
       'node scripts/verify-coverage-exclusions.mjs && vitest run --project unit --coverage',
     )
+    expect(packageJson.scripts['test:coverage:backlog']).toBe(
+      'npm run test:coverage && node scripts/coverage-strict-backlog.mjs',
+    )
     expect(packageJson.scripts['test:coverage:strict']).toBe(
       'node scripts/verify-coverage-exclusions.mjs && COVERAGE_STRICT=1 vitest run --project unit --coverage',
     )
@@ -102,6 +105,7 @@ describe('CI parity manifest', () => {
   })
 
   it('tracks narrow coverage exclusions and strict-report settings in the shared manifest', () => {
+    expect(COVERAGE_POLICY.astAwareRemapping).toBe(true)
     expect(COVERAGE_POLICY.include).toEqual(['src/**/*.ts'])
     expect(COVERAGE_POLICY.exclude).toEqual([
       'src/**/*.test.ts',

@@ -192,6 +192,7 @@ export const CI_MODES = Object.freeze({
 })
 
 export const COVERAGE_POLICY = Object.freeze({
+  astAwareRemapping: true,
   exclude: Object.freeze([
     'src/**/*.test.ts',
     'src/**/*.d.ts',

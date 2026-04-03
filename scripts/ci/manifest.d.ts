@@ -25,6 +25,7 @@ export interface StrictCoverageThresholds extends CoverageThresholds {
 }
 
 export interface CoveragePolicy {
+  astAwareRemapping: boolean
   exclude: string[]
   include: string[]
   inlineIgnoreRoots: string[]

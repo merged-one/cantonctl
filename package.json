@@ -57,6 +57,7 @@
     "test:all": "vitest run",
     "test:watch": "vitest --project unit",
     "test:coverage": "node scripts/verify-coverage-exclusions.mjs && vitest run --project unit --coverage",
+    "test:coverage:backlog": "npm run test:coverage && node scripts/coverage-strict-backlog.mjs",
     "test:coverage:strict": "node scripts/verify-coverage-exclusions.mjs && COVERAGE_STRICT=1 vitest run --project unit --coverage",
     "test:upstream": "vitest run --project unit src/lib/upstream/manifest.test.ts"
   },
