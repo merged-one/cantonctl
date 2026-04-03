@@ -62,61 +62,69 @@ export interface TestRunner {
 // ---------------------------------------------------------------------------
 
 /** Strip ANSI escape codes from a string. */
-function stripAnsi(str: string): string {
-  // Matches all ANSI escape sequences
-  return str.replace(/\u001b\[[0-9;]*m/g, '')
+const ANSI_ESCAPE_PATTERN = /\u001b\[[0-9;]*m/g
+
+function formatOutput(stdout?: string, stderr?: string): string {
+  return [stdout, stderr].filter(Boolean).join('\n').replace(ANSI_ESCAPE_PATTERN, '')
 }
 
 /**
  * Create a TestRunner that wraps DamlSdk.test() with structured results.
  */
 export function createTestRunner(deps: TestRunnerDeps): TestRunner {
-  const {hooks, sdk} = deps
-
   return {
-    async run(opts: TestOptions): Promise<TestResult> {
-      const start = Date.now()
+    run: (opts) => runTests(deps, opts),
+  }
+}
 
-      await hooks?.emit('beforeTest', {filter: opts.filter, projectDir: opts.projectDir})
+async function runTests(deps: TestRunnerDeps, opts: TestOptions): Promise<TestResult> {
+  const {hooks, sdk} = deps
+  const start = Date.now()
 
-      try {
-        const result = await sdk.test({
-          filter: opts.filter,
-          projectDir: opts.projectDir,
-          signal: opts.signal,
-        })
+  if (hooks) {
+    await hooks.emit('beforeTest', {filter: opts.filter, projectDir: opts.projectDir})
+  }
 
-        const output = stripAnsi([result.stdout, result.stderr].filter(Boolean).join('\n'))
-        const durationMs = Date.now() - start
+  try {
+    const result = await sdk.test({
+      filter: opts.filter,
+      projectDir: opts.projectDir,
+      signal: opts.signal,
+    })
 
-        await hooks?.emit('afterTest', {durationMs, projectDir: opts.projectDir, success: true})
+    const output = formatOutput(result.stdout, result.stderr)
+    const durationMs = Date.now() - start
 
-        return {
-          durationMs,
-          output,
-          passed: true,
-          success: true,
-        }
-      } catch (err) {
-        // Test failures are E5001 — return as failed result, don't throw
-        if (err instanceof CantonctlError && err.code === ErrorCode.TEST_EXECUTION_FAILED) {
-          const ctx = err.context as {stderr?: string; stdout?: string}
-          const output = stripAnsi([ctx.stdout, ctx.stderr].filter(Boolean).join('\n'))
-          const durationMs = Date.now() - start
+    if (hooks) {
+      await hooks.emit('afterTest', {durationMs, projectDir: opts.projectDir, success: true})
+    }
 
-          await hooks?.emit('afterTest', {durationMs, projectDir: opts.projectDir, success: false})
+    return {
+      durationMs,
+      output,
+      passed: true,
+      success: true,
+    }
+  } catch (err) {
+    // Test failures are E5001 — return as failed result, don't throw
+    if (err instanceof CantonctlError && err.code === ErrorCode.TEST_EXECUTION_FAILED) {
+      const ctx = err.context as {stderr?: string; stdout?: string}
+      const output = formatOutput(ctx.stdout, ctx.stderr)
+      const durationMs = Date.now() - start
 
-          return {
-            durationMs,
-            output,
-            passed: false,
-            success: false,
-          }
-        }
-
-        // All other errors (SDK_NOT_INSTALLED, AbortError, etc.) propagate
-        throw err
+      if (hooks) {
+        await hooks.emit('afterTest', {durationMs, projectDir: opts.projectDir, success: false})
       }
-    },
+
+      return {
+        durationMs,
+        output,
+        passed: false,
+        success: false,
+      }
+    }
+
+    // All other errors (SDK_NOT_INSTALLED, AbortError, etc.) propagate
+    throw err
   }
 }

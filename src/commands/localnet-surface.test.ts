@@ -184,6 +184,34 @@ describe('localnet command surface', () => {
     }))
   })
 
+  it('renders localnet status without a container table when none are present', async () => {
+    class TestLocalnetStatus extends LocalnetStatus {
+      protected override createLocalnet(): Localnet {
+        return {
+          down: async () => {
+            throw new Error('unused')
+          },
+          status: async () => ({
+            ...createStatusResult(true),
+            containers: [],
+          }),
+          up: async () => {
+            throw new Error('unused')
+          },
+        }
+      }
+    }
+
+    const result = await captureOutput(() => TestLocalnetStatus.run([
+      '--workspace',
+      '../quickstart',
+    ], {root: CLI_ROOT}))
+    expect(result.error).toBeUndefined()
+    expect(result.stdout).toContain('Workspace: /workspace')
+    expect(result.stdout).toContain('validator readyz')
+    expect(result.stdout).not.toContain('Container')
+  })
+
   it('renders localnet down summaries in human mode', async () => {
     class TestLocalnetDown extends LocalnetDown {
       protected override createLocalnet(): Localnet {
@@ -211,6 +239,39 @@ describe('localnet command surface', () => {
     expect(result.stdout).toContain('Workspace: /workspace')
   })
 
+  it('emits localnet down summaries in json mode', async () => {
+    class TestLocalnetDown extends LocalnetDown {
+      protected override createLocalnet(): Localnet {
+        return {
+          down: async () => ({
+            target: 'stop',
+            workspace: createWorkspace(),
+          } satisfies LocalnetCommandResult),
+          status: async () => {
+            throw new Error('unused')
+          },
+          up: async () => {
+            throw new Error('unused')
+          },
+        }
+      }
+    }
+
+    const result = await captureOutput(() => TestLocalnetDown.run([
+      '--json',
+      '--workspace',
+      '../quickstart',
+    ], {root: CLI_ROOT}))
+    expect(result.error).toBeUndefined()
+
+    const json = parseJson(result.stdout)
+    expect(json.success).toBe(true)
+    expect(json.data).toEqual({
+      target: 'stop',
+      workspace: '/workspace',
+    })
+  })
+
   it('renders localnet up summaries in human mode', async () => {
     class TestLocalnetUp extends LocalnetUp {
       protected override createLocalnet(): Localnet {
@@ -234,6 +295,41 @@ describe('localnet command surface', () => {
     expect(result.stdout).toContain('Upstream LocalNet workspace started')
     expect(result.stdout).toContain('validator readyz')
     expect(result.stdout).toContain('splice')
+  })
+
+  it('fails localnet up in human mode when validator health degrades before containers start', async () => {
+    class TestLocalnetUp extends LocalnetUp {
+      protected override createLocalnet(): Localnet {
+        return {
+          down: async () => {
+            throw new Error('unused')
+          },
+          status: async () => {
+            throw new Error('unused')
+          },
+          up: async () => ({
+            ...createStatusResult(false),
+            containers: [],
+            health: {
+              validatorReadyz: {
+                ...createStatusResult(false).health.validatorReadyz,
+                status: undefined,
+              },
+            },
+          }),
+        }
+      }
+    }
+
+    const result = await captureOutput(() => TestLocalnetUp.run([
+      '--workspace',
+      '../quickstart',
+    ], {root: CLI_ROOT}))
+    expect(result.error).toBeDefined()
+    expect(result.stdout).toContain('Upstream LocalNet workspace started')
+    expect(result.stdout).toContain('validator readyz')
+    expect(result.stdout).toContain('unreachable (error)')
+    expect(result.stdout).not.toContain('Container')
   })
 
   it('serializes CantonctlError failures for localnet commands', async () => {
@@ -268,5 +364,136 @@ describe('localnet command surface', () => {
       code: ErrorCode.LOCALNET_COMMAND_FAILED,
       suggestion: 'Run make status',
     }))
+  })
+
+  it('serializes CantonctlError failures for localnet up', async () => {
+    class TestLocalnetUp extends LocalnetUp {
+      protected override createLocalnet(): Localnet {
+        return {
+          down: async () => {
+            throw new Error('unused')
+          },
+          status: async () => {
+            throw new Error('unused')
+          },
+          up: async () => {
+            throw new CantonctlError(ErrorCode.LOCALNET_COMMAND_FAILED, {
+              suggestion: 'Retry make start',
+            })
+          },
+        }
+      }
+    }
+
+    const result = await captureOutput(() => TestLocalnetUp.run([
+      '--json',
+      '--workspace',
+      '../quickstart',
+    ], {root: CLI_ROOT}))
+    expect(result.error).toBeDefined()
+
+    const json = parseJson(result.stdout)
+    expect(json.success).toBe(false)
+    expect(json.error).toEqual(expect.objectContaining({
+      code: ErrorCode.LOCALNET_COMMAND_FAILED,
+      suggestion: 'Retry make start',
+    }))
+  })
+
+  it('serializes CantonctlError failures for localnet status', async () => {
+    class TestLocalnetStatus extends LocalnetStatus {
+      protected override createLocalnet(): Localnet {
+        return {
+          down: async () => {
+            throw new Error('unused')
+          },
+          status: async () => {
+            throw new CantonctlError(ErrorCode.LOCALNET_COMMAND_FAILED, {
+              suggestion: 'Run make status',
+            })
+          },
+          up: async () => {
+            throw new Error('unused')
+          },
+        }
+      }
+    }
+
+    const result = await captureOutput(() => TestLocalnetStatus.run([
+      '--json',
+      '--workspace',
+      '../quickstart',
+    ], {root: CLI_ROOT}))
+    expect(result.error).toBeDefined()
+
+    const json = parseJson(result.stdout)
+    expect(json.success).toBe(false)
+    expect(json.error).toEqual(expect.objectContaining({
+      code: ErrorCode.LOCALNET_COMMAND_FAILED,
+      suggestion: 'Run make status',
+    }))
+  })
+
+  it('rethrows unexpected localnet command failures', async () => {
+    class TestLocalnetUp extends LocalnetUp {
+      protected override createLocalnet(): Localnet {
+        return {
+          down: async () => {
+            throw new Error('unused')
+          },
+          status: async () => {
+            throw new Error('unused')
+          },
+          up: async () => {
+            throw new Error('boom up')
+          },
+        }
+      }
+    }
+
+    class TestLocalnetStatus extends LocalnetStatus {
+      protected override createLocalnet(): Localnet {
+        return {
+          down: async () => {
+            throw new Error('unused')
+          },
+          status: async () => {
+            throw new Error('boom status')
+          },
+          up: async () => {
+            throw new Error('unused')
+          },
+        }
+      }
+    }
+
+    class TestLocalnetDown extends LocalnetDown {
+      protected override createLocalnet(): Localnet {
+        return {
+          down: async () => {
+            throw new Error('boom down')
+          },
+          status: async () => {
+            throw new Error('unused')
+          },
+          up: async () => {
+            throw new Error('unused')
+          },
+        }
+      }
+    }
+
+    await expect(TestLocalnetUp.run([
+      '--workspace',
+      '../quickstart',
+    ], {root: CLI_ROOT})).rejects.toThrow('boom up')
+    await expect(TestLocalnetStatus.run([
+      '--workspace',
+      '../quickstart',
+    ], {root: CLI_ROOT})).rejects.toThrow('boom status')
+    await expect(TestLocalnetDown.run([
+      '--workspace',
+      '../quickstart',
+    ], {root: CLI_ROOT})).rejects.toThrow('boom down')
   })
 })

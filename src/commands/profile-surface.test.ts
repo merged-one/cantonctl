@@ -2,7 +2,7 @@ import {captureOutput} from '@oclif/test'
 import {describe, expect, it, vi} from 'vitest'
 
 import type {CantonctlConfig} from '../lib/config.js'
-import {ErrorCode} from '../lib/errors.js'
+import {CantonctlError, ErrorCode} from '../lib/errors.js'
 import type {ProcessRunner} from '../lib/process-runner.js'
 import CompatCheck from './compat/check.js'
 import CodegenSync from './codegen/sync.js'
@@ -261,6 +261,32 @@ describe('profile command surface', () => {
     }))
   })
 
+  it('renders compatibility passes in human mode', async () => {
+    class TestCompatCheck extends CompatCheck {
+      protected override async loadProjectConfig(): Promise<CantonctlConfig> {
+        return {
+          ...createConfig(),
+          'default-profile': 'validator-only',
+          profiles: {
+            'validator-only': {
+              experimental: false,
+              kind: 'remote-validator',
+              name: 'validator-only',
+              services: {
+                validator: {url: 'https://validator.example.com'},
+              },
+            },
+          },
+        }
+      }
+    }
+
+    const result = await captureOutput(() => TestCompatCheck.run([], {root: CLI_ROOT}))
+    expect(result.error).toBeUndefined()
+    expect(result.stdout).toContain('Profile: validator-only')
+    expect(result.stdout).toContain('Compatibility checks passed with 1 warning')
+  })
+
   it('renders compatibility failures in human mode', async () => {
     class TestCompatCheck extends CompatCheck {
       protected override async loadProjectConfig(): Promise<CantonctlConfig> {
@@ -275,5 +301,46 @@ describe('profile command surface', () => {
     expect(result.stdout).toContain('Profile: splice-devnet')
     expect(result.stdout).toContain('Kind: remote-validator')
     expect(result.stdout).toContain('Service')
+  })
+
+  it('fails compatibility checks in json mode when the SDK drifts outside the pinned baseline', async () => {
+    class TestCompatCheck extends CompatCheck {
+      protected override async loadProjectConfig(): Promise<CantonctlConfig> {
+        return {
+          ...createConfig(),
+          project: {name: 'demo', 'sdk-version': '4.0.0'},
+        }
+      }
+    }
+
+    const result = await captureOutput(() => TestCompatCheck.run(['splice-devnet', '--json'], {root: CLI_ROOT}))
+    expect(result.error).toBeDefined()
+
+    const json = parseJson(result.stdout)
+    expect(json.success).toBe(false)
+    expect(json.data).toEqual(expect.objectContaining({
+      failed: 1,
+      profile: expect.objectContaining({name: 'splice-devnet'}),
+    }))
+  })
+
+  it('serializes CantonctlError failures for compatibility checks', async () => {
+    class TestCompatCheck extends CompatCheck {
+      protected override async loadProjectConfig(): Promise<CantonctlConfig> {
+        throw new CantonctlError(ErrorCode.CONFIG_NOT_FOUND, {
+          suggestion: 'Create cantonctl.yaml before running compat check.',
+        })
+      }
+    }
+
+    const result = await captureOutput(() => TestCompatCheck.run(['--json'], {root: CLI_ROOT}))
+    expect(result.error).toBeDefined()
+
+    const json = parseJson(result.stdout)
+    expect(json.success).toBe(false)
+    expect(json.error).toEqual(expect.objectContaining({
+      code: ErrorCode.CONFIG_NOT_FOUND,
+      suggestion: 'Create cantonctl.yaml before running compat check.',
+    }))
   })
 })

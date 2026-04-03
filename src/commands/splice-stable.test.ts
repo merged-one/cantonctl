@@ -1,5 +1,5 @@
 import {captureOutput} from '@oclif/test'
-import {describe, expect, it} from 'vitest'
+import {describe, expect, it, vi} from 'vitest'
 
 import type {CantonctlConfig} from '../lib/config.js'
 import {CantonctlError, ErrorCode} from '../lib/errors.js'
@@ -506,6 +506,110 @@ describe('stable splice command surface', () => {
     expect(result.stdout).toContain('Factory: factory-1')
     expect(result.stdout).toContain('Ledger endpoint: https://ledger.example.com')
     expect(result.stderr).toContain('delegated-to-ledger')
+  })
+
+  it('emits token transfer results in json mode when explicit endpoints bypass profile resolution', async () => {
+    const transferToken = vi.fn(async () => ({
+      endpoint: {
+        ledger: 'https://ledger.example.com',
+        tokenStandard: 'https://tokens.example.com',
+      },
+      factoryId: 'factory-1',
+      transaction: {updateId: 'tx-1'},
+      transferKind: 'direct',
+      warnings: ['delegated-to-ledger'],
+    }))
+
+    class TestTokenTransfer extends TokenTransfer {
+      protected override createStableSplice(): StableSplice {
+        return {
+          transferToken,
+        } as unknown as StableSplice
+      }
+
+      protected override async loadCommandConfig(): Promise<CantonctlConfig> {
+        throw new Error('config should not load when explicit endpoints are supplied')
+      }
+    }
+
+    const result = await captureOutput(() => TestTokenTransfer.run([
+      '--json',
+      '--amount',
+      '10.0',
+      '--instrument-admin',
+      'Registry',
+      '--instrument-id',
+      'USD',
+      '--ledger-url',
+      'https://ledger.example.com',
+      '--receiver',
+      'Bob',
+      '--sender',
+      'Alice',
+      '--token',
+      'jwt',
+      '--token-standard-url',
+      'https://tokens.example.com',
+    ], {root: CLI_ROOT}))
+    expect(result.error).toBeUndefined()
+    expect(transferToken).toHaveBeenCalledWith(expect.objectContaining({
+      ledgerBaseUrl: 'https://ledger.example.com',
+      profile: undefined,
+      sender: 'Alice',
+      token: 'jwt',
+      tokenStandardBaseUrl: 'https://tokens.example.com',
+    }))
+
+    const json = parseJson(result.stdout)
+    expect(json.success).toBe(true)
+    expect(json.warnings).toEqual(['delegated-to-ledger'])
+    expect(json.data).toEqual(expect.objectContaining({
+      endpoint: expect.objectContaining({
+        ledger: 'https://ledger.example.com',
+        tokenStandard: 'https://tokens.example.com',
+      }),
+      transferKind: 'direct',
+    }))
+  })
+
+  it('serializes token transfer failures through the stable surface error handler', async () => {
+    class TestTokenTransfer extends TokenTransfer {
+      protected override createStableSplice(): StableSplice {
+        return {
+          transferToken: async () => {
+            throw new CantonctlError(ErrorCode.CONFIG_NOT_FOUND, {
+              suggestion: 'Select a configured profile or supply explicit URLs.',
+            })
+          },
+        } as unknown as StableSplice
+      }
+
+      protected override async loadCommandConfig(): Promise<CantonctlConfig> {
+        return createConfig()
+      }
+    }
+
+    const result = await captureOutput(() => TestTokenTransfer.run([
+      '--json',
+      '--amount',
+      '10.0',
+      '--instrument-admin',
+      'Registry',
+      '--instrument-id',
+      'USD',
+      '--receiver',
+      'Bob',
+      '--sender',
+      'Alice',
+    ], {root: CLI_ROOT}))
+    expect(result.error).toBeDefined()
+
+    const json = parseJson(result.stdout)
+    expect(json.success).toBe(false)
+    expect(json.error).toEqual(expect.objectContaining({
+      code: ErrorCode.CONFIG_NOT_FOUND,
+      suggestion: 'Select a configured profile or supply explicit URLs.',
+    }))
   })
 
   it('renders token holdings in human mode', async () => {

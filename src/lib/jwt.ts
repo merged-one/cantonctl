@@ -86,9 +86,11 @@ export interface SandboxTokenClaims {
  * @param options - Token claims and configuration
  * @returns Compact JWS string (three dot-separated base64url segments)
  */
-export async function createSandboxToken(options: SandboxTokenOptions): Promise<string> {
+export function createSandboxToken(options: SandboxTokenOptions): Promise<string> {
   const secret = new TextEncoder().encode(SANDBOX_SECRET)
-  const expiresIn = options.expiresInSeconds ?? DEFAULT_EXPIRY_SECONDS
+  const expiresIn = typeof options.expiresInSeconds === 'number'
+    ? options.expiresInSeconds
+    : DEFAULT_EXPIRY_SECONDS
 
   const claims: Record<string, unknown> = {
     actAs: options.actAs,
@@ -104,12 +106,13 @@ export async function createSandboxToken(options: SandboxTokenOptions): Promise<
     claims.ledgerId = options.ledgerId
   }
 
-  return new jose.SignJWT(claims)
+  const token = new jose.SignJWT(claims)
     .setProtectedHeader({alg: 'HS256'})
     .setSubject('admin')
     .setIssuedAt()
     .setExpirationTime(`${expiresIn}s`)
-    .sign(secret)
+
+  return token.sign(secret)
 }
 
 /**
@@ -121,7 +124,8 @@ export async function createSandboxToken(options: SandboxTokenOptions): Promise<
  */
 export async function decodeSandboxToken(token: string): Promise<SandboxTokenClaims> {
   const secret = new TextEncoder().encode(SANDBOX_SECRET)
-  const {payload} = await jose.jwtVerify(token, secret)
+  const verification = await jose.jwtVerify(token, secret)
+  const payload = verification.payload
 
   return {
     actAs: payload.actAs as string[],

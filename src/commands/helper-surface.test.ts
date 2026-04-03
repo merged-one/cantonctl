@@ -115,16 +115,33 @@ describe('command helper coverage', () => {
       }
     }
 
+    class BaseHarness extends StableSurfaceCommand {
+      public callCreateStableSplice() {
+        return this.createStableSplice()
+      }
+
+      public async run(): Promise<void> {}
+    }
+
     const harness = new Harness([], {} as never)
     await expect(harness.callMaybeLoadProfileContext({needsProfile: false})).resolves.toBeUndefined()
+    await expect(harness.callMaybeLoadProfileContext({needsProfile: false, profileName: 'splice-devnet'}))
+      .resolves.toEqual(expect.objectContaining({kind: 'remote-validator', name: 'splice-devnet'}))
     await expect(harness.callMaybeLoadProfileContext({needsProfile: true, profileName: 'splice-devnet'}))
       .resolves.toEqual(expect.objectContaining({kind: 'remote-validator', name: 'splice-devnet'}))
+    await expect(harness.callMaybeLoadProfileContext({needsProfile: true}))
+      .resolves.toEqual(expect.objectContaining({kind: 'sandbox', name: 'sandbox'}))
     expect(harness.callOutputFor(true)).toEqual(expect.objectContaining({result: expect.any(Function)}))
     expect(() => harness.callHandleCommandError(new CantonctlError(ErrorCode.CONFIG_NOT_FOUND), out))
       .toThrow()
+    expect(() => harness.callHandleCommandError(new Error('boom'), out)).toThrow('boom')
     expect(out.result).toHaveBeenCalledWith(expect.objectContaining({
       error: expect.objectContaining({code: ErrorCode.CONFIG_NOT_FOUND}),
       success: false,
+    }))
+    expect(new BaseHarness([], {} as never).callCreateStableSplice()).toEqual(expect.objectContaining({
+      listScanUpdates: expect.any(Function),
+      transferToken: expect.any(Function),
     }))
   })
 
