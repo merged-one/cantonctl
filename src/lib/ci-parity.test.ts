@@ -6,6 +6,7 @@ import {describe, expect, it} from 'vitest'
 import {
   CI_MODES,
   CI_SUITES,
+  COVERAGE_POLICY,
   VITEST_PROJECTS,
   getRequiredSuitesForScope,
   getSuitesForScope,
@@ -70,6 +71,12 @@ describe('CI parity manifest', () => {
     expect(packageJson.scripts.ci).toBe('node scripts/ci/run.js docker required')
     expect(packageJson.scripts['ci:all']).toBe('node scripts/ci/run.js docker all')
     expect(packageJson.scripts['ci:native']).toBe('node scripts/ci/run.js native required')
+    expect(packageJson.scripts['test:coverage']).toBe(
+      'node scripts/verify-coverage-exclusions.mjs && vitest run --project unit --coverage',
+    )
+    expect(packageJson.scripts['test:coverage:strict']).toBe(
+      'node scripts/verify-coverage-exclusions.mjs && COVERAGE_STRICT=1 vitest run --project unit --coverage',
+    )
     expect(packageJson.scripts['test:e2e']).toBe(
       'vitest run --project e2e-sdk --project e2e-stable-public --project e2e-sandbox --project e2e-playground --project e2e-docker',
     )
@@ -92,5 +99,23 @@ describe('CI parity manifest', () => {
     expect(ciWorkflow).toContain('pr-suites')
     expect(ciWorkflow).toContain('main-extra-suites')
     expect(releaseWorkflow).toContain('release-suites')
+  })
+
+  it('tracks narrow coverage exclusions and strict-report settings in the shared manifest', () => {
+    expect(COVERAGE_POLICY.include).toEqual(['src/**/*.ts'])
+    expect(COVERAGE_POLICY.exclude).toEqual([
+      'src/**/*.test.ts',
+      'src/**/*.d.ts',
+      'src/generated/**',
+      'src/lib/adapters/index.ts',
+    ])
+    expect(COVERAGE_POLICY.reporters).toEqual(['text', 'text-summary', 'lcov', 'json-summary'])
+    expect(COVERAGE_POLICY.strictThresholds).toEqual({
+      branches: 100,
+      functions: 100,
+      lines: 100,
+      perFile: true,
+      statements: 100,
+    })
   })
 })

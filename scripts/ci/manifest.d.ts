@@ -20,11 +20,17 @@ export interface CoverageThresholds {
   statements: number
 }
 
+export interface StrictCoverageThresholds extends CoverageThresholds {
+  perFile: boolean
+}
+
 export interface CoveragePolicy {
-  criticalFiles: Record<string, CoverageThresholds>
   exclude: string[]
-  groups: Record<string, {prefixes: string[]; thresholds: CoverageThresholds}>
   include: string[]
+  inlineIgnoreRoots: string[]
+  registryPath: string
+  reporters: string[]
+  strictThresholds: StrictCoverageThresholds
 }
 
 export const CI_TOOLCHAIN: {

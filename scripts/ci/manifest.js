@@ -192,35 +192,23 @@ export const CI_MODES = Object.freeze({
 })
 
 export const COVERAGE_POLICY = Object.freeze({
-  criticalFiles: Object.freeze({
-    'src/hooks/init.ts': Object.freeze({branches: 95, functions: 100, lines: 100, statements: 100}),
-    'src/hooks/prerun.ts': Object.freeze({branches: 95, functions: 100, lines: 100, statements: 100}),
-    'src/lib/credential-store.ts': Object.freeze({branches: 95, functions: 100, lines: 100, statements: 100}),
-    'src/lib/errors.ts': Object.freeze({branches: 95, functions: 100, lines: 100, statements: 100}),
-    'src/lib/output.ts': Object.freeze({branches: 95, functions: 100, lines: 100, statements: 100}),
-    'src/lib/plugin-hooks.ts': Object.freeze({branches: 95, functions: 100, lines: 100, statements: 100}),
-    'src/lib/process-runner.ts': Object.freeze({branches: 95, functions: 100, lines: 100, statements: 100}),
-  }),
-  groups: Object.freeze({
-    commands: Object.freeze({
-      prefixes: Object.freeze(['src/commands/']),
-      thresholds: Object.freeze({branches: 85, functions: 90, lines: 90, statements: 90}),
-    }),
-    hooks: Object.freeze({
-      prefixes: Object.freeze(['src/hooks/']),
-      thresholds: Object.freeze({branches: 100, functions: 100, lines: 100, statements: 100}),
-    }),
-    lib: Object.freeze({
-      prefixes: Object.freeze(['src/lib/']),
-      thresholds: Object.freeze({branches: 90, functions: 90, lines: 95, statements: 95}),
-    }),
-  }),
-  include: Object.freeze(['src/lib/**/*.ts', 'src/commands/**/*.ts', 'src/hooks/**/*.ts']),
   exclude: Object.freeze([
     'src/**/*.test.ts',
     'src/**/*.d.ts',
     'src/generated/**',
+    'src/lib/adapters/index.ts',
   ]),
+  include: Object.freeze(['src/**/*.ts']),
+  inlineIgnoreRoots: Object.freeze(['src', 'test', 'scripts', 'vitest.config.ts', 'vitest.setup.ts']),
+  registryPath: 'EXCLUSIONS.md',
+  reporters: Object.freeze(['text', 'text-summary', 'lcov', 'json-summary']),
+  strictThresholds: Object.freeze({
+    branches: 100,
+    functions: 100,
+    lines: 100,
+    perFile: true,
+    statements: 100,
+  }),
 })
 
 export function getModeSuites(mode) {
