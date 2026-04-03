@@ -7,7 +7,7 @@ export const CI_TOOLCHAIN = Object.freeze({
 
 const UNIT_PROJECT = Object.freeze({
   environment: 'node',
-  exclude: ['test/e2e/**'],
+  exclude: ['src/commands/**/*.test.ts', 'test/e2e/**'],
   globals: true,
   include: ['src/**/*.test.ts'],
   setupFiles: ['./vitest.setup.ts'],
@@ -26,6 +26,15 @@ export const VITEST_PROJECTS = Object.freeze({
     ...PROJECT_DEFAULTS,
     ...UNIT_PROJECT,
     name: 'unit',
+  }),
+  'unit-commands': Object.freeze({
+    ...PROJECT_DEFAULTS,
+    fileParallelism: false,
+    include: ['src/commands/**/*.test.ts'],
+    name: 'unit-commands',
+    pool: 'forks',
+    poolOptions: {forks: {singleFork: true}},
+    testTimeout: 10_000,
   }),
   'e2e-sdk': Object.freeze({
     ...PROJECT_DEFAULTS,
@@ -106,6 +115,15 @@ export const CI_SUITES = Object.freeze({
     timeoutMinutes: 10,
     type: 'unit-matrix',
   }),
+  'unit-coverage': Object.freeze({
+    id: 'unit-coverage',
+    label: 'unit-coverage',
+    npmScript: 'test:coverage:strict',
+    prerequisites: [],
+    scopes: ['pr', 'main', 'release'],
+    timeoutMinutes: 10,
+    type: 'suite',
+  }),
   'generated-specs': Object.freeze({
     id: 'generated-specs',
     label: 'generated-specs',
@@ -173,6 +191,7 @@ export const CI_SUITES = Object.freeze({
 
 export const CI_MODES = Object.freeze({
   all: Object.freeze([
+    'unit-coverage',
     'generated-specs',
     'e2e-sdk',
     'e2e-stable-public',
@@ -182,6 +201,7 @@ export const CI_MODES = Object.freeze({
     'e2e-experimental',
   ]),
   required: Object.freeze([
+    'unit-coverage',
     'generated-specs',
     'e2e-sdk',
     'e2e-stable-public',

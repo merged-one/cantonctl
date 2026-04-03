@@ -45,6 +45,7 @@ describe('CI parity manifest', () => {
 
   it('defines a deterministic required gate with playground and docker included', () => {
     expect(CI_MODES.required).toEqual([
+      'unit-coverage',
       'generated-specs',
       'e2e-sdk',
       'e2e-stable-public',
@@ -71,14 +72,17 @@ describe('CI parity manifest', () => {
     expect(packageJson.scripts.ci).toBe('node scripts/ci/run.js docker required')
     expect(packageJson.scripts['ci:all']).toBe('node scripts/ci/run.js docker all')
     expect(packageJson.scripts['ci:native']).toBe('node scripts/ci/run.js native required')
+    expect(packageJson.scripts.test).toBe('vitest run --project unit --project unit-commands')
+    expect(packageJson.scripts['test:unit']).toBe('vitest run --project unit --project unit-commands')
+    expect(packageJson.scripts['test:watch']).toBe('vitest --project unit --project unit-commands')
     expect(packageJson.scripts['test:coverage']).toBe(
-      'node scripts/verify-coverage-exclusions.mjs && vitest run --project unit --coverage',
+      'node scripts/verify-coverage-exclusions.mjs && vitest run --project unit --project unit-commands --coverage',
     )
     expect(packageJson.scripts['test:coverage:backlog']).toBe(
       'npm run test:coverage && node scripts/coverage-strict-backlog.mjs',
     )
     expect(packageJson.scripts['test:coverage:strict']).toBe(
-      'node scripts/verify-coverage-exclusions.mjs && COVERAGE_STRICT=1 vitest run --project unit --coverage',
+      'node scripts/verify-coverage-exclusions.mjs && COVERAGE_STRICT=1 vitest run --project unit --project unit-commands --coverage',
     )
     expect(packageJson.scripts['test:e2e']).toBe(
       'vitest run --project e2e-sdk --project e2e-stable-public --project e2e-sandbox --project e2e-playground --project e2e-docker',
