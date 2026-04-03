@@ -170,6 +170,25 @@ describe('runtime-support', () => {
     expect(execFile).toHaveBeenCalledWith('xdg-open', [url], expect.any(Function))
   })
 
+  it('swallows child-process error events from browser launch helpers', () => {
+    let errorHandler: ((error: Error) => void) | undefined
+    const child = {
+      on: vi.fn((event: string, handler: (error: Error) => void) => {
+        if (event === 'error') {
+          errorHandler = handler
+        }
+
+        return child
+      }),
+    }
+    const execFile = vi.fn((() => child as never)) as unknown as typeof import('node:child_process').execFile
+
+    openBrowserUrl('http://localhost:4000', {execFile, platform: 'linux'})
+
+    expect(child.on).toHaveBeenCalledWith('error', expect.any(Function))
+    expect(() => errorHandler?.(new Error('browser launch failed'))).not.toThrow()
+  })
+
   it('covers the default dependency paths with real filesystem and socket state', async () => {
     const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'runtime-support-'))
 
