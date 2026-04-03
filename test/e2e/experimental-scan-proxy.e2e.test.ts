@@ -7,8 +7,8 @@ import type {AddressInfo} from 'node:net'
 import {captureOutput} from '@oclif/test'
 import {afterAll, beforeAll, describe, expect, it, vi} from 'vitest'
 
-import AnsCreate from '../../src/commands/ans/create.js'
 import AnsList from '../../src/commands/ans/list.js'
+import ScanCurrentState from '../../src/commands/scan/current-state.js'
 
 const CLI_ROOT = process.cwd()
 
@@ -80,7 +80,7 @@ function writeConfig(projectDir: string, contents: string): void {
   fs.writeFileSync(path.join(projectDir, 'cantonctl.yaml'), contents)
 }
 
-async function runInProject<T extends typeof AnsList | typeof AnsCreate>(
+async function runInProject<T extends typeof AnsList | typeof ScanCurrentState>(
   command: T,
   projectDir: string,
   args: string[],
@@ -94,40 +94,49 @@ async function runInProject<T extends typeof AnsList | typeof AnsCreate>(
   }
 }
 
-describe('stable ANS surface E2E', () => {
-  let ansServer: {close(): Promise<void>; url: string}
+describe('experimental scan-proxy E2E', () => {
   let projectDir: string
+  let scanProxyServer: {close(): Promise<void>; url: string}
   let workDir: string
-  const ansRequests: MockRequest[] = []
+  const scanProxyRequests: MockRequest[] = []
 
   beforeAll(async () => {
-    ansServer = await startJsonServer((request) => {
-      ansRequests.push(request)
+    scanProxyServer = await startJsonServer((request) => {
+      scanProxyRequests.push(request)
 
-      if (request.method === 'GET' && request.pathname === '/v0/entry/all') {
+      if (request.method === 'GET' && request.pathname === '/api/validator/v0/scan-proxy/dso') {
         return {
           body: {
-            entries: [
-              {
-                amount: '12.0000000000',
-                contractId: 'ans-entry-1',
-                expiresAt: '2026-05-01T00:00:00Z',
-                name: 'alice.unverified.ans',
-                paymentDuration: 'P30D',
-                paymentInterval: 'P30D',
-                unit: 'AMU',
-              },
-            ],
+            dso_party_id: 'DSO::1',
+            sv_party_id: 'SV::1',
           },
         }
       }
 
-      if (request.method === 'POST' && request.pathname === '/v0/entry/create') {
+      if (
+        request.method === 'GET'
+        && request.pathname === '/api/validator/v0/scan-proxy/open-and-issuing-mining-rounds'
+      ) {
         return {
           body: {
-            entryContextCid: 'entry-context-1',
-            name: 'alice.unverified.ans',
-            subscriptionRequestCid: 'subscription-1',
+            issuing_mining_rounds: [{contract: 'issuing-1'}],
+            open_mining_rounds: [{contract: 'open-1'}, {contract: 'open-2'}],
+          },
+        }
+      }
+
+      if (request.method === 'GET' && request.pathname === '/api/validator/v0/scan-proxy/ans-entries') {
+        return {
+          body: {
+            entries: [
+              {
+                contract_id: 'public-ans-1',
+                description: 'Alice profile',
+                name: 'alice.unverified.ans',
+                url: 'https://alice.example.com',
+                user: 'Alice',
+              },
+            ],
           },
         }
       }
@@ -135,43 +144,64 @@ describe('stable ANS surface E2E', () => {
       return {body: {error: 'not found'}, status: 404}
     })
 
-    workDir = fs.mkdtempSync(path.join(os.tmpdir(), 'cantonctl-e2e-ans-'))
+    workDir = fs.mkdtempSync(path.join(os.tmpdir(), 'cantonctl-e2e-scan-proxy-'))
     projectDir = path.join(workDir, 'project')
     fs.mkdirSync(projectDir, {recursive: true})
     writeConfig(
       projectDir,
       `version: 1
 
-default-profile: splice-ans
+default-profile: splice-proxy
 
 project:
-  name: ans-e2e
+  name: scan-proxy-e2e
   sdk-version: "3.4.11"
 
 profiles:
-  splice-ans:
-    experimental: false
+  splice-proxy:
+    experimental: true
     kind: remote-validator
-    ans:
-      url: ${ansServer.url}
+    scanProxy:
+      url: ${scanProxyServer.url}/api/validator
 `,
     )
   })
 
   afterAll(async () => {
-    await ansServer?.close()
+    await scanProxyServer?.close()
     fs.rmSync(workDir, {force: true, recursive: true})
   })
 
-  it('ans list reads owned entries from the stable ANS service', async () => {
-    ansRequests.length = 0
+  it('reads current state through scan-proxy when the experimental surface is selected', async () => {
+    scanProxyRequests.length = 0
+
+    const result = await runInProject(ScanCurrentState, projectDir, [
+      '--json',
+    ])
+
+    expect(result.error).toBeUndefined()
+
+    const json = parseJson(result.stdout)
+    expect(json.success).toBe(true)
+    expect(json.data).toEqual(expect.objectContaining({
+      endpoint: `${scanProxyServer.url}/api/validator`,
+      source: 'scanProxy',
+    }))
+    expect(scanProxyRequests.map(request => request.pathname)).toEqual([
+      '/api/validator/v0/scan-proxy/dso',
+      '/api/validator/v0/scan-proxy/open-and-issuing-mining-rounds',
+    ])
+  })
+
+  it('reads ANS entries through scan-proxy only when explicitly selected', async () => {
+    scanProxyRequests.length = 0
 
     const result = await runInProject(AnsList, projectDir, [
       '--json',
-      '--profile',
-      'splice-ans',
-      '--token',
-      'jwt-token',
+      '--name-prefix',
+      'alice',
+      '--source',
+      'scanProxy',
     ])
 
     expect(result.error).toBeUndefined()
@@ -179,61 +209,21 @@ profiles:
     const json = parseJson(result.stdout)
     expect(json.success).toBe(true)
     expect(json.data).toEqual(expect.objectContaining({
-      endpoint: ansServer.url,
-      source: 'ans',
+      endpoint: `${scanProxyServer.url}/api/validator`,
+      source: 'scanProxy',
       entries: [
         expect.objectContaining({
-          contractId: 'ans-entry-1',
+          contractId: 'public-ans-1',
           name: 'alice.unverified.ans',
+          user: 'Alice',
         }),
       ],
     }))
-    expect(ansRequests[0]).toEqual(expect.objectContaining({
+    expect(scanProxyRequests[0]).toEqual(expect.objectContaining({
       method: 'GET',
-      pathname: '/v0/entry/all',
+      pathname: '/api/validator/v0/scan-proxy/ans-entries',
     }))
-    expect(ansRequests[0].headers.authorization).toBe('Bearer jwt-token')
+    expect(scanProxyRequests[0].searchParams.get('name_prefix')).toBe('alice')
+    expect(scanProxyRequests[0].searchParams.get('page_size')).toBe('20')
   })
-
-  it('ans create writes through the stable external ANS endpoint', async () => {
-    ansRequests.length = 0
-
-    const result = await runInProject(AnsCreate, projectDir, [
-      '--json',
-      '--profile',
-      'splice-ans',
-      '--description',
-      'Alice profile',
-      '--name',
-      'alice.unverified.ans',
-      '--token',
-      'jwt-token',
-      '--url',
-      'https://alice.example.com',
-    ])
-
-    expect(result.error).toBeUndefined()
-
-    const json = parseJson(result.stdout)
-    expect(json.success).toBe(true)
-    expect(json.data).toEqual(expect.objectContaining({
-      endpoint: ansServer.url,
-      response: expect.objectContaining({
-        entryContextCid: 'entry-context-1',
-        subscriptionRequestCid: 'subscription-1',
-      }),
-      source: 'ans',
-    }))
-    expect(ansRequests[0]).toEqual(expect.objectContaining({
-      method: 'POST',
-      pathname: '/v0/entry/create',
-    }))
-    expect(ansRequests[0].headers.authorization).toBe('Bearer jwt-token')
-    expect(ansRequests[0].body).toEqual({
-      description: 'Alice profile',
-      name: 'alice.unverified.ans',
-      url: 'https://alice.example.com',
-    })
-  })
-
 })

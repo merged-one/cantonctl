@@ -99,9 +99,7 @@ describe('stable scan surface E2E', () => {
   let projectDir: string
   let workDir: string
   let scanServer: {close(): Promise<void>; url: string}
-  let scanProxyServer: {close(): Promise<void>; url: string}
   const scanRequests: MockRequest[] = []
-  const scanProxyRequests: MockRequest[] = []
 
   beforeAll(async () => {
     scanServer = await startJsonServer((request) => {
@@ -160,13 +158,7 @@ describe('stable scan surface E2E', () => {
         }
       }
 
-      return {body: {error: 'not found'}, status: 404}
-    })
-
-    scanProxyServer = await startJsonServer((request) => {
-      scanProxyRequests.push(request)
-
-      if (request.method === 'GET' && request.pathname === '/api/validator/v0/scan-proxy/dso') {
+      if (request.method === 'GET' && request.pathname === '/v0/dso') {
         return {
           body: {
             dso_party_id: 'DSO::1',
@@ -175,10 +167,7 @@ describe('stable scan surface E2E', () => {
         }
       }
 
-      if (
-        request.method === 'GET'
-        && request.pathname === '/api/validator/v0/scan-proxy/open-and-issuing-mining-rounds'
-      ) {
+      if (request.method === 'POST' && request.pathname === '/v0/open-and-issuing-mining-rounds') {
         return {
           body: {
             issuing_mining_rounds: [{contract: 'issuing-1'}],
@@ -209,18 +198,12 @@ profiles:
     kind: remote-validator
     scan:
       url: ${scanServer.url}
-  splice-proxy:
-    experimental: true
-    kind: remote-validator
-    scanProxy:
-      url: ${scanProxyServer.url}/api/validator
 `,
     )
   })
 
   afterAll(async () => {
     await scanServer?.close()
-    await scanProxyServer?.close()
     fs.rmSync(workDir, {force: true, recursive: true})
   })
 
@@ -316,13 +299,11 @@ profiles:
     })
   })
 
-  it('scan current-state can read through scan-proxy when that is the configured profile surface', async () => {
-    scanProxyRequests.length = 0
+  it('scan current-state reads stable public state directly from scan', async () => {
+    scanRequests.length = 0
 
     const result = await runInProject(ScanCurrentState, projectDir, [
       '--json',
-      '--profile',
-      'splice-proxy',
     ])
 
     expect(result.error).toBeUndefined()
@@ -330,12 +311,22 @@ profiles:
     const json = parseJson(result.stdout)
     expect(json.success).toBe(true)
     expect(json.data).toEqual(expect.objectContaining({
-      endpoint: `${scanProxyServer.url}/api/validator`,
-      source: 'scanProxy',
+      dsoInfo: {
+        dso_party_id: 'DSO::1',
+        sv_party_id: 'SV::1',
+      },
+      endpoint: scanServer.url,
+      issuingMiningRounds: [{contract: 'issuing-1'}],
+      openMiningRounds: [{contract: 'open-1'}, {contract: 'open-2'}],
+      source: 'scan',
     }))
-    expect(scanProxyRequests.map(request => request.pathname)).toEqual([
-      '/api/validator/v0/scan-proxy/dso',
-      '/api/validator/v0/scan-proxy/open-and-issuing-mining-rounds',
+    expect(scanRequests.map(request => request.pathname)).toEqual([
+      '/v0/dso',
+      '/v0/open-and-issuing-mining-rounds',
     ])
+    expect(scanRequests[1].body).toEqual({
+      cached_issuing_round_contract_ids: [],
+      cached_open_mining_round_contract_ids: [],
+    })
   })
 })

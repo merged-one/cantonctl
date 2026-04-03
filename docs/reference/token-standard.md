@@ -72,7 +72,7 @@ cantonctl validator traffic-buy --profile splice-devnet --receiving-validator-pa
 cantonctl validator traffic-status --profile splice-devnet --tracking-id traffic-123 --token eyJ...
 ```
 
-- `ans list` reads from stable ANS, Scan, or scan-proxy surfaces.
+- `ans list` reads from stable ANS or direct Scan surfaces. scan-proxy-only reads remain experimental.
 - `ans create` writes through the stable external ANS service.
 - `validator traffic-buy` and `validator traffic-status` use the stable wallet-backed validator-user endpoints.
 

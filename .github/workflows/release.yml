@@ -9,7 +9,7 @@ permissions:
   contents: write
 
 jobs:
-  # Run the full test suite before publishing
+  # Run the stable/public release gate before publishing
   test:
     runs-on: ubuntu-latest
     steps:
@@ -18,9 +18,26 @@ jobs:
         with:
           node-version: 22
           cache: npm
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+      - name: Cache Daml SDK
+        uses: actions/cache@v4
+        with:
+          path: ~/.daml
+          key: daml-sdk-3.4.11-${{ runner.os }}
+      - name: Install Daml SDK
+        run: |
+          if [ ! -f "$HOME/.daml/bin/daml" ]; then
+            curl -sSL https://get.daml.com/ | sh -s 3.4.11
+          fi
+          echo "$HOME/.daml/bin" >> $GITHUB_PATH
       - run: npm ci
       - run: npm run build
       - run: npm test
+      - run: npm run test:generated-specs
+      - run: npm run test:e2e
 
   publish:
     needs: test
@@ -62,4 +79,10 @@ jobs:
       - name: Create GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release create "${{ github.ref_name }}" --generate-notes
+        run: |
+          NOTES_FILE="docs/release-notes/${{ github.ref_name }}-splice-support.md"
+          if [ -f "$NOTES_FILE" ]; then
+            gh release create "${{ github.ref_name }}" --notes-file "$NOTES_FILE"
+          else
+            gh release create "${{ github.ref_name }}" --generate-notes
+          fi

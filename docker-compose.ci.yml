@@ -1,10 +1,14 @@
 # docker-compose.ci.yml — Local CI that matches GitHub Actions exactly.
 #
 # Usage:
-#   docker compose -f docker-compose.ci.yml run --rm ci          # all tests
+#   docker compose -f docker-compose.ci.yml run --rm ci required  # required PR gate
+#   docker compose -f docker-compose.ci.yml run --rm ci all       # required + experimental
 #   docker compose -f docker-compose.ci.yml run --rm ci unit     # unit only
+#   docker compose -f docker-compose.ci.yml run --rm ci generated-specs
 #   docker compose -f docker-compose.ci.yml run --rm ci e2e-sdk  # SDK E2E
+#   docker compose -f docker-compose.ci.yml run --rm ci e2e-stable-public
 #   docker compose -f docker-compose.ci.yml run --rm ci e2e-sandbox
+#   docker compose -f docker-compose.ci.yml run --rm ci e2e-experimental
 #   docker compose -f docker-compose.ci.yml run --rm ci shell    # debug shell
 #
 #   # Test against a specific Node version (CI tests 18, 20, 22):

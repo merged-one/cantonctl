@@ -6,13 +6,20 @@
 # passing locally guarantees passing on GitHub Actions.
 #
 # Usage:
-#   ./scripts/ci-local.sh                  # native: unit + e2e (if SDK present)
+#   ./scripts/ci-local.sh                  # native: required PR gate
+#   ./scripts/ci-local.sh required         # native: unit + specs + sdk + stable-public + sandbox
 #   ./scripts/ci-local.sh unit             # native: unit tests only
+#   ./scripts/ci-local.sh generated-specs  # native: generated spec verification only
 #   ./scripts/ci-local.sh e2e-sdk          # native: SDK E2E only
+#   ./scripts/ci-local.sh e2e-stable-public # native: stable/public E2E only
 #   ./scripts/ci-local.sh e2e-sandbox      # native: sandbox E2E only
+#   ./scripts/ci-local.sh e2e-experimental # native: experimental E2E only
+#   ./scripts/ci-local.sh all              # native: required gate + experimental + docker
 #   ./scripts/ci-local.sh --docker         # Docker: full CI in ubuntu container
 #   ./scripts/ci-local.sh --docker unit    # Docker: unit tests only
+#   ./scripts/ci-local.sh --docker generated-specs
 #   ./scripts/ci-local.sh --docker e2e-sdk # Docker: SDK E2E only
+#   ./scripts/ci-local.sh --docker e2e-stable-public
 #
 # The --docker flag runs tests inside a container that exactly matches the
 # GitHub Actions runner (ubuntu + Node 22 + Java 21 + Daml SDK 3.4.11).
@@ -33,7 +40,7 @@ RESET='\033[0m'
 
 if [[ "${1:-}" == "--docker" ]]; then
   shift
-  MODE="${1:-all}"
+  MODE="${1:-required}"
   echo -e "${BOLD}==> Running CI in Docker (matches GitHub Actions exactly)${RESET}"
   echo ""
   docker compose -f docker-compose.ci.yml build ci
@@ -115,17 +122,27 @@ if command -v docker &>/dev/null && docker compose version &>/dev/null 2>&1; the
 fi
 
 # What to run
-MODE="${1:-all}"
-RUN_UNIT=false; RUN_E2E_SDK=false; RUN_E2E_SANDBOX=false; RUN_E2E_DOCKER=false
+MODE="${1:-required}"
+RUN_UNIT=false
+RUN_GENERATED_SPECS=false
+RUN_E2E_SDK=false
+RUN_E2E_STABLE_PUBLIC=false
+RUN_E2E_SANDBOX=false
+RUN_E2E_DOCKER=false
+RUN_E2E_EXPERIMENTAL=false
 
 case "$MODE" in
   unit)        RUN_UNIT=true ;;
-  e2e)         RUN_E2E_SDK=true; RUN_E2E_SANDBOX=true; RUN_E2E_DOCKER=true ;;
+  generated-specs) RUN_GENERATED_SPECS=true ;;
+  e2e)         RUN_E2E_SDK=true; RUN_E2E_STABLE_PUBLIC=true; RUN_E2E_SANDBOX=true ;;
   e2e-sdk)     RUN_E2E_SDK=true ;;
+  e2e-stable-public) RUN_E2E_STABLE_PUBLIC=true ;;
   e2e-sandbox) RUN_E2E_SANDBOX=true ;;
+  e2e-experimental) RUN_E2E_EXPERIMENTAL=true ;;
   e2e-docker)  RUN_E2E_DOCKER=true ;;
-  all)         RUN_UNIT=true; RUN_E2E_SDK=true; RUN_E2E_SANDBOX=true; RUN_E2E_DOCKER=true ;;
-  *)           echo "Usage: $0 [--docker] [unit|e2e|e2e-sdk|e2e-sandbox|e2e-docker|all]"; exit 1 ;;
+  required)    RUN_UNIT=true; RUN_GENERATED_SPECS=true; RUN_E2E_SDK=true; RUN_E2E_STABLE_PUBLIC=true; RUN_E2E_SANDBOX=true ;;
+  all)         RUN_UNIT=true; RUN_GENERATED_SPECS=true; RUN_E2E_SDK=true; RUN_E2E_STABLE_PUBLIC=true; RUN_E2E_SANDBOX=true; RUN_E2E_EXPERIMENTAL=true; RUN_E2E_DOCKER=true ;;
+  *)           echo "Usage: $0 [--docker] [required|unit|generated-specs|e2e|e2e-sdk|e2e-stable-public|e2e-sandbox|e2e-experimental|e2e-docker|all]"; exit 1 ;;
 esac
 
 # Install + build (matches CI)
@@ -146,6 +163,14 @@ else
   skip "unit tests (not selected)"
 fi
 
+# Generated specs tests
+if $RUN_GENERATED_SPECS; then
+  step "Generated spec verification (CI: generated-spec-tests)"
+  run_step "generated spec tests" npm run test:generated-specs || true
+else
+  skip "generated spec tests (not selected)"
+fi
+
 # E2E SDK tests
 if $RUN_E2E_SDK; then
   step "E2E SDK tests (CI: e2e-sdk-tests)"
@@ -156,6 +181,14 @@ if $RUN_E2E_SDK; then
   fi
 else
   skip "e2e-sdk tests (not selected)"
+fi
+
+# Stable/public E2E tests
+if $RUN_E2E_STABLE_PUBLIC; then
+  step "Stable/public E2E tests (CI: e2e-stable-public-tests)"
+  run_step "e2e-stable-public tests" npm run test:e2e:stable-public || true
+else
+  skip "e2e-stable-public tests (not selected)"
 fi
 
 # E2E sandbox tests
@@ -169,6 +202,14 @@ if $RUN_E2E_SANDBOX; then
   fi
 else
   skip "e2e-sandbox tests (not selected)"
+fi
+
+# Experimental E2E tests
+if $RUN_E2E_EXPERIMENTAL; then
+  step "Experimental E2E tests (non-blocking CI job)"
+  run_step "e2e-experimental tests" npm run test:e2e:experimental || true
+else
+  skip "e2e-experimental tests (not selected)"
 fi
 
 # E2E Docker tests

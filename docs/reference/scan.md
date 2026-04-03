@@ -61,7 +61,7 @@ Behavior:
 
 ### `scan current-state`
 
-Read current stable public Scan state from direct Scan or scan-proxy.
+Read current stable public Scan state from direct Scan.
 
 ```bash
 cantonctl scan current-state --profile splice-devnet
@@ -74,12 +74,12 @@ cantonctl scan current-state --scan-proxy-url https://validator.example.com/api/
 |------|---------|-------------|
 | `--profile <name>` | — | Resolved runtime profile that exposes `scan` or `scanProxy` |
 | `--scan-url <url>` | — | Explicit Scan base URL override |
-| `--scan-proxy-url <url>` | — | Explicit scan-proxy base URL override |
+| `--scan-proxy-url <url>` | — | Explicit scan-proxy base URL override for experimental/reference-only usage |
 | `--json` | `false` | Output as JSON |
 
 Behavior:
-- Prefers direct Scan when a `scan` surface is available.
-- Falls back to scan-proxy for stable public read access when only the proxy surface is configured.
+- Uses direct Scan when a `scan` surface is available.
+- `--scan-proxy-url` remains available for experimental/reference-only coverage and migration tooling.
 - Reports DSO info plus open and issuing mining rounds.
 
 ## JSON Output

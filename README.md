@@ -96,7 +96,7 @@ cantonctl playground --profile splice-devnet --no-open
 cantonctl serve                        # Headless API only (for VS Code, Neovim)
 ```
 
-Both `serve` and `playground` are now profile-aware: the IDE server exposes `/api/profile`, `/api/profile/status`, `/api/profile/compat`, plus stable Splice reads for token holdings and Scan updates. The browser playground can switch profiles at runtime and surfaces configured service health for ledger, scan or scan-proxy, validator, token-standard, and ANS endpoints.
+Both `serve` and `playground` are now profile-aware: the IDE server exposes `/api/profile`, `/api/profile/status`, `/api/profile/compat`, plus stable Splice reads for token holdings and Scan updates. The browser playground can switch profiles at runtime and surfaces configured service health for ledger, scan, validator, token-standard, and ANS endpoints, with scan-proxy kept separate as a non-GA surface.
 
 **What it solves** (mapped to [Q1 2026 Developer Survey](https://forum.canton.network/t/canton-network-developer-experience-and-tooling-survey-analysis-2026/8412) pain points):
 
@@ -128,9 +128,9 @@ Both `serve` and `playground` are now profile-aware: the IDE server exposes `/ap
 | `cantonctl deploy <network>` | 6-step DAR deployment pipeline for local and remote networks | Implemented |
 | `cantonctl console` | Interactive REPL for querying and submitting ledger commands | Implemented |
 | `cantonctl status` | Show ledger health plus profile-aware service endpoints (`--profile` supported) | Implemented |
-| `cantonctl scan updates/acs/current-state` | Query stable public Scan history, ACS snapshots, and current state via scan or scan-proxy | Implemented |
+| `cantonctl scan updates/acs/current-state` | Query stable public Scan history, ACS snapshots, and direct current state via Scan | Implemented |
 | `cantonctl token holdings/transfer` | Read holdings and move tokens through stable holding and transfer-factory surfaces | Implemented |
-| `cantonctl ans list/create` | Read or create ANS entries through stable external ANS, scan, or scan-proxy surfaces | Implemented |
+| `cantonctl ans list/create` | Read or create ANS entries through stable external ANS and Scan-backed public surfaces | Implemented |
 | `cantonctl validator traffic-buy/traffic-status` | Use stable validator-user wallet-backed traffic purchase endpoints | Implemented |
 | `cantonctl profiles list/show/validate` | Inspect and validate resolved runtime profiles | Implemented |
 | `cantonctl compat check [profile]` | Check profile compatibility against stable tracked upstream surfaces | Implemented |
@@ -143,6 +143,33 @@ Both `serve` and `playground` are now profile-aware: the IDE server exposes `/ap
 | `cantonctl playground` | Open the profile-aware browser IDE with Monaco editor and Splice service views | Implemented |
 
 All commands except `console` and `playground` support `--json` for CI pipeline integration. All errors include error codes, suggestions, and documentation links.
+
+## Support Status
+
+GA / stable-public:
+
+- Canton sandbox workflows: `dev`, `build`, `test`, `deploy`, `status`, `serve`, and `playground`
+- `cantonctl dev --full` as the Canton-only multi-node Docker topology under `.cantonctl/`
+- profile-based config plus legacy `networks:` compatibility and `compat check`
+- `codegen sync` plus generated-spec verification
+- direct Scan update/ACS/current-state reads
+- token-standard holdings and transfer-factory transfers
+- external ANS list/create
+- validator-user traffic buy/status
+- `localnet up|status|down` plus `splice-localnet` stable/public smoke coverage
+
+Experimental or operator-only:
+
+- scan-proxy-only reads
+- `cantonctl validator experimental ...`
+- auth modes that require explicit experimental acknowledgement such as `localnet-unsafe-hmac` and `oidc-client-credentials`
+
+Required PR CI now covers unit tests, generated-spec verification, SDK core E2E, stable/public Splice E2E, and sandbox smoke. Experimental/operator-only coverage is kept in separate non-blocking jobs.
+
+Release and upgrade context:
+
+- [v0.4.0 release notes](docs/release-notes/v0.4.0-splice-support.md)
+- [v0.4.0 migration guide](docs/migration/v0.4.0-splice-support.md)
 
 ## Experimental Operator Surfaces
 
@@ -192,6 +219,7 @@ Splice example walkthroughs:
 `cantonctl.yaml` supports both the original `networks` shape and the newer profile-based shape.
 Existing projects do not need to migrate immediately. Legacy `networks` entries still load unchanged, and cantonctl normalizes them into internal profiles for newer runtime work.
 New scaffolds now generate the profile-based shape by default and keep `networks` references for compatibility with existing command defaults.
+See the [v0.4.0 migration guide](docs/migration/v0.4.0-splice-support.md) for the config upgrade path and the `dev --full` versus `localnet` split.
 
 Legacy shape:
 
@@ -250,7 +278,7 @@ cantonctl doctor --profile splice-devnet
 cantonctl compat check splice-devnet
 ```
 
-`cantonctl compat check` stays on stable-surface-only policy. Stable tracked surfaces pass, reference-only or operator-only surfaces warn, and the project SDK version is checked against the pinned Canton compatibility baseline in the upstream manifest.
+`cantonctl compat check` stays on stable-surface-only policy. Stable tracked surfaces pass, reference-only or operator-only surfaces warn, and the project SDK version is checked against the pinned Canton compatibility baseline in the upstream manifest. Where upstream surfaces do not have a stable generated spec yet, cantonctl backs the support claim with dedicated smoke tests in CI.
 
 For repository maintainers, `cantonctl codegen sync` wraps the existing manifest-driven spec sync and generation steps:
 
@@ -279,8 +307,6 @@ profiles:
       url: https://ledger.example.com
     scan:
       url: https://scan.example.com
-    scanProxy:
-      url: https://validator.example.com/api/validator
     tokenStandard:
       url: https://tokens.example.com
     ans:
@@ -295,12 +321,11 @@ profiles:
 cantonctl scan updates --profile splice-devnet --page-size 20 --json
 cantonctl scan acs --profile splice-devnet --migration-id 7 --page-size 25 --json
 cantonctl scan current-state --profile splice-devnet
-cantonctl scan current-state --scan-proxy-url https://validator.example.com/api/validator --json
 ```
 
 - `scan updates` reads stable public history and keeps parsing tolerant of unknown upstream fields.
 - `scan acs` resolves snapshot timestamps when `--record-time` is omitted, then reads the corresponding stable ACS page.
-- `scan current-state` prefers direct Scan when available and falls back to scan-proxy for stable public read access.
+- `scan current-state` is GA when backed by direct Scan. scan-proxy-only reads remain separate experimental coverage.
 
 See [docs/reference/scan.md](docs/reference/scan.md) for the full flag reference.
 
@@ -317,7 +342,7 @@ cantonctl validator traffic-status --profile splice-devnet --tracking-id traffic
 
 - `token holdings` reads the stable holding Daml interface through the public JSON Ledger API.
 - `token transfer` uses the stable token-standard transfer factory plus a ledger interface-choice submission. cantonctl does not default to deprecated transfer-offer workflows.
-- `ans list` can read from stable ANS, Scan, or scan-proxy depending on the selected surface.
+- `ans list` is GA when backed by external ANS or direct Scan. scan-proxy-only reads remain experimental.
 - `ans create`, `validator traffic-buy`, and `validator traffic-status` stay on the stable external service surfaces intended for downstream clients.
 
 See [docs/reference/token-standard.md](docs/reference/token-standard.md) for token command details.
@@ -383,7 +408,7 @@ See [docs/reference/localnet.md](docs/reference/localnet.md) for command details
 
 ### Core Principles
 
-- **Test-first TDD**: Tests define the contract, implementation follows (490 tests, 98.18% statement coverage)
+- **Test-first TDD**: Tests define the contract, implementation follows across unit, stable/public E2E, sandbox, and Docker coverage
 - **Dependency injection**: Every I/O module accepts injected dependencies. Zero `vi.mock()`.
 - **AbortSignal everywhere**: All long-running operations support graceful cancellation
 - **Structured errors**: Every error is a `CantonctlError` with code (E1xxx-E8xxx), suggestion, and docs URL
@@ -533,13 +558,16 @@ Plugins are auto-discovered from `node_modules` matching `@cantonctl/plugin-*` o
 
 ```bash
 npm install           # Install dependencies
-npm test              # Run unit tests (399 tests)
+npm test              # Run unit tests
+npm run test:generated-specs # Verify tracked generated specs and manifest policy
 npm run test:watch    # Watch mode
-npm run test:e2e      # Run E2E tests (77 tests, requires Daml SDK + Java 21)
-npm run test:e2e:docker # Run Docker E2E tests (2 tests, requires Docker)
-npm run test:e2e:playground # Run playground E2E tests (14 tests)
-npm run test:all      # Run all 490 tests
-npm run test:coverage # Coverage report (98.18% statements)
+npm run test:e2e      # Run required E2E gate (SDK core + stable/public + sandbox)
+npm run test:e2e:stable-public # Run stable/public Splice E2E only
+npm run test:e2e:experimental # Run experimental/operator-only E2E only
+npm run test:e2e:docker # Run Docker E2E tests (requires Docker)
+npm run test:e2e:playground # Run playground E2E tests
+npm run test:all      # Run all Vitest projects
+npm run test:coverage # Coverage report
 npm run build         # Compile TypeScript
 npm run ci            # Local CI check (mirrors GitHub Actions)
 ./scripts/ci-local.sh --docker  # Docker CI check (exact GitHub Actions parity)

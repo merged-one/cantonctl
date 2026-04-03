@@ -1,14 +1,17 @@
 import {defineConfig} from 'vitest/config'
 
 /**
- * Vitest configuration with four test projects:
+ * Vitest configuration with focused test projects:
  *
  * - unit: Fast, no external dependencies, parallel execution.
- * - e2e-sdk: Requires Daml SDK + Java, parallel execution OK.
+ * - e2e-sdk: Requires Daml SDK + Java for build/test/init flows.
+ * - e2e-stable-public: Stable/public Canton + Splice command surfaces.
  * - e2e-sandbox: Requires running Canton sandbox (JVM). Sequential file
  *   execution to avoid resource contention from concurrent JVM processes.
  * - e2e-docker: Requires Docker + Canton image + Daml SDK + Java. Sequential
  *   execution for Docker resource isolation. Tests `dev --full` topology.
+ * - e2e-experimental: Experimental or operator-only surfaces kept separate
+ *   from the GA required matrix.
  */
 export default defineConfig({
   test: {
@@ -33,9 +36,24 @@ export default defineConfig({
             'test/e2e/build.e2e.test.ts',
             'test/e2e/build-watch.e2e.test.ts',
             'test/e2e/test-cmd.e2e.test.ts',
+          ],
+          environment: 'node',
+          setupFiles: ['./vitest.setup.ts'],
+          disableConsoleIntercept: true,
+          globals: true,
+          testTimeout: 120_000,
+        },
+      },
+      {
+        test: {
+          name: 'e2e-stable-public',
+          include: [
             'test/e2e/scan.e2e.test.ts',
             'test/e2e/token-standard.e2e.test.ts',
             'test/e2e/ans.e2e.test.ts',
+            'test/e2e/localnet.e2e.test.ts',
+            'test/e2e/scan-validator.e2e.test.ts',
+            'test/e2e/compat.e2e.test.ts',
           ],
           environment: 'node',
           setupFiles: ['./vitest.setup.ts'],
@@ -97,6 +115,19 @@ export default defineConfig({
           pool: 'forks',
           poolOptions: {forks: {singleFork: true}},
           retry: 1,
+        },
+      },
+      {
+        test: {
+          name: 'e2e-experimental',
+          include: [
+            'test/e2e/experimental-scan-proxy.e2e.test.ts',
+          ],
+          environment: 'node',
+          setupFiles: ['./vitest.setup.ts'],
+          disableConsoleIntercept: true,
+          globals: true,
+          testTimeout: 120_000,
         },
       },
     ],

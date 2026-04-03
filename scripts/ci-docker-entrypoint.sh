@@ -4,11 +4,15 @@
 # Executes the exact same steps as .github/workflows/ci.yml.
 #
 # Usage (via docker run):
-#   all          - unit + e2e-sdk + e2e-sandbox
+#   required     - unit + generated-specs + e2e-sdk + e2e-stable-public + e2e-sandbox
+#   all          - required + e2e-experimental
 #   unit         - unit tests only
+#   generated-specs - generated spec verification only
 #   e2e-sdk      - SDK E2E tests only
+#   e2e-stable-public - stable/public E2E tests only
 #   e2e-sandbox  - sandbox E2E tests only
-#   e2e          - all E2E tests
+#   e2e-experimental - experimental E2E tests only
+#   e2e          - required E2E tests
 #   shell        - drop into bash for debugging
 
 set -uo pipefail
@@ -19,7 +23,7 @@ YELLOW='\033[0;33m'
 BOLD='\033[1m'
 RESET='\033[0m'
 
-MODE="${1:-all}"
+MODE="${1:-required}"
 
 # Drop to shell for debugging
 if [[ "$MODE" == "shell" ]]; then
@@ -63,15 +67,24 @@ echo "  Mode:    $MODE"
 # Tests
 # ---------------------------------------------------------------------------
 
-RUN_UNIT=false; RUN_SDK=false; RUN_SANDBOX=false
+RUN_UNIT=false
+RUN_GENERATED_SPECS=false
+RUN_SDK=false
+RUN_STABLE_PUBLIC=false
+RUN_SANDBOX=false
+RUN_EXPERIMENTAL=false
 
 case "$MODE" in
   unit)        RUN_UNIT=true ;;
+  generated-specs) RUN_GENERATED_SPECS=true ;;
   e2e-sdk)     RUN_SDK=true ;;
+  e2e-stable-public) RUN_STABLE_PUBLIC=true ;;
   e2e-sandbox) RUN_SANDBOX=true ;;
-  e2e)         RUN_SDK=true; RUN_SANDBOX=true ;;
-  all)         RUN_UNIT=true; RUN_SDK=true; RUN_SANDBOX=true ;;
-  *)           echo "Usage: $0 [all|unit|e2e|e2e-sdk|e2e-sandbox|shell]"; exit 1 ;;
+  e2e-experimental) RUN_EXPERIMENTAL=true ;;
+  e2e)         RUN_SDK=true; RUN_STABLE_PUBLIC=true; RUN_SANDBOX=true ;;
+  required)    RUN_UNIT=true; RUN_GENERATED_SPECS=true; RUN_SDK=true; RUN_STABLE_PUBLIC=true; RUN_SANDBOX=true ;;
+  all)         RUN_UNIT=true; RUN_GENERATED_SPECS=true; RUN_SDK=true; RUN_STABLE_PUBLIC=true; RUN_SANDBOX=true; RUN_EXPERIMENTAL=true ;;
+  *)           echo "Usage: $0 [required|all|unit|generated-specs|e2e|e2e-sdk|e2e-stable-public|e2e-sandbox|e2e-experimental|shell]"; exit 1 ;;
 esac
 
 if $RUN_UNIT; then
@@ -79,15 +92,30 @@ if $RUN_UNIT; then
   run_step "unit tests (Node $(node --version | sed 's/v//'))" npm test || true
 fi
 
+if $RUN_GENERATED_SPECS; then
+  step "Generated spec verification (CI: generated-spec-tests)"
+  run_step "generated spec tests" npm run test:generated-specs || true
+fi
+
 if $RUN_SDK; then
   step "E2E SDK tests (CI: e2e-sdk-tests)"
   run_step "e2e-sdk tests" npm run test:e2e:sdk || true
+fi
+
+if $RUN_STABLE_PUBLIC; then
+  step "Stable/public E2E tests (CI: e2e-stable-public-tests)"
+  run_step "e2e-stable-public tests" npm run test:e2e:stable-public || true
 fi
 
 if $RUN_SANDBOX; then
   step "E2E sandbox tests (CI: e2e-sandbox-tests)"
   JAVA_OPTS="-Xms512M -Xmx2G -XX:+UseSerialGC" \
     run_step "e2e-sandbox tests" npm run test:e2e:sandbox || true
+fi
+
+if $RUN_EXPERIMENTAL; then
+  step "Experimental E2E tests (non-blocking CI job)"
+  run_step "e2e-experimental tests" npm run test:e2e:experimental || true
 fi
 
 # ---------------------------------------------------------------------------

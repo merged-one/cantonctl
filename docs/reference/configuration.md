@@ -141,7 +141,7 @@ networks:
 |------|-----------------|
 | `sandbox` | Single-participant local sandbox |
 | `canton-multi` | Canton-only multi-node local topology |
-| `splice-localnet` | Experimental local Splice stack |
+| `splice-localnet` | Local Splice workspace profile for stable/public service URLs |
 | `remote-validator` | Remote validator-oriented target |
 | `remote-sv-network` | Remote SV/Scan-oriented target |
 

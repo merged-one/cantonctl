@@ -22,8 +22,22 @@ jobs:
       - run: npm run build
       - run: npm test
 
+  generated-spec-tests:
+    name: generated-specs
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      - name: Verify tracked generated specs
+        run: npm run test:generated-specs
+
   e2e-sdk-tests:
-    name: e2e-tests (sdk)
+    name: e2e-tests (sdk-core)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -52,10 +66,24 @@ jobs:
         run: npm run test:e2e:sdk
         timeout-minutes: 10
 
+  e2e-stable-public-tests:
+    name: e2e-tests (stable-public)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      - name: Run stable/public E2E tests
+        run: npm run test:e2e:stable-public
+        timeout-minutes: 10
+
   e2e-sandbox-tests:
     name: e2e-tests (sandbox)
     runs-on: ubuntu-latest
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -92,6 +120,22 @@ jobs:
           path: |
             /tmp/cantonctl-e2e-*/
           retention-days: 7
+
+  e2e-experimental-tests:
+    name: e2e-tests (experimental)
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      - name: Run experimental E2E tests
+        run: npm run test:e2e:experimental
+        timeout-minutes: 10
 
   e2e-docker-tests:
     name: e2e-tests (docker)
@@ -159,22 +203,37 @@ jobs:
           retention-days: 7
 
   # Single gate job — the only required status check in branch protection.
-  # Sandbox and Docker tests are informational: failures are visible but don't block merge.
+  # Experimental and heavy post-merge jobs stay visible but out of the GA gate.
   all-green:
     if: always()
-    needs: [unit-tests, e2e-sdk-tests]
+    needs: [unit-tests, generated-spec-tests, e2e-sdk-tests, e2e-stable-public-tests, e2e-sandbox-tests]
     runs-on: ubuntu-latest
     steps:
       - name: Verify required jobs passed
         run: |
           echo "unit-tests: ${{ needs.unit-tests.result }}"
+          echo "generated-spec-tests: ${{ needs.generated-spec-tests.result }}"
           echo "e2e-sdk-tests: ${{ needs.e2e-sdk-tests.result }}"
+          echo "e2e-stable-public-tests: ${{ needs.e2e-stable-public-tests.result }}"
+          echo "e2e-sandbox-tests: ${{ needs.e2e-sandbox-tests.result }}"
           if [[ "${{ needs.unit-tests.result }}" != "success" ]]; then
             echo "::error::unit-tests failed"
             exit 1
           fi
+          if [[ "${{ needs.generated-spec-tests.result }}" != "success" ]]; then
+            echo "::error::generated-spec-tests failed"
+            exit 1
+          fi
           if [[ "${{ needs.e2e-sdk-tests.result }}" != "success" ]]; then
             echo "::error::e2e-sdk-tests failed"
+            exit 1
+          fi
+          if [[ "${{ needs.e2e-stable-public-tests.result }}" != "success" ]]; then
+            echo "::error::e2e-stable-public-tests failed"
+            exit 1
+          fi
+          if [[ "${{ needs.e2e-sandbox-tests.result }}" != "success" ]]; then
+            echo "::error::e2e-sandbox-tests failed"
             exit 1
           fi
           echo "All required checks passed"

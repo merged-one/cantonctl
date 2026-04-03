@@ -9,8 +9,6 @@ import {afterAll, beforeAll, describe, expect, it, vi} from 'vitest'
 
 import TokenHoldings from '../../src/commands/token/holdings.js'
 import TokenTransfer from '../../src/commands/token/transfer.js'
-import ValidatorTrafficBuy from '../../src/commands/validator/traffic-buy.js'
-import ValidatorTrafficStatus from '../../src/commands/validator/traffic-status.js'
 import {
   TOKEN_HOLDING_INTERFACE_ID,
   TOKEN_TRANSFER_FACTORY_CHOICE,
@@ -85,7 +83,7 @@ function writeConfig(projectDir: string, contents: string): void {
   fs.writeFileSync(path.join(projectDir, 'cantonctl.yaml'), contents)
 }
 
-async function runInProject<T extends typeof TokenHoldings | typeof TokenTransfer | typeof ValidatorTrafficBuy | typeof ValidatorTrafficStatus>(
+async function runInProject<T extends typeof TokenHoldings | typeof TokenTransfer>(
   command: T,
   projectDir: string,
   args: string[],
@@ -99,15 +97,13 @@ async function runInProject<T extends typeof TokenHoldings | typeof TokenTransfe
   }
 }
 
-describe('stable token and validator-user surfaces E2E', () => {
+describe('stable token-standard surface E2E', () => {
   let ledgerServer: {close(): Promise<void>; url: string}
   let projectDir: string
   let tokenStandardServer: {close(): Promise<void>; url: string}
-  let validatorServer: {close(): Promise<void>; url: string}
   let workDir: string
   const ledgerRequests: MockRequest[] = []
   const tokenStandardRequests: MockRequest[] = []
-  const validatorRequests: MockRequest[] = []
 
   beforeAll(async () => {
     ledgerServer = await startJsonServer((request) => {
@@ -213,35 +209,6 @@ describe('stable token and validator-user surfaces E2E', () => {
       return {body: {error: 'not found'}, status: 404}
     })
 
-    validatorServer = await startJsonServer((request) => {
-      validatorRequests.push(request)
-
-      if (
-        request.method === 'POST'
-        && request.pathname === '/api/validator/v0/wallet/buy-traffic-requests'
-      ) {
-        return {
-          body: {
-            request_contract_id: 'traffic-request-1',
-          },
-        }
-      }
-
-      if (
-        request.method === 'POST'
-        && request.pathname === '/api/validator/v0/wallet/buy-traffic-requests/traffic-123/status'
-      ) {
-        return {
-          body: {
-            status: 'completed',
-            transaction_id: 'traffic-tx-1',
-          },
-        }
-      }
-
-      return {body: {error: 'not found'}, status: 404}
-    })
-
     workDir = fs.mkdtempSync(path.join(os.tmpdir(), 'cantonctl-e2e-token-'))
     projectDir = path.join(workDir, 'project')
     fs.mkdirSync(projectDir, {recursive: true})
@@ -249,22 +216,23 @@ describe('stable token and validator-user surfaces E2E', () => {
       projectDir,
       `version: 1
 
-default-profile: splice-devnet
+default-profile: splice-localnet
 
 project:
   name: token-e2e
   sdk-version: "3.4.11"
 
 profiles:
-  splice-devnet:
+  splice-localnet:
     experimental: false
-    kind: remote-validator
+    kind: splice-localnet
     ledger:
       url: ${ledgerServer.url}
+    localnet:
+      distribution: splice-localnet
+      version: "0.5.3"
     tokenStandard:
       url: ${tokenStandardServer.url}
-    validator:
-      url: ${validatorServer.url}/api/validator
 `,
     )
   })
@@ -272,7 +240,6 @@ profiles:
   afterAll(async () => {
     await ledgerServer?.close()
     await tokenStandardServer?.close()
-    await validatorServer?.close()
     fs.rmSync(workDir, {force: true, recursive: true})
   })
 
@@ -413,71 +380,5 @@ profiles:
     })
     expect(tokenStandardRequests.map(request => request.pathname)).not.toContain('/transfer-offer')
     expect(ledgerRequests.map(request => request.pathname)).not.toContain('/transfer-offer')
-  })
-
-  it('validator traffic buy and status use the stable wallet-backed validator-user endpoints', async () => {
-    validatorRequests.length = 0
-
-    const buyResult = await runInProject(ValidatorTrafficBuy, projectDir, [
-      '--json',
-      '--domain-id',
-      'domain::1',
-      '--receiving-validator-party-id',
-      'AliceValidator',
-      '--token',
-      'jwt-token',
-      '--tracking-id',
-      'traffic-123',
-      '--traffic-amount',
-      '4096',
-    ])
-
-    expect(buyResult.error).toBeUndefined()
-
-    const buyJson = parseJson(buyResult.stdout)
-    expect(buyJson.success).toBe(true)
-    expect(buyJson.data).toEqual(expect.objectContaining({
-      endpoint: `${validatorServer.url}/api/validator`,
-      requestContractId: 'traffic-request-1',
-      source: 'validator-user',
-      trackingId: 'traffic-123',
-    }))
-    expect(validatorRequests[0]).toEqual(expect.objectContaining({
-      method: 'POST',
-      pathname: '/api/validator/v0/wallet/buy-traffic-requests',
-    }))
-    expect(validatorRequests[0].headers.authorization).toBe('Bearer jwt-token')
-    expect(validatorRequests[0].body).toEqual(expect.objectContaining({
-      domain_id: 'domain::1',
-      receiving_validator_party_id: 'AliceValidator',
-      tracking_id: 'traffic-123',
-      traffic_amount: 4096,
-    }))
-
-    const statusResult = await runInProject(ValidatorTrafficStatus, projectDir, [
-      '--json',
-      '--token',
-      'jwt-token',
-      '--tracking-id',
-      'traffic-123',
-    ])
-
-    expect(statusResult.error).toBeUndefined()
-
-    const statusJson = parseJson(statusResult.stdout)
-    expect(statusJson.success).toBe(true)
-    expect(statusJson.data).toEqual(expect.objectContaining({
-      endpoint: `${validatorServer.url}/api/validator`,
-      source: 'validator-user',
-      status: {
-        status: 'completed',
-        transaction_id: 'traffic-tx-1',
-      },
-      trackingId: 'traffic-123',
-    }))
-    expect(validatorRequests[1]).toEqual(expect.objectContaining({
-      method: 'POST',
-      pathname: '/api/validator/v0/wallet/buy-traffic-requests/traffic-123/status',
-    }))
   })
 })
