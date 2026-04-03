@@ -313,7 +313,7 @@ describe('localnet command surface', () => {
             health: {
               validatorReadyz: {
                 ...createStatusResult(false).health.validatorReadyz,
-                status: undefined,
+                status: 0,
               },
             },
           }),

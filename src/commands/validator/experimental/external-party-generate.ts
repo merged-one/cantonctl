@@ -2,6 +2,19 @@ import {Args, Flags} from '@oclif/core'
 
 import {ExperimentalValidatorCommand} from './base.js'
 
+interface ExternalPartyGenerateArgs {
+  network: string
+}
+
+interface ExternalPartyGenerateFlags {
+  experimental: boolean
+  json: boolean
+  'party-hint': string
+  'public-key': string
+  token?: string
+  'validator-url'?: string
+}
+
 export default class ValidatorExperimentalExternalPartyGenerate extends ExperimentalValidatorCommand {
   static override args = {
     network: Args.string({
@@ -47,41 +60,65 @@ export default class ValidatorExperimentalExternalPartyGenerate extends Experime
     const {args, flags} = await this.parse(ValidatorExperimentalExternalPartyGenerate)
     const out = this.outputFor(flags.json)
 
-    try {
-      this.requireExperimentalOptIn(flags.experimental, `validator experimental external-party-generate ${args.network}`)
-      const context = await this.resolveExperimentalContext({
-        network: args.network,
-        token: flags.token,
-        validatorUrl: flags['validator-url'],
-      })
-      const warnings = [...context.warnings, ...context.adapter.metadata.warnings]
-      if (!flags.json) this.emitWarnings(out, warnings)
+    await runExternalPartyGenerateCommand({
+      emitWarnings: (warnings) => this.emitWarnings(out, warnings),
+      handleCommandError: (error: unknown) => this.handleCommandError(error, out),
+      out,
+      requireExperimentalOptIn: (enabled, commandPath) => this.requireExperimentalOptIn(enabled, commandPath),
+      resolveExperimentalContext: (options) => this.resolveExperimentalContext(options),
+    }, args, flags)
+  }
+}
 
-      const response = await context.adapter.generateExternalPartyTopology({
-        party_hint: flags['party-hint'],
-        public_key: flags['public-key'],
-      })
+async function runExternalPartyGenerateCommand(
+  command: {
+    emitWarnings: (warnings: readonly string[]) => void
+    handleCommandError: (error: unknown) => never
+    out: ReturnType<ValidatorExperimentalExternalPartyGenerate['outputFor']>
+    requireExperimentalOptIn: (enabled: boolean, commandPath: string) => void
+    resolveExperimentalContext: (options: {
+      network: string
+      token?: string
+      validatorUrl?: string
+    }) => ReturnType<ValidatorExperimentalExternalPartyGenerate['resolveExperimentalContext']>
+  },
+  args: ExternalPartyGenerateArgs,
+  flags: ExternalPartyGenerateFlags,
+): Promise<void> {
+  try {
+    command.requireExperimentalOptIn(flags.experimental, `validator experimental external-party-generate ${args.network}`)
+    const context = await command.resolveExperimentalContext({
+      network: args.network,
+      token: flags.token,
+      validatorUrl: flags['validator-url'],
+    })
+    const warnings = [...context.warnings, ...context.adapter.metadata.warnings]
+    if (!flags.json) command.emitWarnings(warnings)
 
-      if (!flags.json) {
-        out.log(`Network: ${context.network}`)
-        out.log(`Validator: ${context.validatorUrl}`)
-        out.log(`Party ID: ${response.party_id}`)
-        out.log(`Topology transactions: ${response.topology_txs.length}`)
-      }
+    const response = await context.adapter.generateExternalPartyTopology({
+      party_hint: flags['party-hint'],
+      public_key: flags['public-key'],
+    })
 
-      out.result({
-        data: {
-          mode: context.authProfile.mode,
-          network: context.network,
-          partyId: response.party_id,
-          topologyTxs: response.topology_txs,
-          validatorUrl: context.validatorUrl,
-        },
-        success: true,
-        warnings: flags.json ? warnings : undefined,
-      })
-    } catch (error) {
-      this.handleCommandError(error, out)
+    if (!flags.json) {
+      command.out.log(`Network: ${context.network}`)
+      command.out.log(`Validator: ${context.validatorUrl}`)
+      command.out.log(`Party ID: ${response.party_id}`)
+      command.out.log(`Topology transactions: ${response.topology_txs.length}`)
     }
+
+    command.out.result({
+      data: {
+        mode: context.authProfile.mode,
+        network: context.network,
+        partyId: response.party_id,
+        topologyTxs: response.topology_txs,
+        validatorUrl: context.validatorUrl,
+      },
+      success: true,
+      warnings: flags.json ? warnings : undefined,
+    })
+  } catch (error) {
+    command.handleCommandError(error)
   }
 }

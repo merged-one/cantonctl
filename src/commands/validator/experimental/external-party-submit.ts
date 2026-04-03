@@ -8,6 +8,19 @@ interface ParsedSignedTopologyTx {
   topology_tx: string
 }
 
+interface ExternalPartySubmitArgs {
+  network: string
+}
+
+interface ExternalPartySubmitFlags {
+  experimental: boolean
+  json: boolean
+  'public-key': string
+  'signed-topology-tx': string[]
+  token?: string
+  'validator-url'?: string
+}
+
 export default class ValidatorExperimentalExternalPartySubmit extends ExperimentalValidatorCommand {
   static override args = {
     network: Args.string({
@@ -54,41 +67,65 @@ export default class ValidatorExperimentalExternalPartySubmit extends Experiment
     const {args, flags} = await this.parse(ValidatorExperimentalExternalPartySubmit)
     const out = this.outputFor(flags.json)
 
-    try {
-      this.requireExperimentalOptIn(flags.experimental, `validator experimental external-party-submit ${args.network}`)
-      const context = await this.resolveExperimentalContext({
-        network: args.network,
-        token: flags.token,
-        validatorUrl: flags['validator-url'],
-      })
-      const warnings = [...context.warnings, ...context.adapter.metadata.warnings]
-      if (!flags.json) this.emitWarnings(out, warnings)
+    await runExternalPartySubmitCommand({
+      emitWarnings: (warnings) => this.emitWarnings(out, warnings),
+      handleCommandError: (error: unknown) => this.handleCommandError(error, out),
+      out,
+      requireExperimentalOptIn: (enabled, commandPath) => this.requireExperimentalOptIn(enabled, commandPath),
+      resolveExperimentalContext: (options) => this.resolveExperimentalContext(options),
+    }, args, flags)
+  }
+}
 
-      const response = await context.adapter.submitExternalPartyTopology({
-        public_key: flags['public-key'],
-        signed_topology_txs: flags['signed-topology-tx'].map(parseSignedTopologyTx),
-      })
+async function runExternalPartySubmitCommand(
+  command: {
+    emitWarnings: (warnings: readonly string[]) => void
+    handleCommandError: (error: unknown) => never
+    out: ReturnType<ValidatorExperimentalExternalPartySubmit['outputFor']>
+    requireExperimentalOptIn: (enabled: boolean, commandPath: string) => void
+    resolveExperimentalContext: (options: {
+      network: string
+      token?: string
+      validatorUrl?: string
+    }) => ReturnType<ValidatorExperimentalExternalPartySubmit['resolveExperimentalContext']>
+  },
+  args: ExternalPartySubmitArgs,
+  flags: ExternalPartySubmitFlags,
+): Promise<void> {
+  try {
+    command.requireExperimentalOptIn(flags.experimental, `validator experimental external-party-submit ${args.network}`)
+    const context = await command.resolveExperimentalContext({
+      network: args.network,
+      token: flags.token,
+      validatorUrl: flags['validator-url'],
+    })
+    const warnings = [...context.warnings, ...context.adapter.metadata.warnings]
+    if (!flags.json) command.emitWarnings(warnings)
 
-      if (!flags.json) {
-        out.log(`Network: ${context.network}`)
-        out.log(`Validator: ${context.validatorUrl}`)
-        out.log(`Submitted topology for party: ${response.party_id}`)
-      }
+    const response = await context.adapter.submitExternalPartyTopology({
+      public_key: flags['public-key'],
+      signed_topology_txs: flags['signed-topology-tx'].map(parseSignedTopologyTx),
+    })
 
-      out.result({
-        data: {
-          mode: context.authProfile.mode,
-          network: context.network,
-          partyId: response.party_id,
-          submitted: true,
-          validatorUrl: context.validatorUrl,
-        },
-        success: true,
-        warnings: flags.json ? warnings : undefined,
-      })
-    } catch (error) {
-      this.handleCommandError(error, out)
+    if (!flags.json) {
+      command.out.log(`Network: ${context.network}`)
+      command.out.log(`Validator: ${context.validatorUrl}`)
+      command.out.log(`Submitted topology for party: ${response.party_id}`)
     }
+
+    command.out.result({
+      data: {
+        mode: context.authProfile.mode,
+        network: context.network,
+        partyId: response.party_id,
+        submitted: true,
+        validatorUrl: context.validatorUrl,
+      },
+      success: true,
+      warnings: flags.json ? warnings : undefined,
+    })
+  } catch (error) {
+    command.handleCommandError(error)
   }
 }
 

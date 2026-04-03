@@ -1,5 +1,5 @@
 import {captureOutput} from '@oclif/test'
-import {describe, expect, it, vi} from 'vitest'
+import {afterEach, describe, expect, it, vi} from 'vitest'
 
 import type {Builder} from '../lib/builder.js'
 import type {Completer} from '../lib/repl/completer.js'
@@ -23,6 +23,10 @@ import Playground from './playground.js'
 import Serve from './serve.js'
 
 const CLI_ROOT = process.cwd()
+
+afterEach(() => {
+  vi.restoreAllMocks()
+})
 
 function createConfig(): CantonctlConfig {
   return {
@@ -141,6 +145,14 @@ function createMultiTopology(): GeneratedTopology {
 
 function parseJson(stdout: string): Record<string, unknown> {
   return JSON.parse(stdout.trim()) as Record<string, unknown>
+}
+
+function parseJsonLines(stdout: string): Record<string, unknown>[] {
+  return stdout
+    .trim()
+    .split('\n')
+    .filter(Boolean)
+    .map(line => JSON.parse(line) as Record<string, unknown>)
 }
 
 describe('runtime-heavy command surface', () => {
@@ -264,6 +276,175 @@ describe('runtime-heavy command surface', () => {
         {mainPackageId: '7575', participant: 'participant1', port: 7575},
         {mainPackageId: '7576', participant: 'participant2', port: 7576},
       ],
+    }))
+  })
+
+  it('deploy bypasses topology detection for non-local networks', async () => {
+    const detectProjectTopology = vi.fn()
+
+    class TestDeploy extends Deploy {
+      protected override createBuilder(): Builder {
+        return {
+          build: vi.fn(),
+          buildWithCodegen: vi.fn(),
+          watch: vi.fn(),
+        }
+      }
+
+      protected override createDeployer(): Deployer {
+        return {
+          deploy: vi.fn().mockResolvedValue({
+            darPath: '/repo/.daml/dist/demo.dar',
+            dryRun: false,
+            durationMs: 35,
+            mainPackageId: 'pkg-devnet',
+            network: 'devnet',
+            success: true,
+          }),
+        }
+      }
+
+      protected override createHooks() {
+        return {emit: vi.fn()} as never
+      }
+
+      protected override createRunner(): ProcessRunner {
+        return createRunner()
+      }
+
+      protected override createSdk(): DamlSdk {
+        return createSdk()
+      }
+
+      protected override async detectProjectTopology(): Promise<GeneratedTopology | null> {
+        detectProjectTopology()
+        return createMultiTopology()
+      }
+
+      protected override getProjectDir(): string {
+        return '/repo'
+      }
+
+      protected override async loadProjectConfig(): Promise<CantonctlConfig> {
+        return createConfig()
+      }
+    }
+
+    const result = await captureOutput(() => TestDeploy.run(['devnet', '--json'], {root: CLI_ROOT}))
+    expect(result.error).toBeUndefined()
+    expect(detectProjectTopology).not.toHaveBeenCalled()
+
+    const json = parseJson(result.stdout)
+    expect(json.success).toBe(true)
+    expect(json.data).toEqual(expect.objectContaining({
+      network: 'devnet',
+      mainPackageId: 'pkg-devnet',
+    }))
+  })
+
+  it('deploy renders multi-node progress in human mode', async () => {
+    class TestDeploy extends Deploy {
+      protected override createBuilder(): Builder {
+        return {
+          build: vi.fn(),
+          buildWithCodegen: vi.fn(),
+          watch: vi.fn(),
+        }
+      }
+
+      protected override createDeployer(deps: {config: CantonctlConfig}): Deployer {
+        return {
+          deploy: vi.fn().mockResolvedValue({
+            darPath: '/repo/.daml/dist/demo.dar',
+            dryRun: true,
+            durationMs: 20,
+            mainPackageId: String(deps.config.networks?.local?.['json-api-port']),
+            network: 'local',
+            success: true,
+          }),
+        }
+      }
+
+      protected override createHooks() {
+        return {emit: vi.fn()} as never
+      }
+
+      protected override createRunner(): ProcessRunner {
+        return createRunner()
+      }
+
+      protected override createSdk(): DamlSdk {
+        return createSdk()
+      }
+
+      protected override async detectProjectTopology(): Promise<GeneratedTopology | null> {
+        return createMultiTopology()
+      }
+
+      protected override getProjectDir(): string {
+        return '/repo'
+      }
+
+      protected override async loadProjectConfig(): Promise<CantonctlConfig> {
+        return createConfig()
+      }
+    }
+
+    const result = await captureOutput(() => TestDeploy.run(['local', '--dry-run'], {root: CLI_ROOT}))
+    expect(result.error).toBeUndefined()
+    expect(result.stdout).toContain('Deploying to local (multi-node: 2 participants)...')
+    expect(result.stdout).toContain('Deploying to participant1 (port 7575)...')
+    expect(result.stdout).toContain('"participant": "participant1"')
+    expect(result.stdout).toContain('"dryRun": true')
+  })
+
+  it('serializes deploy failures through CantonctlError', async () => {
+    class TestDeploy extends Deploy {
+      protected override createBuilder(): Builder {
+        return {
+          build: vi.fn(),
+          buildWithCodegen: vi.fn(),
+          watch: vi.fn(),
+        }
+      }
+
+      protected override createDeployer(): Deployer {
+        return {
+          deploy: vi.fn().mockRejectedValue(new CantonctlError(ErrorCode.DEPLOY_UPLOAD_FAILED, {
+            suggestion: 'Retry against a reachable participant.',
+          })),
+        }
+      }
+
+      protected override createHooks() {
+        return {emit: vi.fn()} as never
+      }
+
+      protected override createRunner(): ProcessRunner {
+        return createRunner()
+      }
+
+      protected override createSdk(): DamlSdk {
+        return createSdk()
+      }
+
+      protected override async detectProjectTopology(): Promise<null> {
+        return null
+      }
+
+      protected override async loadProjectConfig(): Promise<CantonctlConfig> {
+        return createConfig()
+      }
+    }
+
+    const result = await captureOutput(() => TestDeploy.run(['local', '--json'], {root: CLI_ROOT}))
+    expect(result.error).toBeDefined()
+
+    const json = parseJson(result.stdout)
+    expect(json.success).toBe(false)
+    expect(json.error).toEqual(expect.objectContaining({
+      code: ErrorCode.DEPLOY_UPLOAD_FAILED,
+      suggestion: 'Retry against a reachable participant.',
     }))
   })
 
@@ -433,6 +614,116 @@ describe('runtime-heavy command surface', () => {
       parties: ['Alice'],
       status: 'running',
     }))
+  })
+
+  it('dev emits sandbox stop events when shutdown is requested', async () => {
+    const start = vi.fn().mockResolvedValue(undefined)
+    const stop = vi.fn().mockResolvedValue(undefined)
+
+    class TestDev extends Dev {
+      protected override createRunner(): ProcessRunner {
+        return createRunner()
+      }
+
+      protected override createSandboxServer(): DevServer {
+        return {
+          start,
+          stop,
+        }
+      }
+
+      protected override createSdk(): DamlSdk {
+        return createSdk()
+      }
+
+      protected override async loadProjectConfig(): Promise<CantonctlConfig> {
+        return createConfig()
+      }
+
+      protected override async waitForShutdown(
+        _json: boolean,
+        shutdown: () => Promise<void>,
+        _shutdownPromise: Promise<void>,
+      ): Promise<void> {
+        await shutdown()
+      }
+    }
+
+    const result = await captureOutput(() => TestDev.run(['--json'], {root: CLI_ROOT}))
+    expect(result.error).toBeUndefined()
+    expect(start).toHaveBeenCalled()
+    expect(stop).toHaveBeenCalled()
+
+    const lines = parseJsonLines(result.stdout)
+    expect(lines).toHaveLength(2)
+    expect(lines[0]).toEqual(expect.objectContaining({
+      data: expect.objectContaining({mode: 'sandbox', status: 'running'}),
+      success: true,
+    }))
+    expect(lines[1]).toEqual({
+      data: {status: 'stopped'},
+      success: true,
+    })
+  })
+
+  it('dev emits full-topology stop events when shutdown is requested', async () => {
+    const start = vi.fn().mockResolvedValue(undefined)
+    const stop = vi.fn().mockResolvedValue(undefined)
+
+    class TestDev extends Dev {
+      protected override createDockerManager(): DockerManager {
+        return {
+          composeDown: vi.fn(),
+          composePs: vi.fn(),
+          composeUp: vi.fn(),
+          ensureImage: vi.fn(),
+          isDockerAvailable: vi.fn(),
+        } as never
+      }
+
+      protected override createFullServer(): FullDevServer {
+        return {
+          start,
+          stop,
+        }
+      }
+
+      protected override createRunner(): ProcessRunner {
+        return createRunner()
+      }
+
+      protected override createSdk(): DamlSdk {
+        return createSdk()
+      }
+
+      protected override async loadProjectConfig(): Promise<CantonctlConfig> {
+        return createConfig()
+      }
+
+      protected override async waitForShutdown(
+        _json: boolean,
+        shutdown: () => Promise<void>,
+        _shutdownPromise: Promise<void>,
+      ): Promise<void> {
+        await shutdown()
+      }
+    }
+
+    const result = await captureOutput(() => TestDev.run(['--json', '--full'], {root: CLI_ROOT}))
+    expect(result.error).toBeUndefined()
+    expect(start).toHaveBeenCalled()
+    expect(stop).toHaveBeenCalled()
+
+    const lines = parseJsonLines(result.stdout)
+    expect(lines).toHaveLength(2)
+    expect(lines[0]).toEqual(expect.objectContaining({
+      data: expect.objectContaining({mode: 'full', status: 'running'}),
+      success: true,
+    }))
+    expect(lines[1]).toEqual({
+      data: {status: 'stopped'},
+      success: true,
+    })
   })
 
   it('serve emits connection metadata in json mode', async () => {

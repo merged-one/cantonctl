@@ -120,10 +120,7 @@ export default class Doctor extends Command {
             out.log('')
             out.info('Installing Daml SDK 3.4.11...')
             try {
-              execSync('curl -sSL https://get.daml.com/ | sh -s 3.4.11', {
-                stdio: 'inherit',
-                timeout: 300_000,
-              })
+              this.installSdk()
               out.success('Daml SDK installed. Run "cantonctl doctor" again to verify.')
             } catch {
               out.error('SDK installation failed. Install manually: curl -sSL https://get.daml.com/ | sh -s 3.4.11')
@@ -158,7 +155,7 @@ export default class Doctor extends Command {
   }
 
   private async confirm(message: string): Promise<boolean> {
-    const rl = readline.createInterface({input: process.stdin, output: process.stdout})
+    const rl = this.createReadlineInterface()
     return new Promise((resolve) => {
       rl.question(message, (answer) => {
         rl.close()
@@ -169,6 +166,17 @@ export default class Doctor extends Command {
 
   protected createRunner(): ProcessRunner {
     return createProcessRunner()
+  }
+
+  protected createReadlineInterface(): readline.Interface {
+    return readline.createInterface({input: process.stdin, output: process.stdout})
+  }
+
+  protected installSdk(): void {
+    execSync('curl -sSL https://get.daml.com/ | sh -s 3.4.11', {
+      stdio: 'inherit',
+      timeout: 300_000,
+    })
   }
 
   protected async loadProjectConfig(): Promise<CantonctlConfig> {

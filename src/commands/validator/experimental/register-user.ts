@@ -2,6 +2,20 @@ import {Args, Flags} from '@oclif/core'
 
 import {ExperimentalValidatorCommand} from './base.js'
 
+interface RegisterUserArgs {
+  network: string
+}
+
+interface RegisterUserFlags {
+  'create-party-if-missing': boolean
+  experimental: boolean
+  json: boolean
+  name: string
+  'party-id'?: string
+  token?: string
+  'validator-url'?: string
+}
+
 export default class ValidatorExperimentalRegisterUser extends ExperimentalValidatorCommand {
   static override args = {
     network: Args.string({
@@ -50,42 +64,66 @@ export default class ValidatorExperimentalRegisterUser extends ExperimentalValid
     const {args, flags} = await this.parse(ValidatorExperimentalRegisterUser)
     const out = this.outputFor(flags.json)
 
-    try {
-      this.requireExperimentalOptIn(flags.experimental, `validator experimental register-user ${args.network}`)
-      const context = await this.resolveExperimentalContext({
-        network: args.network,
-        token: flags.token,
-        validatorUrl: flags['validator-url'],
-      })
-      const warnings = [...context.warnings, ...context.adapter.metadata.warnings]
-      if (!flags.json) this.emitWarnings(out, warnings)
+    await runRegisterUserCommand({
+      emitWarnings: (warnings) => this.emitWarnings(out, warnings),
+      handleCommandError: (error: unknown) => this.handleCommandError(error, out),
+      out,
+      requireExperimentalOptIn: (enabled, commandPath) => this.requireExperimentalOptIn(enabled, commandPath),
+      resolveExperimentalContext: (options) => this.resolveExperimentalContext(options),
+    }, args, flags)
+  }
+}
 
-      const response = await context.adapter.onboardUser({
-        createPartyIfMissing: flags['create-party-if-missing'],
-        name: flags.name,
-        party_id: flags['party-id'],
-      })
+async function runRegisterUserCommand(
+  command: {
+    emitWarnings: (warnings: readonly string[]) => void
+    handleCommandError: (error: unknown) => never
+    out: ReturnType<ValidatorExperimentalRegisterUser['outputFor']>
+    requireExperimentalOptIn: (enabled: boolean, commandPath: string) => void
+    resolveExperimentalContext: (options: {
+      network: string
+      token?: string
+      validatorUrl?: string
+    }) => ReturnType<ValidatorExperimentalRegisterUser['resolveExperimentalContext']>
+  },
+  args: RegisterUserArgs,
+  flags: RegisterUserFlags,
+): Promise<void> {
+  try {
+    command.requireExperimentalOptIn(flags.experimental, `validator experimental register-user ${args.network}`)
+    const context = await command.resolveExperimentalContext({
+      network: args.network,
+      token: flags.token,
+      validatorUrl: flags['validator-url'],
+    })
+    const warnings = [...context.warnings, ...context.adapter.metadata.warnings]
+    if (!flags.json) command.emitWarnings(warnings)
 
-      if (!flags.json) {
-        out.log(`Network: ${context.network}`)
-        out.log(`Validator: ${context.validatorUrl}`)
-        out.log(`User: ${flags.name}`)
-        out.log(`Party ID: ${response.party_id}`)
-      }
+    const response = await context.adapter.onboardUser({
+      createPartyIfMissing: flags['create-party-if-missing'],
+      name: flags.name,
+      party_id: flags['party-id'],
+    })
 
-      out.result({
-        data: {
-          mode: context.authProfile.mode,
-          network: context.network,
-          partyId: response.party_id,
-          user: flags.name,
-          validatorUrl: context.validatorUrl,
-        },
-        success: true,
-        warnings: flags.json ? warnings : undefined,
-      })
-    } catch (error) {
-      this.handleCommandError(error, out)
+    if (!flags.json) {
+      command.out.log(`Network: ${context.network}`)
+      command.out.log(`Validator: ${context.validatorUrl}`)
+      command.out.log(`User: ${flags.name}`)
+      command.out.log(`Party ID: ${response.party_id}`)
     }
+
+    command.out.result({
+      data: {
+        mode: context.authProfile.mode,
+        network: context.network,
+        partyId: response.party_id,
+        user: flags.name,
+        validatorUrl: context.validatorUrl,
+      },
+      success: true,
+      warnings: flags.json ? warnings : undefined,
+    })
+  } catch (error) {
+    command.handleCommandError(error)
   }
 }

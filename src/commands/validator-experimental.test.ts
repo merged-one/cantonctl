@@ -205,6 +205,31 @@ describe('experimental validator command surface', () => {
     }))
   })
 
+  it('renders generated external-party topology in human mode', async () => {
+    class TestGenerate extends ValidatorExperimentalExternalPartyGenerate {
+      protected override requireExperimentalOptIn(): void {}
+      protected override async resolveExperimentalContext(): Promise<ExperimentalValidatorContext> {
+        return createContext()
+      }
+    }
+
+    const result = await captureOutput(() => TestGenerate.run([
+      'devnet',
+      '--experimental',
+      '--party-hint',
+      'alice',
+      '--public-key',
+      'deadbeef',
+    ], {root: CLI_ROOT}))
+    expect(result.error).toBeUndefined()
+    expect(result.stdout).toContain('Network: devnet')
+    expect(result.stdout).toContain('Validator: https://validator.example.com')
+    expect(result.stdout).toContain('Party ID: Alice::1220')
+    expect(result.stdout).toContain('Topology transactions: 1')
+    expect(result.stderr).toContain('profile-warning')
+    expect(result.stderr).toContain('adapter-warning')
+  })
+
   it('submits signed topology txs in json mode', async () => {
     class TestSubmit extends ValidatorExperimentalExternalPartySubmit {
       protected override requireExperimentalOptIn(): void {}
@@ -235,6 +260,30 @@ describe('experimental validator command surface', () => {
     }))
   })
 
+  it('renders submitted external-party topology in human mode', async () => {
+    class TestSubmit extends ValidatorExperimentalExternalPartySubmit {
+      protected override requireExperimentalOptIn(): void {}
+      protected override async resolveExperimentalContext(): Promise<ExperimentalValidatorContext> {
+        return createContext()
+      }
+    }
+
+    const result = await captureOutput(() => TestSubmit.run([
+      'devnet',
+      '--experimental',
+      '--public-key',
+      'deadbeef',
+      '--signed-topology-tx',
+      'tx-1:sig-1',
+    ], {root: CLI_ROOT}))
+    expect(result.error).toBeUndefined()
+    expect(result.stdout).toContain('Network: devnet')
+    expect(result.stdout).toContain('Validator: https://validator.example.com')
+    expect(result.stdout).toContain('Submitted topology for party: Alice::1220')
+    expect(result.stderr).toContain('profile-warning')
+    expect(result.stderr).toContain('adapter-warning')
+  })
+
   it('rejects malformed signed topology tx values', async () => {
     class TestSubmit extends ValidatorExperimentalExternalPartySubmit {
       protected override requireExperimentalOptIn(): void {}
@@ -258,6 +307,33 @@ describe('experimental validator command surface', () => {
     expect(json.success).toBe(false)
     expect(json.error).toEqual(expect.objectContaining({
       code: ErrorCode.CONFIG_SCHEMA_VIOLATION,
+    }))
+  })
+
+  it('rejects signed topology tx values missing either payload half', async () => {
+    class TestSubmit extends ValidatorExperimentalExternalPartySubmit {
+      protected override requireExperimentalOptIn(): void {}
+      protected override async resolveExperimentalContext(): Promise<ExperimentalValidatorContext> {
+        return createContext()
+      }
+    }
+
+    const result = await captureOutput(() => TestSubmit.run([
+      'devnet',
+      '--experimental',
+      '--json',
+      '--public-key',
+      'deadbeef',
+      '--signed-topology-tx',
+      'tx-1:',
+    ], {root: CLI_ROOT}))
+    expect(result.error).toBeDefined()
+
+    const json = parseJson(result.stdout)
+    expect(json.success).toBe(false)
+    expect(json.error).toEqual(expect.objectContaining({
+      code: ErrorCode.CONFIG_SCHEMA_VIOLATION,
+      suggestion: expect.stringContaining('must include both'),
     }))
   })
 
@@ -287,6 +363,31 @@ describe('experimental validator command surface', () => {
       partyId: 'Alice::1220',
       user: 'alice',
     }))
+  })
+
+  it('registers users in human mode', async () => {
+    class TestRegister extends ValidatorExperimentalRegisterUser {
+      protected override requireExperimentalOptIn(): void {}
+      protected override async resolveExperimentalContext(): Promise<ExperimentalValidatorContext> {
+        return createContext()
+      }
+    }
+
+    const result = await captureOutput(() => TestRegister.run([
+      'devnet',
+      '--experimental',
+      '--name',
+      'alice',
+      '--party-id',
+      'Alice::1220',
+    ], {root: CLI_ROOT}))
+    expect(result.error).toBeUndefined()
+    expect(result.stdout).toContain('Network: devnet')
+    expect(result.stdout).toContain('Validator: https://validator.example.com')
+    expect(result.stdout).toContain('User: alice')
+    expect(result.stdout).toContain('Party ID: Alice::1220')
+    expect(result.stderr).toContain('profile-warning')
+    expect(result.stderr).toContain('adapter-warning')
   })
 
   it('offboards users in human mode', async () => {
@@ -333,5 +434,27 @@ describe('experimental validator command surface', () => {
       contractId: 'proposal-1',
       userPartyId: 'Alice::1220',
     }))
+  })
+
+  it('renders setup-preapproval contracts in human mode', async () => {
+    class TestSetupPreapproval extends ValidatorExperimentalSetupPreapproval {
+      protected override requireExperimentalOptIn(): void {}
+      protected override async resolveExperimentalContext(): Promise<ExperimentalValidatorContext> {
+        return createContext()
+      }
+    }
+
+    const result = await captureOutput(() => TestSetupPreapproval.run([
+      'devnet',
+      '--experimental',
+      '--user-party-id',
+      'Alice::1220',
+    ], {root: CLI_ROOT}))
+    expect(result.error).toBeUndefined()
+    expect(result.stdout).toContain('Network: devnet')
+    expect(result.stdout).toContain('Validator: https://validator.example.com')
+    expect(result.stdout).toContain('Setup proposal contract: proposal-1')
+    expect(result.stderr).toContain('profile-warning')
+    expect(result.stderr).toContain('adapter-warning')
   })
 })

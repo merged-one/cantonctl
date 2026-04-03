@@ -2,6 +2,22 @@ import {Flags} from '@oclif/core'
 
 import {StableSurfaceCommand} from '../stable-surface-command.js'
 
+interface TokenTransferFlags {
+  amount: string
+  'execute-before'?: string
+  'input-holding-cid'?: string[]
+  'instrument-admin': string
+  'instrument-id': string
+  json: boolean
+  'ledger-url'?: string
+  profile?: string
+  receiver: string
+  'requested-at'?: string
+  sender: string
+  token?: string
+  'token-standard-url'?: string
+}
+
 export default class TokenTransfer extends StableSurfaceCommand {
   static override description = 'Transfer tokens via the stable token-standard transfer factory flow'
 
@@ -63,40 +79,60 @@ export default class TokenTransfer extends StableSurfaceCommand {
     const {flags} = await this.parse(TokenTransfer)
     const out = this.outputFor(flags.json)
 
-    try {
-      const profile = await this.maybeLoadProfileContext({
-        needsProfile: !flags['ledger-url'] || !flags['token-standard-url'],
-        profileName: flags.profile,
-      })
-      const result = await this.createStableSplice().transferToken({
-        amount: flags.amount,
-        executeBefore: flags['execute-before'],
-        inputHoldingCids: flags['input-holding-cid'],
-        instrumentAdmin: flags['instrument-admin'],
-        instrumentId: flags['instrument-id'],
-        ledgerBaseUrl: flags['ledger-url'],
-        profile,
-        receiver: flags.receiver,
-        requestedAt: flags['requested-at'],
-        sender: flags.sender,
-        token: flags.token,
-        tokenStandardBaseUrl: flags['token-standard-url'],
-      })
+    await runTokenTransferCommand({
+      createStableSplice: () => this.createStableSplice(),
+      handleCommandError: (error: unknown) => this.handleCommandError(error, out),
+      maybeLoadProfileContext: (options) => this.maybeLoadProfileContext(options),
+      out,
+    }, flags)
+  }
+}
 
-      if (flags.json) {
-        out.result({data: result, success: true, warnings: [...result.warnings]})
-        return
-      }
+async function runTokenTransferCommand(
+  command: {
+    createStableSplice: () => ReturnType<TokenTransfer['createStableSplice']>
+    handleCommandError: (error: unknown) => never
+    maybeLoadProfileContext: (options: {
+      needsProfile: boolean
+      profileName?: string
+    }) => ReturnType<TokenTransfer['maybeLoadProfileContext']>
+    out: ReturnType<TokenTransfer['outputFor']>
+  },
+  flags: TokenTransferFlags,
+): Promise<void> {
+  try {
+    const profile = await command.maybeLoadProfileContext({
+      needsProfile: !flags['ledger-url'] || !flags['token-standard-url'],
+      profileName: flags.profile,
+    })
+    const result = await command.createStableSplice().transferToken({
+      amount: flags.amount,
+      executeBefore: flags['execute-before'],
+      inputHoldingCids: flags['input-holding-cid'],
+      instrumentAdmin: flags['instrument-admin'],
+      instrumentId: flags['instrument-id'],
+      ledgerBaseUrl: flags['ledger-url'],
+      profile,
+      receiver: flags.receiver,
+      requestedAt: flags['requested-at'],
+      sender: flags.sender,
+      token: flags.token,
+      tokenStandardBaseUrl: flags['token-standard-url'],
+    })
 
-      out.log(`Transfer kind: ${result.transferKind}`)
-      out.log(`Factory: ${result.factoryId}`)
-      out.log(`Ledger endpoint: ${result.endpoint.ledger}`)
-      out.log(`Registry endpoint: ${result.endpoint.tokenStandard}`)
-      for (const warning of result.warnings) {
-        out.warn(warning)
-      }
-    } catch (error) {
-      this.handleCommandError(error, out)
+    if (flags.json) {
+      command.out.result({data: result, success: true, warnings: [...result.warnings]})
+      return
     }
+
+    command.out.log(`Transfer kind: ${result.transferKind}`)
+    command.out.log(`Factory: ${result.factoryId}`)
+    command.out.log(`Ledger endpoint: ${result.endpoint.ledger}`)
+    command.out.log(`Registry endpoint: ${result.endpoint.tokenStandard}`)
+    for (const warning of result.warnings) {
+      command.out.warn(warning)
+    }
+  } catch (error) {
+    command.handleCommandError(error)
   }
 }

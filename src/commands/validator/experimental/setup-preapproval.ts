@@ -2,6 +2,18 @@ import {Args, Flags} from '@oclif/core'
 
 import {ExperimentalValidatorCommand} from './base.js'
 
+interface SetupPreapprovalArgs {
+  network: string
+}
+
+interface SetupPreapprovalFlags {
+  experimental: boolean
+  json: boolean
+  token?: string
+  'user-party-id': string
+  'validator-url'?: string
+}
+
 export default class ValidatorExperimentalSetupPreapproval extends ExperimentalValidatorCommand {
   static override args = {
     network: Args.string({
@@ -43,39 +55,63 @@ export default class ValidatorExperimentalSetupPreapproval extends ExperimentalV
     const {args, flags} = await this.parse(ValidatorExperimentalSetupPreapproval)
     const out = this.outputFor(flags.json)
 
-    try {
-      this.requireExperimentalOptIn(flags.experimental, `validator experimental setup-preapproval ${args.network}`)
-      const context = await this.resolveExperimentalContext({
-        network: args.network,
-        token: flags.token,
-        validatorUrl: flags['validator-url'],
-      })
-      const warnings = [...context.warnings, ...context.adapter.metadata.warnings]
-      if (!flags.json) this.emitWarnings(out, warnings)
+    await runSetupPreapprovalCommand({
+      emitWarnings: (warnings) => this.emitWarnings(out, warnings),
+      handleCommandError: (error: unknown) => this.handleCommandError(error, out),
+      out,
+      requireExperimentalOptIn: (enabled, commandPath) => this.requireExperimentalOptIn(enabled, commandPath),
+      resolveExperimentalContext: (options) => this.resolveExperimentalContext(options),
+    }, args, flags)
+  }
+}
 
-      const response = await context.adapter.createExternalPartySetupProposal({
-        user_party_id: flags['user-party-id'],
-      })
+async function runSetupPreapprovalCommand(
+  command: {
+    emitWarnings: (warnings: readonly string[]) => void
+    handleCommandError: (error: unknown) => never
+    out: ReturnType<ValidatorExperimentalSetupPreapproval['outputFor']>
+    requireExperimentalOptIn: (enabled: boolean, commandPath: string) => void
+    resolveExperimentalContext: (options: {
+      network: string
+      token?: string
+      validatorUrl?: string
+    }) => ReturnType<ValidatorExperimentalSetupPreapproval['resolveExperimentalContext']>
+  },
+  args: SetupPreapprovalArgs,
+  flags: SetupPreapprovalFlags,
+): Promise<void> {
+  try {
+    command.requireExperimentalOptIn(flags.experimental, `validator experimental setup-preapproval ${args.network}`)
+    const context = await command.resolveExperimentalContext({
+      network: args.network,
+      token: flags.token,
+      validatorUrl: flags['validator-url'],
+    })
+    const warnings = [...context.warnings, ...context.adapter.metadata.warnings]
+    if (!flags.json) command.emitWarnings(warnings)
 
-      if (!flags.json) {
-        out.log(`Network: ${context.network}`)
-        out.log(`Validator: ${context.validatorUrl}`)
-        out.log(`Setup proposal contract: ${response.contract_id}`)
-      }
+    const response = await context.adapter.createExternalPartySetupProposal({
+      user_party_id: flags['user-party-id'],
+    })
 
-      out.result({
-        data: {
-          contractId: response.contract_id,
-          mode: context.authProfile.mode,
-          network: context.network,
-          userPartyId: flags['user-party-id'],
-          validatorUrl: context.validatorUrl,
-        },
-        success: true,
-        warnings: flags.json ? warnings : undefined,
-      })
-    } catch (error) {
-      this.handleCommandError(error, out)
+    if (!flags.json) {
+      command.out.log(`Network: ${context.network}`)
+      command.out.log(`Validator: ${context.validatorUrl}`)
+      command.out.log(`Setup proposal contract: ${response.contract_id}`)
     }
+
+    command.out.result({
+      data: {
+        contractId: response.contract_id,
+        mode: context.authProfile.mode,
+        network: context.network,
+        userPartyId: flags['user-party-id'],
+        validatorUrl: context.validatorUrl,
+      },
+      success: true,
+      warnings: flags.json ? warnings : undefined,
+    })
+  } catch (error) {
+    command.handleCommandError(error)
   }
 }
