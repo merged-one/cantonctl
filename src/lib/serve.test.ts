@@ -1,11 +1,26 @@
+import * as fs from 'node:fs/promises'
 import * as net from 'node:net'
+import * as os from 'node:os'
+import * as path from 'node:path'
 
 import {afterEach, describe, expect, it, vi} from 'vitest'
 
 import type {CantonctlConfig} from './config.js'
 import type {CompatibilityReport} from './compat.js'
-import {createServeServer, type LedgerClientLike, type ServeServer} from './serve.js'
+import {
+  buildFileTree,
+  createServeServer,
+  defaultProbeService,
+  getLedgerBaseUrl,
+  isAuthError,
+  parsePort,
+  scanDamlTemplates,
+  type LedgerClientLike,
+  type ServeServer,
+  usesLocalLedgerRuntime,
+} from './serve.js'
 import type {StableSplice} from './splice-public.js'
+import {CantonctlError, ErrorCode} from './errors.js'
 
 function createConfig(): CantonctlConfig {
   return {
@@ -109,12 +124,73 @@ function createLedgerClientFactory() {
 interface TestContext {
   createStableSplice: ReturnType<typeof vi.fn<() => StableSplice>>
   port: number
+  projectDir: string
   server: ServeServer
 }
 
-async function startServer(): Promise<TestContext> {
+async function createProjectDir(options: {multiNode?: boolean} = {}): Promise<string> {
+  const projectDir = await fs.mkdtemp(path.join(os.tmpdir(), 'serve-test-'))
+  await fs.mkdir(path.join(projectDir, 'daml'), {recursive: true})
+  await fs.mkdir(path.join(projectDir, '.daml', 'dist'), {recursive: true})
+  await fs.writeFile(path.join(projectDir, 'README.md'), '# Serve Test\n', 'utf8')
+  await fs.writeFile(path.join(projectDir, 'daml.yaml'), 'name: serve-test\nversion: 1.2.3\n', 'utf8')
+  await fs.writeFile(
+    path.join(projectDir, 'daml', 'Model.daml'),
+    [
+      'module Model where',
+      '',
+      'template Iou',
+      '  with',
+      '    issuer : Party',
+      '    owner : Party',
+      '  where',
+      '    signatory issuer, owner',
+      '',
+    ].join('\n'),
+    'utf8',
+  )
+  await fs.writeFile(path.join(projectDir, '.daml', 'dist', 'serve-test.dar'), 'fake-dar', 'utf8')
+
+  if (options.multiNode) {
+    await fs.mkdir(path.join(projectDir, '.cantonctl'), {recursive: true})
+    await fs.writeFile(path.join(projectDir, '.cantonctl', 'canton.conf'), 'participants = []\n', 'utf8')
+    await fs.writeFile(
+      path.join(projectDir, '.cantonctl', 'docker-compose.yml'),
+      [
+        'services:',
+        '  canton:',
+        '    ports:',
+        '      - "10001:10001"',
+        '      - "10002:10002"',
+        '    healthcheck:',
+        '      test: ["CMD-SHELL", "curl -sf http://localhost:7575/v2/version && curl -sf http://localhost:7576/v2/version"]',
+        '',
+      ].join('\n'),
+      'utf8',
+    )
+  }
+
+  return projectDir
+}
+
+async function request(
+  port: number,
+  reqPath: string,
+  options: RequestInit = {},
+): Promise<Response> {
+  return fetch(`http://127.0.0.1:${port}${reqPath}`, {
+    headers: {
+      'Content-Type': 'application/json',
+      ...(options.headers ?? {}),
+    },
+    ...options,
+  })
+}
+
+async function startServer(options: {multiNode?: boolean} = {}): Promise<TestContext> {
   const config = createConfig()
   const port = await getFreePort()
+  const projectDir = await createProjectDir(options)
   const remoteProfile = config.profiles?.['splice-devnet']
   if (!remoteProfile) {
     throw new Error('Expected splice-devnet profile in test config')
@@ -146,7 +222,12 @@ async function startServer(): Promise<TestContext> {
 
   const server = createServeServer({
     builder: {
-      build: vi.fn(async () => ({cached: true, darPath: null, durationMs: 1, success: true})),
+      build: vi.fn(async () => ({
+        cached: false,
+        darPath: path.join(projectDir, '.daml', 'dist', 'serve-test.dar'),
+        durationMs: 1,
+        success: true,
+      })),
       buildWithCodegen: vi.fn(async () => ({cached: true, darPath: null, durationMs: 1, success: true})),
       watch: vi.fn(),
     },
@@ -194,25 +275,113 @@ async function startServer(): Promise<TestContext> {
 
   await server.start({
     ledgerUrl: 'http://localhost:7575',
-    multiNode: false,
+    multiNode: options.multiNode ? true : false,
     port,
-    projectDir: '/tmp/serve-test',
+    projectDir,
   })
 
-  return {createStableSplice, port, server}
+  return {createStableSplice, port, projectDir, server}
 }
 
 let activeServer: ServeServer | null = null
+let activeProjectDir: string | null = null
 
 afterEach(async () => {
   await activeServer?.stop()
   activeServer = null
+  if (activeProjectDir) {
+    await fs.rm(activeProjectDir, {force: true, recursive: true})
+    activeProjectDir = null
+  }
 })
 
 describe('createServeServer', () => {
+  it('builds filtered file trees and scans templates directly', async () => {
+    const projectDir = await createProjectDir()
+    activeProjectDir = projectDir
+
+    await fs.mkdir(path.join(projectDir, 'node_modules', 'ignored'), {recursive: true})
+    await fs.mkdir(path.join(projectDir, '.hidden'), {recursive: true})
+    await fs.writeFile(path.join(projectDir, 'node_modules', 'ignored', 'skip.txt'), 'skip', 'utf8')
+    await fs.writeFile(path.join(projectDir, '.hidden', 'skip.txt'), 'skip', 'utf8')
+
+    const files = await buildFileTree(projectDir, projectDir)
+    const templates = await scanDamlTemplates(projectDir)
+
+    expect(files).toEqual(expect.arrayContaining([
+      expect.objectContaining({name: 'README.md', type: 'file'}),
+      expect.objectContaining({name: 'daml', type: 'directory'}),
+    ]))
+    expect(files).not.toEqual(expect.arrayContaining([
+      expect.objectContaining({name: '.hidden'}),
+      expect.objectContaining({name: 'node_modules'}),
+    ]))
+    expect(templates).toEqual([
+      expect.objectContaining({name: 'Iou'}),
+    ])
+  })
+
+  it('computes profile ledger URLs, port parsing, and local-runtime heuristics', () => {
+    const sandboxProfile = createConfig().profiles!.sandbox
+    const remoteProfile = createConfig().profiles!['splice-devnet']
+
+    expect(getLedgerBaseUrl(sandboxProfile, 'http://fallback:7575')).toBe('http://localhost:7575')
+    expect(getLedgerBaseUrl(remoteProfile, 'http://fallback:7575')).toBe('https://ledger.example.com')
+    expect(parsePort('https://ledger.example.com', 7575)).toBe(443)
+    expect(parsePort('not-a-url', 7575)).toBe(7575)
+    expect(usesLocalLedgerRuntime(sandboxProfile, false)).toBe(true)
+    expect(usesLocalLedgerRuntime({
+      ...sandboxProfile,
+      kind: 'canton-multi',
+      services: {...sandboxProfile.services, ledger: {url: 'https://ledger.example.com'}},
+    }, true)).toBe(true)
+    expect(usesLocalLedgerRuntime(remoteProfile, false)).toBe(false)
+  })
+
+  it('probes services and distinguishes auth failures', async () => {
+    const fetchSpy = vi.spyOn(globalThis, 'fetch')
+    fetchSpy.mockResolvedValueOnce(new Response('', {status: 401}))
+    fetchSpy.mockResolvedValueOnce(new Response('', {status: 503}))
+    fetchSpy.mockRejectedValueOnce(new Error('network down'))
+
+    await expect(defaultProbeService({
+      endpoint: 'https://service.example.com',
+      service: 'validator',
+    })).resolves.toEqual({
+      detail: 'HTTP 401',
+      endpoint: 'https://service.example.com',
+      healthy: false,
+      status: 'auth-required',
+    })
+    await expect(defaultProbeService({
+      endpoint: 'https://service.example.com',
+      service: 'validator',
+    })).resolves.toEqual({
+      detail: 'HTTP 503',
+      endpoint: 'https://service.example.com',
+      healthy: false,
+      status: 'unreachable',
+    })
+    await expect(defaultProbeService({
+      endpoint: 'https://service.example.com',
+      service: 'validator',
+    })).resolves.toEqual({
+      detail: 'network down',
+      endpoint: 'https://service.example.com',
+      healthy: false,
+      status: 'unreachable',
+    })
+    expect(isAuthError(new CantonctlError(ErrorCode.LEDGER_AUTH_EXPIRED))).toBe(true)
+    expect(isAuthError(new CantonctlError(ErrorCode.SERVICE_AUTH_FAILED))).toBe(true)
+    expect(isAuthError(new Error('boom'))).toBe(false)
+
+    fetchSpy.mockRestore()
+  })
+
   it('lists the active profile and supports runtime profile switching', async () => {
     const context = await startServer()
     activeServer = context.server
+    activeProjectDir = context.projectDir
 
     const initial = await requestJson<{
       profiles: Array<{isDefault: boolean; kind: string; name: string; services: string[]}>
@@ -247,6 +416,7 @@ describe('createServeServer', () => {
   it('returns profile service health and compatibility summaries for the active profile', async () => {
     const context = await startServer()
     activeServer = context.server
+    activeProjectDir = context.projectDir
 
     await requestJson(context.port, '/api/profile', {
       body: JSON.stringify({profile: 'splice-devnet'}),
@@ -297,6 +467,7 @@ describe('createServeServer', () => {
   it('routes stable Splice reads through the active profile', async () => {
     const context = await startServer()
     activeServer = context.server
+    activeProjectDir = context.projectDir
 
     await requestJson(context.port, '/api/profile', {
       body: JSON.stringify({profile: 'splice-devnet'}),
@@ -327,5 +498,205 @@ describe('createServeServer', () => {
     expect(updates.warnings).toEqual(['scan:splice-devnet'])
 
     expect(context.createStableSplice).toHaveBeenCalled()
+  })
+
+  it('exposes project files, project metadata, and parsed templates', async () => {
+    const context = await startServer()
+    activeServer = context.server
+    activeProjectDir = context.projectDir
+
+    const project = await requestJson<{
+      name: string
+      projectDir: string
+      version: string
+    }>(context.port, '/api/project')
+    expect(project).toEqual({
+      name: 'serve-test',
+      projectDir: context.projectDir,
+      version: '1.2.3',
+    })
+
+    const files = await requestJson<Array<{children?: Array<{name: string}>; name: string; type: string}>>(
+      context.port,
+      '/api/files',
+    )
+    expect(files).toEqual(expect.arrayContaining([
+      expect.objectContaining({name: 'README.md', type: 'file'}),
+      expect.objectContaining({
+        name: 'daml',
+        type: 'directory',
+        children: [expect.objectContaining({name: 'Model.daml'})],
+      }),
+    ]))
+
+    const readme = await requestJson<{content: string; path: string}>(context.port, '/api/files/README.md')
+    expect(readme).toEqual({content: '# Serve Test\n', path: 'README.md'})
+
+    const templates = await requestJson<{templates: Array<{name: string}>}>(context.port, '/api/templates')
+    expect(templates.templates).toEqual([expect.objectContaining({name: 'Iou'})])
+
+    const template = await requestJson<{name: string}>(context.port, '/api/templates/Iou')
+    expect(template.name).toBe('Iou')
+  })
+
+  it('updates files, rebuilds daml sources, and returns 404 for missing assets', async () => {
+    const context = await startServer()
+    activeServer = context.server
+    activeProjectDir = context.projectDir
+
+    const savedReadme = await requestJson<{path: string; saved: boolean}>(context.port, '/api/files/README.md', {
+      body: JSON.stringify({content: '# Updated\n'}),
+      method: 'PUT',
+    })
+    expect(savedReadme).toEqual({path: 'README.md', saved: true})
+
+    const savedDaml = await requestJson<{path: string; saved: boolean}>(context.port, '/api/files/daml/Model.daml', {
+      body: JSON.stringify({content: 'module Model where\n\ntemplate Loan with lender : Party where signatory lender\n'}),
+      method: 'PUT',
+    })
+    expect(savedDaml).toEqual({path: 'daml/Model.daml', saved: true})
+
+    const missingFile = await request(context.port, '/api/files/missing.txt')
+    expect(missingFile.status).toBe(404)
+
+    const missingTemplate = await request(context.port, '/api/templates/Missing')
+    expect(missingTemplate.status).toBe(404)
+  })
+
+  it('serves health summaries and reports command failures', async () => {
+    const context = await startServer()
+    activeServer = context.server
+    activeProjectDir = context.projectDir
+
+    const health = await requestJson<{
+      services: Array<{name: string; status: string}>
+      healthy: boolean
+      profile: {experimental: boolean; kind: string; name: string}
+      version?: string
+    }>(context.port, '/api/health')
+    expect(health).toEqual(expect.objectContaining({
+      healthy: true,
+      profile: {experimental: false, kind: 'sandbox', name: 'sandbox'},
+      services: [expect.objectContaining({name: 'ledger', status: 'healthy'})],
+      version: '3.4.11',
+    }))
+
+    const failedProfileSwitch = await request(context.port, '/api/profile', {
+      body: JSON.stringify({profile: 'missing'}),
+      method: 'PUT',
+    })
+    expect(failedProfileSwitch.status).toBe(400)
+
+    const badCommand = await request(context.port, '/api/commands', {
+      body: JSON.stringify({actAs: [], commands: []}),
+      method: 'POST',
+    })
+    expect(badCommand.status).toBe(200)
+  })
+
+  it('supports party, contract, command, build, and test routes', async () => {
+    const context = await startServer()
+    activeServer = context.server
+    activeProjectDir = context.projectDir
+
+    await requestJson(context.port, '/api/profile', {
+      body: JSON.stringify({profile: 'splice-devnet'}),
+      method: 'PUT',
+    })
+
+    const parties = await requestJson<{partyDetails: Array<{party: string}>}>(context.port, '/api/parties')
+    expect(parties.partyDetails).toEqual([
+      expect.objectContaining({party: 'Alice'}),
+    ])
+
+    const allocated = await requestJson<{partyDetails: {party: string}}>(context.port, '/api/parties', {
+      body: JSON.stringify({displayName: 'Bob'}),
+      method: 'POST',
+    })
+    expect(allocated.partyDetails).toEqual({party: 'Alice'})
+
+    const contracts = await requestJson<{activeContracts: Array<{contractId: string}>}>(
+      context.port,
+      '/api/contracts?party=Alice',
+    )
+    expect(contracts.activeContracts).toEqual([
+      expect.objectContaining({contractId: 'remote-contract-1'}),
+    ])
+
+    const multiContracts = await requestJson<{contracts: Record<string, Array<{contractId: string}>>}>(
+      context.port,
+      '/api/contracts/multi?parties=Alice,Bob',
+    )
+    expect(multiContracts.contracts.Alice).toEqual([
+      expect.objectContaining({contractId: 'remote-contract-1'}),
+    ])
+    expect(multiContracts.contracts.Bob).toEqual([
+      expect.objectContaining({contractId: 'remote-contract-1'}),
+    ])
+
+    const submitted = await requestJson<{updateId?: string}>(context.port, '/api/commands', {
+      body: JSON.stringify({actAs: ['Alice'], commands: []}),
+      method: 'POST',
+    })
+    expect(submitted.updateId).toBe('tx-1')
+
+    const build = await requestJson<{darPath: string}>(context.port, '/api/build', {method: 'POST'})
+    expect(build.darPath).toContain('.daml/dist/serve-test.dar')
+
+    const testResult = await requestJson<{passed: boolean}>(context.port, '/api/test', {method: 'POST'})
+    expect(testResult.passed).toBe(true)
+  })
+
+  it('reports auto-detected multi-node topology status', async () => {
+    const context = await startServer({multiNode: true})
+    activeServer = context.server
+    activeProjectDir = context.projectDir
+
+    const topology = await requestJson<{
+      mode: string
+      participants: Array<{name: string; port: number}>
+      synchronizer: {admin: number; publicApi: number} | null
+    }>(context.port, '/api/topology')
+    expect(topology.mode).toBe('multi')
+    expect(topology.participants).toEqual([
+      {name: 'participant1', port: 7575},
+      {name: 'participant2', port: 7576},
+    ])
+    expect(topology.synchronizer).toEqual({admin: 10001, publicApi: 10002})
+
+    const status = await requestJson<{
+      participants: Array<{contractCount: number; healthy: boolean; name: string}>
+    }>(context.port, '/api/topology/status')
+    expect(status.participants).toEqual([
+      expect.objectContaining({contractCount: 0, healthy: true, name: 'participant1'}),
+      expect.objectContaining({contractCount: 0, healthy: true, name: 'participant2'}),
+    ])
+  })
+
+  it('validates route inputs and blocks path traversal', async () => {
+    const context = await startServer()
+    activeServer = context.server
+    activeProjectDir = context.projectDir
+
+    const badProfile = await request(context.port, '/api/profile', {
+      body: JSON.stringify({name: ''}),
+      method: 'PUT',
+    })
+    expect(badProfile.status).toBe(400)
+
+    const missingHoldingsParty = await request(context.port, '/api/splice/token-holdings')
+    expect(missingHoldingsParty.status).toBe(400)
+
+    const partialAfter = await request(context.port, '/api/splice/scan/updates?afterMigrationId=7')
+    expect(partialAfter.status).toBe(400)
+
+    const missingContractsParty = await request(context.port, '/api/contracts')
+    expect(missingContractsParty.status).toBe(400)
+
+    const missingMultiParties = await request(context.port, '/api/contracts/multi')
+    expect(missingMultiParties.status).toBe(400)
+
+    const traversal = await request(context.port, '/api/files/%2E%2E%2Fsecret.txt')
+    expect(traversal.status).toBe(403)
   })
 })

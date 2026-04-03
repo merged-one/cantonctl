@@ -7,12 +7,12 @@
 
 import {Command, Flags} from '@oclif/core'
 
-import {createDamlSdk} from '../lib/daml.js'
+import {createDamlSdk, type DamlSdk} from '../lib/daml.js'
 import {CantonctlError} from '../lib/errors.js'
 import {createOutput} from '../lib/output.js'
-import {createPluginHookManager} from '../lib/plugin-hooks.js'
-import {createProcessRunner} from '../lib/process-runner.js'
-import {createTestRunner} from '../lib/test-runner.js'
+import {createPluginHookManager, type PluginHookManager} from '../lib/plugin-hooks.js'
+import {createProcessRunner, type ProcessRunner} from '../lib/process-runner.js'
+import {createTestRunner, type TestRunner} from '../lib/test-runner.js'
 
 export default class Test extends Command {
   static override description = 'Run Daml Script tests with structured output'
@@ -39,16 +39,17 @@ export default class Test extends Command {
     const out = createOutput({json: flags.json})
 
     try {
-      const runner = createProcessRunner()
-      const sdk = createDamlSdk({runner})
-      const hooks = createPluginHookManager()
-      const testRunner = createTestRunner({hooks, sdk})
+      const runner = this.createRunner()
+      const sdk = this.createSdk(runner)
+      const hooks = this.createHooks()
+      const testRunner = this.createTestRunner({hooks, sdk})
+      const projectDir = this.getProjectDir()
 
       out.info('Running Daml Script tests...')
 
       const result = await testRunner.run({
         filter: flags.filter,
-        projectDir: process.cwd(),
+        projectDir,
       })
 
       if (result.passed) {
@@ -85,5 +86,25 @@ export default class Test extends Command {
 
       throw err
     }
+  }
+
+  protected createHooks(): PluginHookManager {
+    return createPluginHookManager()
+  }
+
+  protected createRunner(): ProcessRunner {
+    return createProcessRunner()
+  }
+
+  protected createSdk(runner: ProcessRunner): DamlSdk {
+    return createDamlSdk({runner})
+  }
+
+  protected createTestRunner(deps: {hooks: PluginHookManager; sdk: DamlSdk}): TestRunner {
+    return createTestRunner({hooks: deps.hooks, sdk: deps.sdk})
+  }
+
+  protected getProjectDir(): string {
+    return process.cwd()
   }
 }

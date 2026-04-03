@@ -7,7 +7,7 @@
 
 import {Args, Command, Flags} from '@oclif/core'
 
-import {createCredentialStore} from '../../lib/credential-store.js'
+import {createCredentialStore, type CredentialStore, type KeychainBackend} from '../../lib/credential-store.js'
 import {CantonctlError} from '../../lib/errors.js'
 import {createBackendWithFallback} from '../../lib/keytar-backend.js'
 import {createOutput} from '../../lib/output.js'
@@ -39,8 +39,8 @@ export default class AuthLogout extends Command {
     const out = createOutput({json: flags.json})
 
     try {
-      const {backend} = await createBackendWithFallback()
-      const store = createCredentialStore({backend})
+      const {backend} = await this.createBackend()
+      const store = this.createCredentialStore(backend)
       const removed = await store.remove(args.network)
 
       if (removed) {
@@ -64,5 +64,13 @@ export default class AuthLogout extends Command {
 
       throw err
     }
+  }
+
+  protected async createBackend(): Promise<{backend: KeychainBackend}> {
+    return createBackendWithFallback()
+  }
+
+  protected createCredentialStore(backend: KeychainBackend): CredentialStore {
+    return createCredentialStore({backend})
   }
 }

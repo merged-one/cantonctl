@@ -108,6 +108,15 @@ describe('CredentialStore', () => {
         token: 'stored-token',
       })
     })
+
+    it('falls back to the raw stored string when the envelope has no token field', async () => {
+      const {backend, store} = createTestStore()
+      backend.getPassword.mockResolvedValue('{"mode":"bearer-token"}')
+
+      await expect(store.retrieveRecord('devnet')).resolves.toEqual({
+        token: '{"mode":"bearer-token"}',
+      })
+    })
   })
 
   describe('resolve()', () => {
@@ -148,6 +157,16 @@ describe('CredentialStore', () => {
 
       const token = await store.resolve('my-network')
       expect(token).toBe('hyphen-token')
+    })
+
+    it('defaults to process.env when no env override map is provided', async () => {
+      process.env.CANTONCTL_JWT_DEVNET = 'process-token'
+      try {
+        const store = createCredentialStore({backend: createMockBackend()})
+        await expect(store.resolve('devnet')).resolves.toBe('process-token')
+      } finally {
+        delete process.env.CANTONCTL_JWT_DEVNET
+      }
     })
   })
 

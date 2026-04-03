@@ -7,11 +7,27 @@ on:
     branches: [main]
 
 jobs:
+  ci-manifest:
+    runs-on: ubuntu-latest
+    outputs:
+      canton-image: ${{ steps.manifest.outputs.cantonImage }}
+      daml-sdk-version: ${{ steps.manifest.outputs.damlSdkVersion }}
+      java-version: ${{ steps.manifest.outputs.javaVersion }}
+      main-extra-suites: ${{ steps.manifest.outputs.mainExtraSuites }}
+      pr-suites: ${{ steps.manifest.outputs.prSuites }}
+      unit-node-versions: ${{ steps.manifest.outputs.unitNodeVersions }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: manifest
+        run: node scripts/ci/github-manifest.js
+
   unit-tests:
+    needs: ci-manifest
     runs-on: ubuntu-latest
     strategy:
+      fail-fast: false
       matrix:
-        node-version: [18, 20, 22]
+        node-version: ${{ fromJSON(needs.ci-manifest.outputs.unit-node-versions) }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -20,25 +36,17 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run build
-      - run: npm test
+      - run: node scripts/ci/run.js suite unit
 
-  generated-spec-tests:
-    name: generated-specs
+  required-suites:
+    needs: ci-manifest
     runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: npm
-      - run: npm ci
-      - run: npm run build
-      - name: Verify tracked generated specs
-        run: npm run test:generated-specs
-
-  e2e-sdk-tests:
-    name: e2e-tests (sdk-core)
-    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        suite: ${{ fromJSON(needs.ci-manifest.outputs.pr-suites) }}
+    name: suite (${{ matrix.suite.label }})
+    timeout-minutes: ${{ matrix.suite.timeoutMinutes }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -46,194 +54,109 @@ jobs:
           node-version: 22
           cache: npm
       - uses: actions/setup-java@v4
+        if: ${{ matrix.suite.needsJava }}
         with:
           distribution: temurin
-          java-version: 21
+          java-version: ${{ needs.ci-manifest.outputs.java-version }}
       - name: Cache Daml SDK
+        if: ${{ matrix.suite.needsDaml }}
         uses: actions/cache@v4
         with:
           path: ~/.daml
-          key: daml-sdk-3.4.11-${{ runner.os }}
+          key: daml-sdk-${{ needs.ci-manifest.outputs.daml-sdk-version }}-${{ runner.os }}
       - name: Install Daml SDK
+        if: ${{ matrix.suite.needsDaml }}
         run: |
           if [ ! -f "$HOME/.daml/bin/daml" ]; then
-            curl -sSL https://get.daml.com/ | sh -s 3.4.11
+            curl -sSL https://get.daml.com/ | sh -s ${{ needs.ci-manifest.outputs.daml-sdk-version }}
           fi
-          echo "$HOME/.daml/bin" >> $GITHUB_PATH
-      - run: npm ci
-      - run: npm run build
-      - name: Run SDK E2E tests
-        run: npm run test:e2e:sdk
-        timeout-minutes: 10
-
-  e2e-stable-public-tests:
-    name: e2e-tests (stable-public)
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: npm
-      - run: npm ci
-      - run: npm run build
-      - name: Run stable/public E2E tests
-        run: npm run test:e2e:stable-public
-        timeout-minutes: 10
-
-  e2e-sandbox-tests:
-    name: e2e-tests (sandbox)
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: npm
-      - uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: 21
-      - name: Cache Daml SDK
-        uses: actions/cache@v4
-        with:
-          path: ~/.daml
-          key: daml-sdk-3.4.11-${{ runner.os }}
-      - name: Install Daml SDK
-        run: |
-          if [ ! -f "$HOME/.daml/bin/daml" ]; then
-            curl -sSL https://get.daml.com/ | sh -s 3.4.11
-          fi
-          echo "$HOME/.daml/bin" >> $GITHUB_PATH
-      - run: npm ci
-      - run: npm run build
-      - name: Run sandbox E2E tests
-        run: npm run test:e2e:sandbox
-        timeout-minutes: 10
-        env:
-          JAVA_OPTS: -Xms512M -Xmx2G -XX:+UseSerialGC
-      - name: Upload test artifacts on failure
-        if: failure()
-        uses: actions/upload-artifact@v4
-        with:
-          name: sandbox-e2e-failure-logs
-          path: |
-            /tmp/cantonctl-e2e-*/
-          retention-days: 7
-
-  e2e-experimental-tests:
-    name: e2e-tests (experimental)
-    runs-on: ubuntu-latest
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: npm
-      - run: npm ci
-      - run: npm run build
-      - name: Run experimental E2E tests
-        run: npm run test:e2e:experimental
-        timeout-minutes: 10
-
-  e2e-docker-tests:
-    name: e2e-tests (docker)
-    runs-on: ubuntu-latest
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: npm
-      - uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: 21
-      - name: Cache Daml SDK
-        uses: actions/cache@v4
-        with:
-          path: ~/.daml
-          key: daml-sdk-3.4.11-${{ runner.os }}
-      - name: Install Daml SDK
-        run: |
-          if [ ! -f "$HOME/.daml/bin/daml" ]; then
-            curl -sSL https://get.daml.com/ | sh -s 3.4.11
-          fi
-          echo "$HOME/.daml/bin" >> $GITHUB_PATH
+          echo "$HOME/.daml/bin" >> "$GITHUB_PATH"
       - name: Cache Canton Docker image
+        if: ${{ matrix.suite.needsDocker }}
         uses: actions/cache@v4
         with:
           path: /tmp/docker-images
-          key: docker-canton-0.5.3-${{ runner.os }}
+          key: docker-canton-${{ needs.ci-manifest.outputs.canton-image }}-${{ runner.os }}
       - name: Load or pull Canton Docker image
+        if: ${{ matrix.suite.needsDocker }}
         run: |
           if [ -f /tmp/docker-images/canton.tar ]; then
-            echo "Loading cached Canton image..."
             docker load < /tmp/docker-images/canton.tar
           else
-            echo "Pulling Canton image..."
-            docker pull ghcr.io/digital-asset/decentralized-canton-sync/docker/canton:0.5.3
+            docker pull ${{ needs.ci-manifest.outputs.canton-image }}
             mkdir -p /tmp/docker-images
-            docker save ghcr.io/digital-asset/decentralized-canton-sync/docker/canton:0.5.3 > /tmp/docker-images/canton.tar
+            docker save ${{ needs.ci-manifest.outputs.canton-image }} > /tmp/docker-images/canton.tar
           fi
       - run: npm ci
       - run: npm run build
-      - name: Run Docker E2E tests
-        run: npm run test:e2e:docker
-        timeout-minutes: 10
-      - name: Cleanup Docker resources
-        if: always()
-        run: |
-          # Find and tear down any compose projects left behind
-          for f in $(find /tmp/cantonctl-e2e-dev-full-* -name 'docker-compose.yml' 2>/dev/null); do
-            docker compose -f "$f" down --remove-orphans --timeout 10 2>/dev/null || true
-          done
-          # Kill any remaining canton containers by name pattern
-          docker ps -q --filter "name=canton" | xargs -r docker stop 2>/dev/null || true
-          docker ps -aq --filter "name=canton" | xargs -r docker rm -f 2>/dev/null || true
-      - name: Upload test artifacts on failure
+      - name: Run suite
+        env:
+          JAVA_OPTS: -Xms512M -Xmx2G -XX:+UseSerialGC
+        run: node scripts/ci/run.js suite ${{ matrix.suite.id }}
+      - name: Upload suite artifacts on failure
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: docker-e2e-failure-logs
+          name: ${{ matrix.suite.id }}-failure-logs
           path: |
+            /tmp/cantonctl-e2e-*/
             /tmp/cantonctl-e2e-dev-full-*/
           retention-days: 7
 
-  # Single gate job — the only required status check in branch protection.
-  # Experimental and heavy post-merge jobs stay visible but out of the GA gate.
+  main-extra-suites:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: ci-manifest
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        suite: ${{ fromJSON(needs.ci-manifest.outputs.main-extra-suites) }}
+    name: extra-suite (${{ matrix.suite.label }})
+    timeout-minutes: ${{ matrix.suite.timeoutMinutes }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: actions/setup-java@v4
+        if: ${{ matrix.suite.needsJava }}
+        with:
+          distribution: temurin
+          java-version: ${{ needs.ci-manifest.outputs.java-version }}
+      - name: Cache Daml SDK
+        if: ${{ matrix.suite.needsDaml }}
+        uses: actions/cache@v4
+        with:
+          path: ~/.daml
+          key: daml-sdk-${{ needs.ci-manifest.outputs.daml-sdk-version }}-${{ runner.os }}
+      - name: Install Daml SDK
+        if: ${{ matrix.suite.needsDaml }}
+        run: |
+          if [ ! -f "$HOME/.daml/bin/daml" ]; then
+            curl -sSL https://get.daml.com/ | sh -s ${{ needs.ci-manifest.outputs.daml-sdk-version }}
+          fi
+          echo "$HOME/.daml/bin" >> "$GITHUB_PATH"
+      - run: npm ci
+      - run: npm run build
+      - name: Run suite
+        run: node scripts/ci/run.js suite ${{ matrix.suite.id }}
+
   all-green:
     if: always()
-    needs: [unit-tests, generated-spec-tests, e2e-sdk-tests, e2e-stable-public-tests, e2e-sandbox-tests]
+    needs: [unit-tests, required-suites]
     runs-on: ubuntu-latest
     steps:
       - name: Verify required jobs passed
         run: |
           echo "unit-tests: ${{ needs.unit-tests.result }}"
-          echo "generated-spec-tests: ${{ needs.generated-spec-tests.result }}"
-          echo "e2e-sdk-tests: ${{ needs.e2e-sdk-tests.result }}"
-          echo "e2e-stable-public-tests: ${{ needs.e2e-stable-public-tests.result }}"
-          echo "e2e-sandbox-tests: ${{ needs.e2e-sandbox-tests.result }}"
+          echo "required-suites: ${{ needs.required-suites.result }}"
           if [[ "${{ needs.unit-tests.result }}" != "success" ]]; then
             echo "::error::unit-tests failed"
             exit 1
           fi
-          if [[ "${{ needs.generated-spec-tests.result }}" != "success" ]]; then
-            echo "::error::generated-spec-tests failed"
-            exit 1
-          fi
-          if [[ "${{ needs.e2e-sdk-tests.result }}" != "success" ]]; then
-            echo "::error::e2e-sdk-tests failed"
-            exit 1
-          fi
-          if [[ "${{ needs.e2e-stable-public-tests.result }}" != "success" ]]; then
-            echo "::error::e2e-stable-public-tests failed"
-            exit 1
-          fi
-          if [[ "${{ needs.e2e-sandbox-tests.result }}" != "success" ]]; then
-            echo "::error::e2e-sandbox-tests failed"
+          if [[ "${{ needs.required-suites.result }}" != "success" ]]; then
+            echo "::error::required-suites failed"
             exit 1
           fi
           echo "All required checks passed"

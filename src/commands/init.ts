@@ -20,7 +20,7 @@ import * as path from 'node:path'
 
 import {CantonctlError, ErrorCode} from '../lib/errors.js'
 import {createOutput} from '../lib/output.js'
-import {createProcessRunner} from '../lib/process-runner.js'
+import {createProcessRunner, type ProcessRunner} from '../lib/process-runner.js'
 import {
   TEMPLATES,
   TEMPLATE_CHOICES,
@@ -103,10 +103,10 @@ export default class Init extends Command {
           })
         }
 
-        const projectDir = path.resolve(projectName)
+        const projectDir = this.resolveProjectDir(projectName)
         out.info(`Scaffolding from community template: ${flags.from}`)
-        const runner = createProcessRunner()
-        await scaffoldFromUrl({dir: projectDir, runner, url: flags.from})
+        const runner = this.createRunner()
+        await this.scaffoldFromUrl({dir: projectDir, runner, url: flags.from})
         out.success(`Project created from ${flags.from}`)
         out.result({data: {from: flags.from, projectDir}, success: true})
         return
@@ -121,17 +121,17 @@ export default class Init extends Command {
         template = flags.template as Template
       } else {
         // Interactive mode
-        const answers = await promptInteractive()
+        const answers = await this.promptInteractive()
         projectName = answers.name
         template = answers.template
       }
 
-      const projectDir = path.resolve(projectName)
+      const projectDir = this.resolveProjectDir(projectName)
 
       out.info(`Creating new Canton project: ${projectName}`)
       out.info(`Template: ${template}`)
 
-      const result = scaffoldProject({dir: projectDir, name: projectName, template})
+      const result = this.scaffoldProject({dir: projectDir, name: projectName, template})
 
       out.success(`Project created at ./${projectName}`)
       out.log('')
@@ -160,5 +160,25 @@ export default class Init extends Command {
 
       throw err
     }
+  }
+
+  protected createRunner(): ProcessRunner {
+    return createProcessRunner()
+  }
+
+  protected async promptInteractive(): Promise<{name: string; template: Template}> {
+    return promptInteractive()
+  }
+
+  protected resolveProjectDir(projectName: string): string {
+    return path.resolve(projectName)
+  }
+
+  protected scaffoldFromUrl(options: {dir: string; runner: ProcessRunner; url: string}): Promise<void> {
+    return scaffoldFromUrl(options)
+  }
+
+  protected scaffoldProject(options: {dir: string; name: string; template: Template}) {
+    return scaffoldProject(options)
   }
 }

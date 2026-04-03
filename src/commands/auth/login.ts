@@ -9,11 +9,11 @@ import {Args, Command, Flags} from '@oclif/core'
 import * as readline from 'node:readline'
 
 import {AUTH_PROFILE_MODES, isAuthProfileMode, resolveAuthProfile} from '../../lib/auth-profile.js'
-import {loadConfig} from '../../lib/config.js'
-import {createCredentialStore} from '../../lib/credential-store.js'
+import {type CantonctlConfig, loadConfig} from '../../lib/config.js'
+import {createCredentialStore, type CredentialStore, type KeychainBackend} from '../../lib/credential-store.js'
 import {CantonctlError, ErrorCode} from '../../lib/errors.js'
 import {createBackendWithFallback} from '../../lib/keytar-backend.js'
-import {createLedgerClient} from '../../lib/ledger-client.js'
+import {createLedgerClient, type LedgerClient} from '../../lib/ledger-client.js'
 import {createOutput} from '../../lib/output.js'
 
 export default class AuthLogin extends Command {
@@ -58,7 +58,7 @@ export default class AuthLogin extends Command {
     const networkName = args.network
 
     try {
-      const config = await loadConfig()
+      const config = await this.loadCommandConfig()
       const network = config.networks?.[networkName]
       const authProfile = resolveAuthProfile({
         config,
@@ -128,7 +128,7 @@ export default class AuthLogin extends Command {
       // Validate connectivity with the token
       const jsonApiPort = network['json-api-port'] ?? 7575
       const baseUrl = network.url ?? `http://localhost:${jsonApiPort}`
-      const client = createLedgerClient({baseUrl, token: token!})
+      const client = this.createLedgerClient({baseUrl, token: token!})
 
       out.info(`Verifying connectivity to ${networkName}...`)
       try {
@@ -140,7 +140,7 @@ export default class AuthLogin extends Command {
       }
 
       // Store in credential store (OS keychain with in-memory fallback)
-      const {backend, isKeychain} = await createBackendWithFallback()
+      const {backend, isKeychain} = await this.createBackend()
       const source = isKeychain ? 'keychain' : 'memory'
       if (!isKeychain) {
         const warning = 'OS keychain unavailable — credentials stored in memory only (install keytar for persistence)'
@@ -148,7 +148,7 @@ export default class AuthLogin extends Command {
         out.warn(warning)
       }
 
-      const store = createCredentialStore({backend})
+      const store = this.createCredentialStore(backend)
       await store.store(networkName, token!, {mode: authProfile.mode})
 
       out.success(`Authenticated with ${networkName}`)
@@ -175,8 +175,28 @@ export default class AuthLogin extends Command {
     }
   }
 
+  protected createCredentialStore(backend: KeychainBackend): CredentialStore {
+    return createCredentialStore({backend})
+  }
+
+  protected async createBackend(): Promise<{backend: KeychainBackend; isKeychain: boolean}> {
+    return createBackendWithFallback()
+  }
+
+  protected createLedgerClient(options: {baseUrl: string; token: string}): LedgerClient {
+    return createLedgerClient(options)
+  }
+
+  protected async loadCommandConfig(): Promise<CantonctlConfig> {
+    return loadConfig()
+  }
+
+  protected createReadlineInterface(options: readline.ReadLineOptions): readline.Interface {
+    return readline.createInterface(options)
+  }
+
   private async promptForToken(mode: string): Promise<string | undefined> {
-    const rl = readline.createInterface({
+    const rl = this.createReadlineInterface({
       input: process.stdin,
       output: process.stderr,
     })

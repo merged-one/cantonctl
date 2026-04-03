@@ -41,4 +41,32 @@ describe('createExternalSigningAdapter', () => {
     })
     expect(adapter.metadata.warnings.join(' ')).toContain('experimental')
   })
+
+  it('covers execute submission variants against the ledger interactive API', async () => {
+    const fetch = vi
+      .fn()
+      .mockResolvedValueOnce(createJsonResponse({submissionId: 'submit-1'}))
+      .mockResolvedValueOnce(createJsonResponse({completionOffset: '42'}))
+      .mockResolvedValueOnce(createJsonResponse({transaction: {transactionId: 'tx-1'}}))
+
+    const adapter = createExternalSigningAdapter({
+      baseUrl: 'https://ledger.example.com',
+      fetch,
+      token: 'jwt-token',
+    })
+
+    await expect(adapter.executeSubmission({signedTransaction: 'signed'} as never)).resolves.toEqual({
+      submissionId: 'submit-1',
+    })
+    await expect(adapter.executeSubmissionAndWait({signedTransaction: 'signed'} as never)).resolves.toEqual({
+      completionOffset: '42',
+    })
+    await expect(adapter.executeSubmissionAndWaitForTransaction({signedTransaction: 'signed'} as never)).resolves.toEqual({
+      transaction: {transactionId: 'tx-1'},
+    })
+
+    expect(String(fetch.mock.calls[0][0])).toContain('/v2/interactive-submission/execute')
+    expect(String(fetch.mock.calls[1][0])).toContain('/v2/interactive-submission/executeAndWait')
+    expect(String(fetch.mock.calls[2][0])).toContain('/v2/interactive-submission/executeAndWaitForTransaction')
+  })
 })

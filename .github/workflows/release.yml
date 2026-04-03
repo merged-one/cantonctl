@@ -9,9 +9,45 @@ permissions:
   contents: write
 
 jobs:
-  # Run the stable/public release gate before publishing
-  test:
+  ci-manifest:
     runs-on: ubuntu-latest
+    outputs:
+      canton-image: ${{ steps.manifest.outputs.cantonImage }}
+      daml-sdk-version: ${{ steps.manifest.outputs.damlSdkVersion }}
+      java-version: ${{ steps.manifest.outputs.javaVersion }}
+      release-suites: ${{ steps.manifest.outputs.releaseSuites }}
+      unit-node-versions: ${{ steps.manifest.outputs.unitNodeVersions }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: manifest
+        run: node scripts/ci/github-manifest.js
+
+  unit-tests:
+    needs: ci-manifest
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        node-version: ${{ fromJSON(needs.ci-manifest.outputs.unit-node-versions) }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      - run: node scripts/ci/run.js suite unit
+
+  release-suites:
+    needs: ci-manifest
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        suite: ${{ fromJSON(needs.ci-manifest.outputs.release-suites) }}
+    name: release-suite (${{ matrix.suite.label }})
+    timeout-minutes: ${{ matrix.suite.timeoutMinutes }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -19,28 +55,66 @@ jobs:
           node-version: 22
           cache: npm
       - uses: actions/setup-java@v4
+        if: ${{ matrix.suite.needsJava }}
         with:
           distribution: temurin
-          java-version: 21
+          java-version: ${{ needs.ci-manifest.outputs.java-version }}
       - name: Cache Daml SDK
+        if: ${{ matrix.suite.needsDaml }}
         uses: actions/cache@v4
         with:
           path: ~/.daml
-          key: daml-sdk-3.4.11-${{ runner.os }}
+          key: daml-sdk-${{ needs.ci-manifest.outputs.daml-sdk-version }}-${{ runner.os }}
       - name: Install Daml SDK
+        if: ${{ matrix.suite.needsDaml }}
         run: |
           if [ ! -f "$HOME/.daml/bin/daml" ]; then
-            curl -sSL https://get.daml.com/ | sh -s 3.4.11
+            curl -sSL https://get.daml.com/ | sh -s ${{ needs.ci-manifest.outputs.daml-sdk-version }}
           fi
-          echo "$HOME/.daml/bin" >> $GITHUB_PATH
+          echo "$HOME/.daml/bin" >> "$GITHUB_PATH"
+      - name: Cache Canton Docker image
+        if: ${{ matrix.suite.needsDocker }}
+        uses: actions/cache@v4
+        with:
+          path: /tmp/docker-images
+          key: docker-canton-${{ needs.ci-manifest.outputs.canton-image }}-${{ runner.os }}
+      - name: Load or pull Canton Docker image
+        if: ${{ matrix.suite.needsDocker }}
+        run: |
+          if [ -f /tmp/docker-images/canton.tar ]; then
+            docker load < /tmp/docker-images/canton.tar
+          else
+            docker pull ${{ needs.ci-manifest.outputs.canton-image }}
+            mkdir -p /tmp/docker-images
+            docker save ${{ needs.ci-manifest.outputs.canton-image }} > /tmp/docker-images/canton.tar
+          fi
       - run: npm ci
       - run: npm run build
-      - run: npm test
-      - run: npm run test:generated-specs
-      - run: npm run test:e2e
+      - name: Run suite
+        env:
+          JAVA_OPTS: -Xms512M -Xmx2G -XX:+UseSerialGC
+        run: node scripts/ci/run.js suite ${{ matrix.suite.id }}
+
+  release-gate:
+    needs: [unit-tests, release-suites]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify release gate passed
+        run: |
+          echo "unit-tests: ${{ needs.unit-tests.result }}"
+          echo "release-suites: ${{ needs.release-suites.result }}"
+          if [[ "${{ needs.unit-tests.result }}" != "success" ]]; then
+            echo "::error::unit-tests failed"
+            exit 1
+          fi
+          if [[ "${{ needs.release-suites.result }}" != "success" ]]; then
+            echo "::error::release-suites failed"
+            exit 1
+          fi
+          echo "Release gate passed"
 
   publish:
-    needs: test
+    needs: release-gate
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -52,7 +126,6 @@ jobs:
       - run: npm ci
       - run: npm run build
 
-      # Build playground frontend and bundle into dist/
       - name: Build playground UI
         run: |
           cd playground
@@ -61,7 +134,6 @@ jobs:
           mkdir -p ../dist/playground
           cp -r dist/* ../dist/playground/
 
-      # Verify the version in package.json matches the tag
       - name: Verify version matches tag
         run: |
           PKG_VERSION="v$(node -p "require('./package.json').version")"
@@ -75,7 +147,6 @@ jobs:
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
-      # Create a GitHub Release from the tag
       - name: Create GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}

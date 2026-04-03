@@ -9,11 +9,13 @@ import * as os from 'node:os'
 import * as path from 'node:path'
 import {execSync} from 'node:child_process'
 
+import {CI_TOOLCHAIN} from '../../scripts/ci/manifest.js'
+
 /** Pinned SDK version used across all E2E tests. */
-export const SDK_VERSION = '3.4.11'
+export const SDK_VERSION = CI_TOOLCHAIN.damlSdkVersion
 
 /** Canton Docker image used by `dev --full` and Docker E2E tests. */
-export const CANTON_IMAGE = 'ghcr.io/digital-asset/decentralized-canton-sync/docker/canton:0.5.3'
+export const CANTON_IMAGE = CI_TOOLCHAIN.cantonImage
 
 /**
  * Build a PATH that includes the Daml SDK and Java 21.

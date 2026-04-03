@@ -8,15 +8,15 @@
 import {Command, Flags} from '@oclif/core'
 import * as readline from 'node:readline'
 
-import {loadConfig} from '../lib/config.js'
+import {type CantonctlConfig, loadConfig} from '../lib/config.js'
 import {CantonctlError, ErrorCode} from '../lib/errors.js'
 import {createSandboxToken} from '../lib/jwt.js'
-import {createLedgerClient} from '../lib/ledger-client.js'
+import {createLedgerClient, type LedgerClient} from '../lib/ledger-client.js'
 import {createOutput} from '../lib/output.js'
-import {createCompleter} from '../lib/repl/completer.js'
-import {createExecutor} from '../lib/repl/executor.js'
+import {createCompleter, type Completer} from '../lib/repl/completer.js'
+import {createExecutor, type Executor} from '../lib/repl/executor.js'
 import {parseCommand} from '../lib/repl/parser.js'
-import {detectTopology} from '../lib/topology.js'
+import {detectTopology, type GeneratedTopology} from '../lib/topology.js'
 
 export default class Console extends Command {
   static override description = 'Interactive REPL connected to a Canton node'
@@ -44,7 +44,7 @@ export default class Console extends Command {
     const out = createOutput({json: false})
 
     try {
-      const config = await loadConfig()
+      const config = await this.loadProjectConfig()
       const networkName = flags.network
       const network = config.networks?.[networkName]
 
@@ -58,7 +58,7 @@ export default class Console extends Command {
       // Detect multi-node topology
       let baseUrl: string
       let connectionLabel: string
-      const topology = networkName === 'local' ? await detectTopology(process.cwd()) : null
+      const topology = networkName === 'local' ? await this.detectProjectTopology(this.getProjectDir()) : null
 
       if (topology && topology.participants.length > 0) {
         const participantName = flags.participant ?? topology.participants[0].name
@@ -81,16 +81,16 @@ export default class Console extends Command {
 
       // Auth
       const partyNames = config.parties?.map(p => p.name) ?? []
-      const token = await createSandboxToken({
+      const token = await this.createSandboxToken({
         actAs: partyNames.length > 0 ? partyNames : ['admin'],
         admin: true,
         applicationId: 'cantonctl',
         readAs: partyNames,
       })
 
-      const client = createLedgerClient({baseUrl, token})
-      const completer = createCompleter({partyNames})
-      const executor = createExecutor({
+      const client = this.createLedgerClient({baseUrl, token})
+      const completer = this.createCompleter({partyNames})
+      const executor = this.createExecutor({
         client,
         defaultParty: partyNames[0],
         output: out,
@@ -103,7 +103,7 @@ export default class Console extends Command {
       out.log('')
 
       // REPL loop
-      const rl = readline.createInterface({
+      const rl = this.createReadlineInterface({
         completer: (line: string) => completer.complete(line),
         input: process.stdin,
         output: process.stdout,
@@ -141,5 +141,37 @@ export default class Console extends Command {
 
       throw err
     }
+  }
+
+  protected createCompleter(options: {partyNames: string[]}): Completer {
+    return createCompleter(options)
+  }
+
+  protected createExecutor(options: Parameters<typeof createExecutor>[0]): Executor {
+    return createExecutor(options)
+  }
+
+  protected createLedgerClient(options: {baseUrl: string; token: string}): LedgerClient {
+    return createLedgerClient(options)
+  }
+
+  protected createReadlineInterface(options: readline.ReadLineOptions): readline.Interface {
+    return readline.createInterface(options)
+  }
+
+  protected async createSandboxToken(options: Parameters<typeof createSandboxToken>[0]): Promise<string> {
+    return createSandboxToken(options)
+  }
+
+  protected async detectProjectTopology(projectDir: string): Promise<GeneratedTopology | null> {
+    return detectTopology(projectDir)
+  }
+
+  protected getProjectDir(): string {
+    return process.cwd()
+  }
+
+  protected async loadProjectConfig(): Promise<CantonctlConfig> {
+    return loadConfig()
   }
 }

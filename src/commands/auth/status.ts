@@ -8,8 +8,8 @@
 import {Command, Flags} from '@oclif/core'
 
 import {resolveAuthProfile} from '../../lib/auth-profile.js'
-import {loadConfig} from '../../lib/config.js'
-import {createCredentialStore} from '../../lib/credential-store.js'
+import {type CantonctlConfig, loadConfig} from '../../lib/config.js'
+import {createCredentialStore, type CredentialStore, type KeychainBackend} from '../../lib/credential-store.js'
 import {CantonctlError} from '../../lib/errors.js'
 import {createBackendWithFallback} from '../../lib/keytar-backend.js'
 import {createOutput} from '../../lib/output.js'
@@ -34,11 +34,11 @@ export default class AuthStatus extends Command {
     const out = createOutput({json: flags.json})
 
     try {
-      const config = await loadConfig()
+      const config = await this.loadCommandConfig()
       const networks = Object.keys(config.networks ?? {})
 
-      const {backend, isKeychain} = await createBackendWithFallback()
-      const store = createCredentialStore({backend, env: process.env})
+      const {backend, isKeychain} = await this.createBackend()
+      const store = this.createCredentialStore(backend)
       const storedSource = isKeychain ? 'keychain' : 'memory'
 
       const statuses: Array<{
@@ -116,5 +116,17 @@ export default class AuthStatus extends Command {
 
       throw err
     }
+  }
+
+  protected async createBackend(): Promise<{backend: KeychainBackend; isKeychain: boolean}> {
+    return createBackendWithFallback()
+  }
+
+  protected createCredentialStore(backend: KeychainBackend): CredentialStore {
+    return createCredentialStore({backend, env: process.env})
+  }
+
+  protected async loadCommandConfig(): Promise<CantonctlConfig> {
+    return loadConfig()
   }
 }

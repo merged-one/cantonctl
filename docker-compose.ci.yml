@@ -27,3 +27,5 @@ services:
     tmpfs:
       # Sandbox writes temp files — tmpfs avoids slow overlay writes
       - /tmp:exec,size=2G
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock

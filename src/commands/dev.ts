@@ -20,50 +20,20 @@ import * as net from 'node:net'
 import * as path from 'node:path'
 import {watch} from 'chokidar'
 
-import {loadConfig} from '../lib/config.js'
-import {createDamlSdk} from '../lib/daml.js'
+import {type CantonctlConfig, loadConfig} from '../lib/config.js'
+import {createDamlSdk, type DamlSdk} from '../lib/daml.js'
 import {createFullDevServer, type FullDevServer} from '../lib/dev-server-full.js'
 import {createDevServer, type DevServer} from '../lib/dev-server.js'
-import {createDockerManager} from '../lib/docker.js'
+import {createDockerManager, type DockerManager} from '../lib/docker.js'
 import {CantonctlError} from '../lib/errors.js'
 import {createSandboxToken} from '../lib/jwt.js'
 import {createLedgerClient} from '../lib/ledger-client.js'
 import {createOutput} from '../lib/output.js'
-import {createProcessRunner} from '../lib/process-runner.js'
+import {createProcessRunner, type ProcessRunner} from '../lib/process-runner.js'
+import {findDarFile, isTcpPortInUse} from '../lib/runtime-support.js'
 
 /** Default Canton Docker image for --full mode. */
 const DEFAULT_CANTON_IMAGE = 'ghcr.io/digital-asset/decentralized-canton-sync/docker/canton:0.5.3'
-
-/**
- * Check if a TCP port is currently in use.
- * Attempts to create a server on the port; if it fails with EADDRINUSE, the port is occupied.
- */
-function isPortInUse(port: number): Promise<boolean> {
-  return new Promise((resolve) => {
-    const server = net.createServer()
-    server.once('error', (err: NodeJS.ErrnoException) => {
-      resolve(err.code === 'EADDRINUSE')
-    })
-    server.once('listening', () => {
-      server.close(() => resolve(false))
-    })
-    server.listen(port, '127.0.0.1')
-  })
-}
-
-/**
- * Find the first .dar file in a directory.
- * Returns the absolute path or null if no .dar files exist.
- */
-async function findDarFile(dir: string): Promise<string | null> {
-  try {
-    const entries = await fs.promises.readdir(dir)
-    const darFile = entries.find(e => e.endsWith('.dar'))
-    return darFile ? path.join(dir, darFile) : null
-  } catch {
-    return null
-  }
-}
 
 export default class Dev extends Command {
   static override description = 'Start a local Canton development environment with hot-reload'
@@ -111,8 +81,10 @@ export default class Dev extends Command {
     let server: DevServer | FullDevServer | null = null
 
     try {
-      const config = await loadConfig()
-      const runner = createProcessRunner()
+      const config = await this.loadProjectConfig()
+      const runner = this.createRunner()
+      const sdk = this.createSdk(runner)
+      const projectDir = this.getProjectDir()
 
       // Handle graceful shutdown without process.exit
       const controller = new AbortController()
@@ -132,47 +104,23 @@ export default class Dev extends Command {
         shutdownPromiseResolve?.()
       }
 
-      process.on('SIGINT', shutdown)
-      process.on('SIGTERM', shutdown)
-
-      // Handle keyboard input ([q] to quit) — only in TTY mode
-      if (process.stdin.isTTY && !flags.json) {
-        process.stdin.setRawMode(true)
-        process.stdin.resume()
-        process.stdin.on('data', async (data) => {
-          const key = data.toString()
-          if (key === 'q' || key === '\u0003') {
-            await shutdown()
-          }
-        })
-      }
-
       if (flags.full) {
         // --full mode: multi-node Docker topology
-        const sdk = createDamlSdk({runner})
-        const docker = createDockerManager({output: out, runner})
+        const docker = this.createDockerManager(out, runner)
 
-        const fullServer = createFullDevServer({
-          build: async (projectDir: string) => { await sdk.build({projectDir}) },
+        const fullServer = this.createFullServer({
           cantonImage: flags['canton-image'],
           config,
-          createClient: createLedgerClient,
-          createToken: createSandboxToken,
           docker,
-          findDarFile,
-          mkdir: (dir: string) => fs.promises.mkdir(dir, {recursive: true}).then(() => undefined),
           output: out,
-          readFile: (p: string) => fs.promises.readFile(p),
-          rmdir: (dir: string) => fs.promises.rm(dir, {force: true, recursive: true}),
-          watch: (paths, opts) => watch(paths, opts),
-          writeFile: (p: string, content: string) => fs.promises.writeFile(p, content, 'utf8'),
+          sdk,
         })
 
         server = fullServer
 
         await fullServer.start({
           basePort: flags['base-port'],
-          projectDir: process.cwd(),
+          projectDir,
           signal: controller.signal,
         })
 
@@ -188,24 +136,14 @@ export default class Dev extends Command {
         }
       } else {
         // Default: sandbox mode
-        const sandboxServer = createDevServer({
-          config,
-          createClient: createLedgerClient,
-          createToken: createSandboxToken,
-          findDarFile,
-          isPortInUse,
-          output: out,
-          readFile: (p) => fs.promises.readFile(p),
-          sdk: createDamlSdk({runner}),
-          watch: (paths, opts) => watch(paths, opts),
-        })
+        const sandboxServer = this.createSandboxServer({config, output: out, sdk})
 
         server = sandboxServer
 
         await sandboxServer.start({
           jsonApiPort: flags['json-api-port'],
           port: flags.port,
-          projectDir: process.cwd(),
+          projectDir,
           signal: controller.signal,
         })
 
@@ -224,13 +162,8 @@ export default class Dev extends Command {
       }
 
       // Keep process alive until shutdown signal
-      await shutdownPromise
-
-      // Clean up stdin
-      if (process.stdin.isTTY && !flags.json) {
-        process.stdin.setRawMode(false)
-        process.stdin.pause()
-      }
+      await this.waitForShutdown(flags.json, shutdown, shutdownPromise)
+      this.cleanupInteractiveInput(flags.json)
     } catch (err) {
       // Ensure cleanup on error
       if (server) {
@@ -247,5 +180,100 @@ export default class Dev extends Command {
 
       throw err
     }
+  }
+
+  protected cleanupInteractiveInput(json: boolean): void {
+    if (process.stdin.isTTY && !json) {
+      process.stdin.setRawMode(false)
+      process.stdin.pause()
+    }
+  }
+
+  protected createDockerManager(out: ReturnType<typeof createOutput>, runner: ProcessRunner): DockerManager {
+    return createDockerManager({output: out, runner})
+  }
+
+  protected createFullServer(deps: {
+    cantonImage: string
+    config: CantonctlConfig
+    docker: DockerManager
+    output: ReturnType<typeof createOutput>
+    sdk: DamlSdk
+  }): FullDevServer {
+    return createFullDevServer({
+      build: async (projectDir: string) => { await deps.sdk.build({projectDir}) },
+      cantonImage: deps.cantonImage,
+      config: deps.config,
+      createClient: createLedgerClient,
+      createToken: createSandboxToken,
+      docker: deps.docker,
+      findDarFile,
+      mkdir: (dir: string) => fs.promises.mkdir(dir, {recursive: true}).then(() => undefined),
+      output: deps.output,
+      readFile: (p: string) => fs.promises.readFile(p),
+      rmdir: (dir: string) => fs.promises.rm(dir, {force: true, recursive: true}),
+      watch: (paths, opts) => watch(paths, opts),
+      writeFile: (p: string, content: string) => fs.promises.writeFile(p, content, 'utf8'),
+    })
+  }
+
+  protected createRunner(): ProcessRunner {
+    return createProcessRunner()
+  }
+
+  protected createSandboxServer(deps: {
+    config: CantonctlConfig
+    output: ReturnType<typeof createOutput>
+    sdk: DamlSdk
+  }): DevServer {
+    return createDevServer({
+      config: deps.config,
+      createClient: createLedgerClient,
+      createToken: createSandboxToken,
+      findDarFile,
+      isPortInUse: (port: number) => this.isManagedPortInUse(port),
+      output: deps.output,
+      readFile: (p) => fs.promises.readFile(p),
+      sdk: deps.sdk,
+      watch: (paths, opts) => watch(paths, opts),
+    })
+  }
+
+  protected createSdk(runner: ProcessRunner): DamlSdk {
+    return createDamlSdk({runner})
+  }
+
+  protected getProjectDir(): string {
+    return process.cwd()
+  }
+
+  protected isManagedPortInUse(port: number): Promise<boolean> {
+    return isTcpPortInUse(port)
+  }
+
+  protected async loadProjectConfig(): Promise<CantonctlConfig> {
+    return loadConfig()
+  }
+
+  protected async waitForShutdown(
+    json: boolean,
+    shutdown: () => Promise<void>,
+    shutdownPromise: Promise<void>,
+  ): Promise<void> {
+    process.on('SIGINT', shutdown)
+    process.on('SIGTERM', shutdown)
+
+    if (process.stdin.isTTY && !json) {
+      process.stdin.setRawMode(true)
+      process.stdin.resume()
+      process.stdin.on('data', async (data) => {
+        const key = data.toString()
+        if (key === 'q' || key === '\u0003') {
+          await shutdown()
+        }
+      })
+    }
+
+    await shutdownPromise
   }
 }

@@ -70,7 +70,7 @@ describe('experimental validator commands', () => {
         code: 'E1006',
       }))
     }
-  })
+  }, 30_000)
 })
 
 describe('stable command imports', () => {

@@ -6,12 +6,14 @@ This file defines conventions for AI agents working on cantonctl, whether as a s
 
 cantonctl is an institutional CLI toolchain for Canton Network (enterprise blockchain, $6T+ tokenized assets). It provides Hardhat/Foundry-equivalent DX for Daml smart contracts.
 
-**Current state:** Phases 0-7 complete. 371 unit + 72 E2E = 443 tests. 98.18% statement coverage.
+**Current state:** Phases 0-7 complete. Test inventory, CI suite membership, and toolchain versions are defined in `scripts/ci/manifest.js` and should not be duplicated here as hard-coded counts.
 
 ```bash
-npm test          # 371 unit tests
-npm run test:e2e  # 72 E2E tests (requires Daml SDK + Java 21)
+npm test          # Unit project
+npm run test:e2e  # PR-required E2E suites (SDK + stable/public + sandbox + playground + docker)
 npm run build     # TypeScript compilation
+npm run ci        # Authoritative Docker-based PR parity run
+npm run ci:all    # All CI suites, including experimental
 ```
 
 ## Architecture (Non-Negotiable)
@@ -148,7 +150,7 @@ const foo = createFoo({
 Authoritative docs flow top-down. Update in this order:
 
 ```
-CLAUDE.md              ← Source of truth (test counts, module list, phase status)
+CLAUDE.md              ← Source of truth (module list, phase status, CI/test workflow)
   → README.md          ← Mirrors CLAUDE.md metrics for humans
   → docs/V1_PLAN.md    ← Roadmap and acceptance criteria
   → AGENTS.md          ← This file (multi-agent conventions)
@@ -168,8 +170,9 @@ ADRs (`docs/adr/`) are immutable once accepted. Reference docs (`docs/reference/
 
 Before every commit:
 
-- [ ] `npm test` — all 371 unit tests pass
+- [ ] `npm test` — unit project passes
+- [ ] `npm run ci` — Docker parity suite passes when the change affects CI-covered behavior
 - [ ] `npm run build` — TypeScript compiles clean
 - [ ] No machine-specific paths (use `os.homedir()`, `path.delimiter`)
-- [ ] Doc metrics match actual test counts
+- [ ] Doc references point to `scripts/ci/manifest.js` instead of stale hard-coded test counts
 - [ ] New modules added to CLAUDE.md key modules table

@@ -2,6 +2,7 @@ import {captureOutput} from '@oclif/test'
 import {describe, expect, it, vi} from 'vitest'
 
 import type {CantonctlConfig} from '../lib/config.js'
+import {ErrorCode} from '../lib/errors.js'
 import type {ProcessRunner} from '../lib/process-runner.js'
 import CompatCheck from './compat/check.js'
 import CodegenSync from './codegen/sync.js'
@@ -72,6 +73,19 @@ describe('profile command surface', () => {
     }))
   })
 
+  it('renders the profile list in human mode', async () => {
+    class TestProfilesList extends ProfilesList {
+      protected override async loadProjectConfig(): Promise<CantonctlConfig> {
+        return createConfig()
+      }
+    }
+
+    const result = await captureOutput(() => TestProfilesList.run([], {root: CLI_ROOT}))
+    expect(result.error).toBeUndefined()
+    expect(result.stdout).toContain('sandbox')
+    expect(result.stdout).toContain('splice-devnet')
+  })
+
   it('shows a single profile with kind and services', async () => {
     const config = createConfig()
 
@@ -99,6 +113,20 @@ describe('profile command surface', () => {
     }))
   })
 
+  it('renders a single profile in human mode', async () => {
+    class TestProfilesShow extends ProfilesShow {
+      protected override async loadProjectConfig(): Promise<CantonctlConfig> {
+        return createConfig()
+      }
+    }
+
+    const result = await captureOutput(() => TestProfilesShow.run(['splice-devnet'], {root: CLI_ROOT}))
+    expect(result.error).toBeUndefined()
+    expect(result.stdout).toContain('Profile: splice-devnet')
+    expect(result.stdout).toContain('scanProxy')
+    expect(result.stdout).toContain('validator')
+  })
+
   it('validates all profiles without changing the profile shape', async () => {
     const config = createConfig()
 
@@ -120,6 +148,18 @@ describe('profile command surface', () => {
         expect.objectContaining({kind: 'remote-validator', name: 'splice-devnet', valid: true}),
       ],
     }))
+  })
+
+  it('renders validation summaries in human mode', async () => {
+    class TestProfilesValidate extends ProfilesValidate {
+      protected override async loadProjectConfig(): Promise<CantonctlConfig> {
+        return createConfig()
+      }
+    }
+
+    const result = await captureOutput(() => TestProfilesValidate.run([], {root: CLI_ROOT}))
+    expect(result.error).toBeUndefined()
+    expect(result.stdout).toContain('Validated 2 profiles')
   })
 
   it('runs manifest-driven codegen sync steps in order', async () => {
@@ -164,6 +204,36 @@ describe('profile command surface', () => {
     }))
   })
 
+  it('reports failing codegen steps in json mode', async () => {
+    const runner: ProcessRunner = {
+      run: vi
+        .fn()
+        .mockResolvedValueOnce({exitCode: 0, stderr: '', stdout: 'ok'})
+        .mockResolvedValueOnce({exitCode: 1, stderr: 'boom', stdout: ''}),
+      spawn: vi.fn(),
+      which: vi.fn(),
+    }
+
+    class TestCodegenSync extends CodegenSync {
+      protected override createRunner(): ProcessRunner {
+        return runner
+      }
+
+      protected override getCommandCwd(): string {
+        return '/repo'
+      }
+    }
+
+    const result = await captureOutput(() => TestCodegenSync.run(['--json'], {root: CLI_ROOT}))
+    expect(result.error).toBeDefined()
+
+    const json = parseJson(result.stdout)
+    expect(json.success).toBe(false)
+    expect(json.error).toEqual(expect.objectContaining({
+      code: ErrorCode.SDK_COMMAND_FAILED,
+    }))
+  })
+
   it('reports compatibility for the selected profile', async () => {
     const config = createConfig()
 
@@ -189,5 +259,21 @@ describe('profile command surface', () => {
         expect.objectContaining({name: 'Service validator', status: 'warn'}),
       ]),
     }))
+  })
+
+  it('renders compatibility failures in human mode', async () => {
+    class TestCompatCheck extends CompatCheck {
+      protected override async loadProjectConfig(): Promise<CantonctlConfig> {
+        return {
+          ...createConfig(),
+          project: {name: 'demo', 'sdk-version': '4.0.0'},
+        }
+      }
+    }
+
+    const result = await captureOutput(() => TestCompatCheck.run(['splice-devnet'], {root: CLI_ROOT}))
+    expect(result.stdout).toContain('Profile: splice-devnet')
+    expect(result.stdout).toContain('Kind: remote-validator')
+    expect(result.stdout).toContain('Service')
   })
 })

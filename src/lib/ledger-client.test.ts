@@ -208,6 +208,24 @@ describe('LedgerClient', () => {
     })
   })
 
+  describe('getLedgerEnd()', () => {
+    it('returns the reported ledger end offset', async () => {
+      const fetch = createMockFetch()
+      fetch.mockJsonResponse(200, {offset: 42})
+
+      const client = createLedgerClient({baseUrl, fetch, token})
+      await expect(client.getLedgerEnd()).resolves.toEqual({offset: 42})
+    })
+
+    it('falls back to zero when the adapter omits the offset', async () => {
+      const fetch = createMockFetch()
+      fetch.mockJsonResponse(200, {})
+
+      const client = createLedgerClient({baseUrl, fetch, token})
+      await expect(client.getLedgerEnd()).resolves.toEqual({offset: 0})
+    })
+  })
+
   describe('allocateParty()', () => {
     it('allocates a party via POST /v2/parties', async () => {
       const fetch = createMockFetch()

@@ -68,6 +68,16 @@ describe('OutputWriter', () => {
       expect(stderrWrite).toHaveBeenCalledWith(expect.stringContaining('Check syntax'))
     })
 
+    it('omits suggestions when an error does not include one', () => {
+      out.result({
+        error: {code: 'E4002', message: 'Build failed'},
+        success: false,
+      })
+
+      expect(stderrWrite).toHaveBeenCalledWith(expect.stringContaining('E4002'))
+      expect(stderrWrite).not.toHaveBeenCalledWith(expect.stringContaining('Suggestion:'))
+    })
+
     it('result() shows timing when present', () => {
       out.result({success: true, timing: {durationMs: 1234}})
       expect(stdoutWrite).toHaveBeenCalledWith(expect.stringContaining('1.2s'))
@@ -105,6 +115,11 @@ describe('OutputWriter', () => {
       expect(stderrWrite).not.toHaveBeenCalled()
     })
 
+    it('warn() is suppressed', () => {
+      out.warn('should not appear')
+      expect(stderrWrite).not.toHaveBeenCalled()
+    })
+
     it('table() outputs JSON array', () => {
       out.table(['Name', 'Role'], [['Alice', 'operator']])
       const written = (stdoutWrite.mock.calls[0] as string[])[0]
@@ -135,9 +150,35 @@ describe('OutputWriter', () => {
       out.table(['H'], [['v']])
       expect(stdoutWrite).not.toHaveBeenCalled()
     })
+
+    it('suppresses warn', () => {
+      out.warn('hidden')
+      expect(stderrWrite).not.toHaveBeenCalled()
+    })
   })
 
   describe('spinner', () => {
+    it('starts a real spinner when color output is enabled', () => {
+      const originalIsTTY = process.stdout.isTTY
+      const originalNoColor = process.env.NO_COLOR
+      Object.defineProperty(process.stdout, 'isTTY', {configurable: true, value: true})
+
+      delete process.env.NO_COLOR
+      try {
+        const out = createOutput({json: false})
+        const spinner = out.spinner('Loading...')
+        expect(spinner.text).toBe('Loading...')
+        spinner.stop()
+      } finally {
+        Object.defineProperty(process.stdout, 'isTTY', {configurable: true, value: originalIsTTY})
+        if (originalNoColor === undefined) {
+          delete process.env.NO_COLOR
+        } else {
+          process.env.NO_COLOR = originalNoColor
+        }
+      }
+    })
+
     it('returns a spinner in human mode', () => {
       const out = createOutput({json: false, noColor: true})
       const spinner = out.spinner('Loading...')
@@ -159,6 +200,20 @@ describe('OutputWriter', () => {
       expect(spinner).toBeDefined()
       spinner.stop()
     })
+
+    it('returns a disabled spinner when stdout is not a tty', () => {
+      const originalIsTTY = process.stdout.isTTY
+      Object.defineProperty(process.stdout, 'isTTY', {configurable: true, value: false})
+
+      try {
+        const out = createOutput()
+        const spinner = out.spinner('Loading...')
+        expect(spinner.text).toBe('Loading...')
+        spinner.stop()
+      } finally {
+        Object.defineProperty(process.stdout, 'isTTY', {configurable: true, value: originalIsTTY})
+      }
+    })
   })
 
   describe('result() edge cases', () => {
@@ -168,6 +223,23 @@ describe('OutputWriter', () => {
       const output = (stdoutWrite.mock.calls[0] as string[])[0]
       expect(output).toContain('"id"')
       expect(output).toContain('"abc"')
+    })
+
+    it('honors default options and NO_COLOR when createOutput is called without arguments', () => {
+      const originalNoColor = process.env.NO_COLOR
+      process.env.NO_COLOR = '1'
+
+      try {
+        const out = createOutput()
+        out.success('done')
+        expect(stdoutWrite).toHaveBeenCalledWith('✓ done\n')
+      } finally {
+        if (originalNoColor === undefined) {
+          delete process.env.NO_COLOR
+        } else {
+          process.env.NO_COLOR = originalNoColor
+        }
+      }
     })
   })
 })

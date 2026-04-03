@@ -140,7 +140,7 @@ interface FileNode {
   children?: FileNode[]
 }
 
-async function buildFileTree(dir: string, relativeTo: string): Promise<FileNode[]> {
+export async function buildFileTree(dir: string, relativeTo: string): Promise<FileNode[]> {
   const entries = await fs.promises.readdir(dir, {withFileTypes: true})
   const nodes: FileNode[] = []
 
@@ -166,7 +166,7 @@ async function buildFileTree(dir: string, relativeTo: string): Promise<FileNode[
 // Template discovery — scans .daml files and parses templates
 // ---------------------------------------------------------------------------
 
-async function scanDamlTemplates(projectDir: string): Promise<DamlTemplate[]> {
+export async function scanDamlTemplates(projectDir: string): Promise<DamlTemplate[]> {
   const damlDir = path.join(projectDir, 'daml')
   const templates: DamlTemplate[] = []
 
@@ -188,14 +188,14 @@ async function scanDamlTemplates(projectDir: string): Promise<DamlTemplate[]> {
   return templates
 }
 
-function getLedgerBaseUrl(profile: NormalizedProfile, fallbackLedgerUrl: string): string {
+export function getLedgerBaseUrl(profile: NormalizedProfile, fallbackLedgerUrl: string): string {
   const ledger = profile.services.ledger
   if (!ledger) return fallbackLedgerUrl
   if (ledger.url) return ledger.url
   return `http://localhost:${ledger['json-api-port'] ?? 7575}`
 }
 
-function parsePort(baseUrl: string, fallback: number): number {
+export function parsePort(baseUrl: string, fallback: number): number {
   try {
     const {port, protocol} = new URL(baseUrl)
     if (port) return Number.parseInt(port, 10)
@@ -205,7 +205,7 @@ function parsePort(baseUrl: string, fallback: number): number {
   }
 }
 
-function isAuthError(error: unknown): boolean {
+export function isAuthError(error: unknown): boolean {
   return error instanceof CantonctlError
     && (error.code === ErrorCode.LEDGER_AUTH_EXPIRED || error.code === ErrorCode.SERVICE_AUTH_FAILED)
 }
@@ -214,7 +214,7 @@ function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error)
 }
 
-function usesLocalLedgerRuntime(profile: NormalizedProfile, isMultiNode: boolean): boolean {
+export function usesLocalLedgerRuntime(profile: NormalizedProfile, isMultiNode: boolean): boolean {
   if (profile.kind === 'sandbox') {
     return !profile.services.ledger?.url
   }
@@ -252,7 +252,7 @@ async function defaultResolveProfileToken(options: {
   return await store.resolve(networkName) ?? undefined
 }
 
-async function defaultProbeService(request: ServiceProbeRequest): Promise<ServiceProbeResult> {
+export async function defaultProbeService(request: ServiceProbeRequest): Promise<ServiceProbeResult> {
   try {
     const response = await fetch(request.endpoint, {method: 'GET'})
     if (response.status === 401 || response.status === 403) {

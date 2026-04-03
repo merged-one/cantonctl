@@ -162,4 +162,105 @@ describe('LocalNet runtime wrapper', () => {
     expect(result.selectedProfile).toBe('app-provider')
     expect(result.services.wallet.url).toBe('http://wallet.localhost:3000')
   })
+
+  it('runs the upstream stop target on down()', async () => {
+    const detector = createDetector()
+    const runner = createMockRunner()
+    ;(runner.run as ReturnType<typeof vi.fn>).mockResolvedValueOnce({exitCode: 0, stderr: '', stdout: 'stopped'})
+    const localnet = createLocalnet({
+      detectWorkspace: (workspace: string) => detector.detect(workspace),
+      fetch: vi.fn(),
+      runner,
+    })
+
+    const result = await localnet.down({workspace: QUICKSTART_FIXTURE})
+
+    expect(runner.run).toHaveBeenCalledWith(
+      'make',
+      ['stop'],
+      {cwd: QUICKSTART_FIXTURE, ignoreExitCode: true},
+    )
+    expect(result.target).toBe('stop')
+    expect(result.workspace.root).toBe(QUICKSTART_FIXTURE)
+  })
+
+  it('defaults to the sv profile when an unknown profile hint is passed', async () => {
+    const detector = createDetector()
+    const runner = createMockRunner()
+    const fetch = vi.fn().mockResolvedValue(createOkResponse())
+    const localnet = createLocalnet({
+      detectWorkspace: (workspace: string) => detector.detect(workspace),
+      fetch,
+      runner,
+    })
+
+    const result = await localnet.status({
+      profile: 'unknown-profile',
+      workspace: QUICKSTART_FIXTURE,
+    })
+
+    expect(fetch).toHaveBeenCalledWith('http://127.0.0.1:4903/api/validator/readyz')
+    expect(result.selectedProfile).toBe('sv')
+  })
+
+  it('returns unhealthy validator status when the readyz probe throws', async () => {
+    const detector = createDetector()
+    const runner = createMockRunner()
+    const localnet = createLocalnet({
+      detectWorkspace: (workspace: string) => detector.detect(workspace),
+      fetch: vi.fn().mockRejectedValue(new Error('connection refused')),
+      runner,
+    })
+
+    const result = await localnet.status({workspace: QUICKSTART_FIXTURE})
+
+    expect(result.health.validatorReadyz).toEqual({
+      body: 'connection refused',
+      healthy: false,
+      status: 0,
+      url: 'http://127.0.0.1:4903/api/validator/readyz',
+    })
+  })
+
+  it('rejects LocalNet commands when make is unavailable', async () => {
+    const detector = createDetector()
+    const runner: ProcessRunner = {
+      run: vi.fn(),
+      spawn: vi.fn(),
+      which: vi.fn().mockResolvedValue(null),
+    }
+    const localnet = createLocalnet({
+      detectWorkspace: (workspace: string) => detector.detect(workspace),
+      fetch: vi.fn(),
+      runner,
+    })
+
+    await expect(localnet.status({workspace: QUICKSTART_FIXTURE})).rejects.toMatchObject({
+      code: 'E3007',
+    })
+  })
+
+  it('rejects LocalNet commands when the upstream make target fails', async () => {
+    const detector = createDetector()
+    const runner: ProcessRunner = {
+      run: vi.fn().mockResolvedValue({exitCode: 2, stderr: 'boom', stdout: 'failed'}),
+      spawn: vi.fn(),
+      which: vi.fn().mockResolvedValue('/usr/bin/make'),
+    }
+    const localnet = createLocalnet({
+      detectWorkspace: (workspace: string) => detector.detect(workspace),
+      fetch: vi.fn(),
+      runner,
+    })
+
+    await expect(localnet.up({workspace: QUICKSTART_FIXTURE})).rejects.toMatchObject({
+      code: 'E3007',
+      context: expect.objectContaining({
+        exitCode: 2,
+        stderr: 'boom',
+        stdout: 'failed',
+        target: 'start',
+      }),
+    })
+  })
 })

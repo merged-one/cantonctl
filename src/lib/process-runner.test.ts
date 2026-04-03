@@ -1,123 +1,415 @@
+import type {PathLike} from 'node:fs'
+
 import {describe, expect, it, vi} from 'vitest'
 
-import type {ProcessRunner, ProcessResult, SpawnedProcess} from './process-runner.js'
+import {createProcessRunner} from './process-runner.js'
 
-/**
- * Helper to create a mock ProcessRunner for unit tests.
- * Tests don't need the real execa-backed runner.
- */
-function createMockRunner(): ProcessRunner & {
-  run: ReturnType<typeof vi.fn>
-  spawn: ReturnType<typeof vi.fn>
-  which: ReturnType<typeof vi.fn>
-} {
-  return {
-    run: vi.fn<ProcessRunner['run']>(),
-    spawn: vi.fn<ProcessRunner['spawn']>(),
-    which: vi.fn<ProcessRunner['which']>(),
-  }
+function createSpawnProcess(result: {exitCode?: number}, overrides: Record<string, unknown> = {}) {
+  return Object.assign(Promise.resolve(result), {
+    kill: vi.fn(),
+    pid: 4242,
+    stderr: {label: 'stderr'},
+    stdout: {label: 'stdout'},
+    ...overrides,
+  })
 }
 
-describe('ProcessRunner (mock)', () => {
-  it('run() returns stdout, stderr, and exitCode', async () => {
-    const runner = createMockRunner()
-    runner.run.mockResolvedValue({exitCode: 0, stderr: '', stdout: 'build output'})
+describe('createProcessRunner', () => {
+  it('prepends daml and java paths when executing commands', async () => {
+    const execa = vi.fn().mockResolvedValue({
+      exitCode: 0,
+      stderr: new Uint8Array(Buffer.from('warn')),
+      stdout: ['build', '-', 'ok'],
+    })
 
-    const result: ProcessResult = await runner.run('dpm', ['build'])
-    expect(result.stdout).toBe('build output')
-    expect(result.exitCode).toBe(0)
-    expect(runner.run).toHaveBeenCalledWith('dpm', ['build'])
-  })
+    const runner = createProcessRunner({
+      env: {
+        JAVA_HOME: '/jdk-21',
+        PATH: '/usr/local/bin:/usr/bin',
+      },
+      execa,
+      homedir: () => '/home/tester',
+      platform: () => 'linux',
+    })
 
-  it('run() can return non-zero exit code', async () => {
-    const runner = createMockRunner()
-    runner.run.mockResolvedValue({exitCode: 1, stderr: 'compile error', stdout: ''})
-
-    const result = await runner.run('dpm', ['build'])
-    expect(result.exitCode).toBe(1)
-    expect(result.stderr).toBe('compile error')
-  })
-
-  it('run() accepts options (cwd, env, timeout)', async () => {
-    const runner = createMockRunner()
-    runner.run.mockResolvedValue({exitCode: 0, stderr: '', stdout: ''})
-
-    await runner.run('dpm', ['test'], {cwd: '/project', env: {DEBUG: '1'}, timeout: 5000})
-    expect(runner.run).toHaveBeenCalledWith('dpm', ['test'], {
-      cwd: '/project',
+    const result = await runner.run('dpm', ['build'], {
+      cwd: '/repo',
       env: {DEBUG: '1'},
+      ignoreExitCode: true,
       timeout: 5000,
     })
+
+    expect(result).toEqual({
+      exitCode: 0,
+      stderr: 'warn',
+      stdout: 'build-ok',
+    })
+    expect(execa).toHaveBeenCalledWith(
+      'dpm',
+      ['build'],
+      expect.objectContaining({
+        cwd: '/repo',
+        env: expect.objectContaining({
+          DEBUG: '1',
+          PATH: `/home/tester/.daml/bin:/jdk-21/bin:/usr/local/bin:/usr/bin`,
+        }),
+        reject: false,
+        timeout: 5000,
+      }),
+    )
   })
 
-  it('spawn() returns a SpawnedProcess handle', () => {
-    const runner = createMockRunner()
-    const mockProc: SpawnedProcess = {
-      kill: vi.fn(),
-      onExit: vi.fn(),
-      waitForExit: vi.fn().mockResolvedValue(0),
-      pid: 12345,
-      stderr: null,
-      stdout: null,
-    }
-    runner.spawn.mockReturnValue(mockProc)
+  it('falls back to macOS java_home discovery when JAVA_HOME is unset', async () => {
+    const execa = vi.fn().mockResolvedValue({exitCode: 0, stderr: '', stdout: '/usr/bin/java'})
+    const execSync = vi.fn().mockReturnValue(Buffer.from('/Library/Java/JavaVirtualMachines/jdk-21/Contents/Home\n'))
+    const existsSync = vi.fn((filePath: PathLike) =>
+      String(filePath) === '/Library/Java/JavaVirtualMachines/jdk-21/Contents/Home/bin/java',
+    )
 
-    const proc = runner.spawn('dpm', ['sandbox'])
-    expect(proc.pid).toBe(12345)
-    expect(runner.spawn).toHaveBeenCalledWith('dpm', ['sandbox'])
-  })
-
-  it('spawn().kill() sends signal to process', () => {
-    const runner = createMockRunner()
-    const killFn = vi.fn()
-    runner.spawn.mockReturnValue({
-      kill: killFn,
-      onExit: vi.fn(),
-      waitForExit: vi.fn().mockResolvedValue(0),
-      pid: 99,
-      stderr: null,
-      stdout: null,
+    const runner = createProcessRunner({
+      env: {PATH: '/usr/bin'},
+      execa,
+      execSync,
+      existsSync,
+      homedir: () => '/home/tester',
+      platform: () => 'darwin',
     })
 
-    const proc = runner.spawn('dpm', ['sandbox'])
-    proc.kill('SIGTERM')
-    expect(killFn).toHaveBeenCalledWith('SIGTERM')
+    await runner.which('java')
+
+    expect(execSync).toHaveBeenCalledWith(
+      '/usr/libexec/java_home -v 21',
+      expect.objectContaining({timeout: 5000}),
+    )
+    expect(execa).toHaveBeenCalledWith(
+      'which',
+      ['java'],
+      expect.objectContaining({
+        env: expect.objectContaining({
+          PATH: `/home/tester/.daml/bin:/Library/Java/JavaVirtualMachines/jdk-21/Contents/Home/bin:/usr/bin`,
+        }),
+      }),
+    )
   })
 
-  it('spawn().onExit() registers callback', () => {
-    const runner = createMockRunner()
-    const exitCallbacks: Array<(code: number | null) => void> = []
-    runner.spawn.mockReturnValue({
-      kill: vi.fn(),
-      onExit: (cb: (code: number | null) => void) => exitCallbacks.push(cb),
-      waitForExit: vi.fn().mockResolvedValue(0),
-      pid: 99,
-      stderr: null,
-      stdout: null,
+  it('falls back to Homebrew Java paths when java_home is unavailable', async () => {
+    const execa = vi.fn().mockResolvedValue({exitCode: 1, stderr: '', stdout: ''})
+    const execSync = vi.fn(() => {
+      throw new Error('java_home not configured')
+    })
+    const existsSync = vi.fn((filePath: PathLike) => String(filePath) === '/opt/homebrew/opt/openjdk@21/bin/java')
+
+    const runner = createProcessRunner({
+      env: {PATH: '/usr/bin'},
+      execa,
+      execSync,
+      existsSync,
+      homedir: () => '/home/tester',
+      platform: () => 'darwin',
     })
 
-    const proc = runner.spawn('dpm', ['sandbox'])
-    const callback = vi.fn()
-    proc.onExit(callback)
+    const result = await runner.which('java')
 
-    // Simulate exit
-    exitCallbacks[0](0)
-    expect(callback).toHaveBeenCalledWith(0)
-  })
-
-  it('which() returns path when command exists', async () => {
-    const runner = createMockRunner()
-    runner.which.mockResolvedValue('/usr/local/bin/dpm')
-
-    const result = await runner.which('dpm')
-    expect(result).toBe('/usr/local/bin/dpm')
-  })
-
-  it('which() returns null when command not found', async () => {
-    const runner = createMockRunner()
-    runner.which.mockResolvedValue(null)
-
-    const result = await runner.which('nonexistent')
     expect(result).toBeNull()
+    expect(execa).toHaveBeenCalledWith(
+      'which',
+      ['java'],
+      expect.objectContaining({
+        env: expect.objectContaining({
+          PATH: `/home/tester/.daml/bin:/opt/homebrew/opt/openjdk@21/bin:/usr/bin`,
+        }),
+      }),
+    )
+  })
+
+  it('returns execa error output when a command exits non-zero', async () => {
+    const execa = vi.fn().mockRejectedValue({
+      exitCode: 17,
+      stderr: 'bad stderr',
+      stdout: 'bad stdout',
+    })
+
+    const runner = createProcessRunner({
+      env: {PATH: '/usr/bin'},
+      execa,
+      homedir: () => '/home/tester',
+      platform: () => 'linux',
+    })
+
+    await expect(runner.run('daml', ['test'])).resolves.toEqual({
+      exitCode: 17,
+      stderr: 'bad stderr',
+      stdout: 'bad stdout',
+    })
+  })
+
+  it('normalizes string and empty outputs from execa', async () => {
+    const execa = vi
+      .fn()
+      .mockResolvedValueOnce({exitCode: 0, stderr: '', stdout: 'plain text'})
+      .mockResolvedValueOnce({exitCode: 0, stderr: undefined, stdout: undefined})
+      .mockResolvedValueOnce({exitCode: 0, stderr: '', stdout: ['a', 1]})
+
+    const runner = createProcessRunner({
+      env: {PATH: '/usr/bin'},
+      execa,
+      homedir: () => '/home/tester',
+      platform: () => 'linux',
+    })
+
+    await expect(runner.run('daml', ['version'])).resolves.toEqual({
+      exitCode: 0,
+      stderr: '',
+      stdout: 'plain text',
+    })
+    await expect(runner.run('daml', ['version'])).resolves.toEqual({
+      exitCode: 0,
+      stderr: '',
+      stdout: '',
+    })
+    await expect(runner.run('daml', ['version'])).resolves.toEqual({
+      exitCode: 0,
+      stderr: '',
+      stdout: 'a1',
+    })
+  })
+
+  it('rethrows non-execa failures', async () => {
+    const error = new Error('boom')
+    const execa = vi.fn().mockRejectedValue(error)
+
+    const runner = createProcessRunner({
+      env: {PATH: '/usr/bin'},
+      execa,
+      homedir: () => '/home/tester',
+      platform: () => 'linux',
+    })
+
+    await expect(runner.run('daml', ['test'])).rejects.toThrow('boom')
+  })
+
+  it('spawns long-running processes and relays exit callbacks', async () => {
+    const execa = vi.fn().mockReturnValue(createSpawnProcess({exitCode: 0}))
+
+    const runner = createProcessRunner({
+      env: {PATH: '/usr/bin'},
+      execa,
+      homedir: () => '/home/tester',
+      platform: () => 'linux',
+    })
+
+    const proc = runner.spawn('dpm', ['sandbox'], {cwd: '/repo'})
+    const onExit = vi.fn()
+    proc.onExit(onExit)
+    proc.kill('SIGINT')
+
+    await expect(proc.waitForExit()).resolves.toBe(0)
+    expect(onExit).toHaveBeenCalledWith(0)
+    expect(proc.pid).toBe(4242)
+    expect(proc.stdout).toEqual({label: 'stdout'})
+    expect(proc.stderr).toEqual({label: 'stderr'})
+    expect(execa).toHaveBeenCalledWith(
+      'dpm',
+      ['sandbox'],
+      expect.objectContaining({
+        cleanup: true,
+        cwd: '/repo',
+        forceKillAfterDelay: 5000,
+        reject: false,
+        stdio: ['ignore', 'pipe', 'pipe'],
+      }),
+    )
+  })
+
+  it('uses the default SIGTERM signal when spawn.kill is called without arguments', async () => {
+    const execa = vi.fn().mockReturnValue(createSpawnProcess({}))
+
+    const runner = createProcessRunner({
+      env: {PATH: '/usr/bin'},
+      execa,
+      homedir: () => '/home/tester',
+      platform: () => 'linux',
+    })
+
+    const proc = runner.spawn('dpm', ['sandbox'])
+    proc.kill()
+
+    await expect(proc.waitForExit()).resolves.toBeNull()
+    expect((execa.mock.results[0]?.value as {kill: ReturnType<typeof vi.fn>}).kill).toHaveBeenCalledWith('SIGTERM')
+  })
+
+  it('normalizes spawn failures to exit code 1', async () => {
+    const failingProc = Object.assign(Promise.reject(new Error('spawn failed')), {
+      kill: vi.fn(),
+      pid: 1001,
+      stderr: null,
+      stdout: null,
+    })
+    const execa = vi.fn().mockReturnValue(failingProc)
+
+    const runner = createProcessRunner({
+      env: {PATH: '/usr/bin'},
+      execa,
+      homedir: () => '/home/tester',
+      platform: () => 'linux',
+    })
+
+    const proc = runner.spawn('dpm', ['sandbox'])
+    const onExit = vi.fn()
+    proc.onExit(onExit)
+
+    await expect(proc.waitForExit()).resolves.toBe(1)
+    expect(onExit).toHaveBeenCalledWith(1)
+  })
+
+  it('returns null when which lookup throws', async () => {
+    const execa = vi.fn().mockRejectedValue(new Error('missing which'))
+
+    const runner = createProcessRunner({
+      env: {PATH: '/usr/bin'},
+      execa,
+      homedir: () => '/home/tester',
+      platform: () => 'linux',
+    })
+
+    await expect(runner.which('java')).resolves.toBeNull()
+  })
+
+  it('uses default dependencies when no overrides are supplied', async () => {
+    const runner = createProcessRunner()
+
+    await expect(runner.which('node')).resolves.toContain('node')
+    await expect(runner.run(process.execPath, ['-e', 'process.stdout.write("ok")'])).resolves.toEqual({
+      exitCode: 0,
+      stderr: '',
+      stdout: 'ok',
+    })
+  })
+
+  it('skips macOS java_home results when the reported java binary is missing', async () => {
+    const execa = vi.fn().mockResolvedValue({exitCode: 0, stderr: '', stdout: '/usr/bin/java'})
+    const execSync = vi.fn().mockReturnValue(Buffer.from('/Library/Java/JavaVirtualMachines/jdk-21/Contents/Home\n'))
+    const existsSync = vi.fn().mockReturnValue(false)
+
+    const runner = createProcessRunner({
+      env: {PATH: '/usr/bin'},
+      execa,
+      execSync,
+      existsSync,
+      homedir: () => '/home/tester',
+      platform: () => 'darwin',
+    })
+
+    await runner.which('java')
+
+    expect(execa).toHaveBeenCalledWith(
+      'which',
+      ['java'],
+      expect.objectContaining({
+        env: expect.objectContaining({
+          PATH: '/home/tester/.daml/bin:/usr/bin',
+        }),
+      }),
+    )
+  })
+
+  it('deduplicates PATH entries and treats blank which output as not found', async () => {
+    const execa = vi.fn().mockResolvedValue({exitCode: 0, stderr: '', stdout: '   '})
+
+    const runner = createProcessRunner({
+      env: {
+        JAVA_HOME: '/jdk-21',
+        PATH: '/home/tester/.daml/bin:/jdk-21/bin:/usr/bin',
+      },
+      execa,
+      homedir: () => '/home/tester',
+      platform: () => 'linux',
+    })
+
+    await expect(runner.which('java')).resolves.toBeNull()
+    expect(execa).toHaveBeenCalledWith(
+      'which',
+      ['java'],
+      expect.objectContaining({
+        env: expect.objectContaining({
+          PATH: '/home/tester/.daml/bin:/jdk-21/bin:/usr/bin',
+        }),
+      }),
+    )
+  })
+
+  it('filters out undefined env entries before rebuilding PATH', async () => {
+    const execa = vi.fn().mockResolvedValue({exitCode: 0, stderr: '', stdout: '/usr/bin/java'})
+
+    const runner = createProcessRunner({
+      env: {
+        HOME: undefined,
+        PATH: '/usr/bin',
+      },
+      execa,
+      homedir: () => '/home/tester',
+      platform: () => 'linux',
+    })
+
+    await runner.which('java')
+
+    expect(execa).toHaveBeenCalledWith(
+      'which',
+      ['java'],
+      expect.objectContaining({
+        env: expect.not.objectContaining({HOME: undefined}),
+      }),
+    )
+  })
+
+  it('normalizes undefined exit codes from successful executions', async () => {
+    const execa = vi.fn().mockResolvedValue({exitCode: undefined, stderr: '', stdout: ''})
+
+    const runner = createProcessRunner({
+      env: {PATH: '/usr/bin'},
+      execa,
+      homedir: () => '/home/tester',
+      platform: () => 'linux',
+    })
+
+    await expect(runner.run('daml', ['version'])).resolves.toEqual({
+      exitCode: 0,
+      stderr: '',
+      stdout: '',
+    })
+  })
+
+  it('normalizes missing stderr/stdout on execa exit-code failures', async () => {
+    const execa = vi.fn().mockRejectedValue({exitCode: 0})
+
+    const runner = createProcessRunner({
+      env: {PATH: '/usr/bin'},
+      execa,
+      homedir: () => '/home/tester',
+      platform: () => 'linux',
+    })
+
+    await expect(runner.run('daml', ['version'])).resolves.toEqual({
+      exitCode: 0,
+      stderr: '',
+      stdout: '',
+    })
+  })
+
+  it('normalizes null exit codes on execa failures to one', async () => {
+    const execa = vi.fn().mockRejectedValue({exitCode: null})
+
+    const runner = createProcessRunner({
+      env: {PATH: '/usr/bin'},
+      execa,
+      homedir: () => '/home/tester',
+      platform: () => 'linux',
+    })
+
+    await expect(runner.run('daml', ['version'])).resolves.toEqual({
+      exitCode: 1,
+      stderr: '',
+      stdout: '',
+    })
   })
 })

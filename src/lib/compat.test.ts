@@ -4,8 +4,10 @@ import type {CantonctlConfig} from './config.js'
 import {
   createCompatibilityReport,
   listProfiles,
+  summarizeProfileServices,
   resolveProfile,
 } from './compat.js'
+import {ErrorCode} from './errors.js'
 
 function createConfig(overrides: Partial<CantonctlConfig> = {}): CantonctlConfig {
   return {
@@ -70,6 +72,33 @@ describe('compat', () => {
       profile: expect.objectContaining({kind: 'sandbox', name: 'sandbox'}),
       source: 'default-profile',
     }))
+  })
+
+  it('uses the only configured profile when no default is set', () => {
+    const resolved = resolveProfile(createConfig({
+      'default-profile': undefined,
+      profiles: {
+        sandbox: {
+          experimental: false,
+          kind: 'sandbox',
+          name: 'sandbox',
+          services: {
+            ledger: {port: 5001, 'json-api-port': 7575},
+          },
+        },
+      },
+    }))
+
+    expect(resolved).toEqual(expect.objectContaining({
+      profile: expect.objectContaining({name: 'sandbox'}),
+      source: 'only-profile',
+    }))
+  })
+
+  it('fails with a readable error when an explicit profile is missing', () => {
+    expect(() => resolveProfile(createConfig(), 'missing-profile')).toThrowError(
+      expect.objectContaining({code: ErrorCode.CONFIG_SCHEMA_VIOLATION}),
+    )
   })
 
   it('creates a stable-surface compatibility report for supported services', () => {
@@ -138,5 +167,61 @@ describe('compat', () => {
     }))
     expect(report.failed).toBe(1)
     expect(report.warned).toBeGreaterThanOrEqual(3)
+  })
+
+  it('treats unknown sdk formats as warnings instead of hard failures', () => {
+    const report = createCompatibilityReport(createConfig({
+      project: {name: 'demo', 'sdk-version': 'nightly-build'},
+    }), 'sandbox')
+
+    expect(report.checks.find(check => check.name === 'Project SDK')).toEqual(
+      expect.objectContaining({
+        actual: 'nightly-build',
+        status: 'warn',
+      }),
+    )
+  })
+
+  it('summarizes auth and localnet services with config-specific detail', () => {
+    const services = summarizeProfileServices({
+      experimental: true,
+      kind: 'splice-localnet',
+      name: 'splice-localnet',
+      services: {
+        auth: {
+          audience: 'aud',
+          issuer: 'https://issuer.example.com',
+          kind: 'oidc',
+        },
+        localnet: {
+          'base-port': 10000,
+          'canton-image': 'ghcr.io/example/canton:1.0.0',
+          distribution: 'splice',
+          version: '0.5.x',
+        },
+        validator: {url: 'https://validator.example.com'},
+      },
+    })
+
+    expect(services).toEqual([
+      expect.objectContaining({
+        detail: 'oidc, issuer https://issuer.example.com, audience aud',
+        endpoint: 'https://issuer.example.com',
+        name: 'auth',
+        stability: 'config-only',
+      }),
+      expect.objectContaining({
+        detail: 'Validator endpoint',
+        endpoint: 'https://validator.example.com',
+        name: 'validator',
+        stability: 'operator-only',
+      }),
+      expect.objectContaining({
+        detail: 'splice, version 0.5.x, base-port 10000, ghcr.io/example/canton:1.0.0',
+        endpoint: undefined,
+        name: 'localnet',
+        stability: 'config-only',
+      }),
+    ])
   })
 })

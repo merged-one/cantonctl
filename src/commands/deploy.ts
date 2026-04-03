@@ -7,64 +7,21 @@
 
 import {Args, Command, Flags} from '@oclif/core'
 import * as fs from 'node:fs'
-import * as path from 'node:path'
 
-import {createBuilder} from '../lib/builder.js'
-import {loadConfig} from '../lib/config.js'
-import {createDamlSdk} from '../lib/daml.js'
-import {createDeployer} from '../lib/deployer.js'
+import {createBuilder, type Builder} from '../lib/builder.js'
+import {type CantonctlConfig, loadConfig} from '../lib/config.js'
+import {createDamlSdk, type DamlSdk} from '../lib/daml.js'
+import {createDeployer, type Deployer} from '../lib/deployer.js'
 import {CantonctlError} from '../lib/errors.js'
 import {createSandboxToken} from '../lib/jwt.js'
 import {createLedgerClient} from '../lib/ledger-client.js'
 import {createOutput} from '../lib/output.js'
-import {createPluginHookManager} from '../lib/plugin-hooks.js'
-import {createProcessRunner} from '../lib/process-runner.js'
-import {detectTopology} from '../lib/topology.js'
+import {createPluginHookManager, type PluginHookManager} from '../lib/plugin-hooks.js'
+import {createProcessRunner, type ProcessRunner} from '../lib/process-runner.js'
+import {findDarFile, getFileMtime, getNewestDamlSourceMtime} from '../lib/runtime-support.js'
+import {detectTopology, type GeneratedTopology} from '../lib/topology.js'
 
 const NETWORKS = ['local', 'devnet', 'testnet', 'mainnet'] as const
-
-/** Find the first .dar file in a directory. */
-async function findDarFile(dir: string): Promise<string | null> {
-  try {
-    const entries = await fs.promises.readdir(dir)
-    const darFile = entries.find(e => e.endsWith('.dar'))
-    return darFile ? path.join(dir, darFile) : null
-  } catch {
-    return null
-  }
-}
-
-/** Get file modification time in ms since epoch. */
-async function getFileMtime(filePath: string): Promise<number | null> {
-  try {
-    const stat = await fs.promises.stat(filePath)
-    return stat.mtimeMs
-  } catch {
-    return null
-  }
-}
-
-/** Get the newest mtime among all .daml files in a directory (recursive). */
-async function getDamlSourceMtime(dir: string): Promise<number> {
-  let newest = 0
-  try {
-    const entries = await fs.promises.readdir(dir, {withFileTypes: true})
-    for (const entry of entries) {
-      const fullPath = path.join(dir, entry.name)
-      if (entry.isDirectory()) {
-        const sub = await getDamlSourceMtime(fullPath)
-        if (sub > newest) newest = sub
-      } else if (entry.name.endsWith('.daml')) {
-        const stat = await fs.promises.stat(fullPath)
-        if (stat.mtimeMs > newest) newest = stat.mtimeMs
-      }
-    }
-  } catch {
-    // Directory doesn't exist
-  }
-
-  return newest
-}
 
 export default class Deploy extends Command {
   static override args = {
@@ -107,20 +64,21 @@ export default class Deploy extends Command {
     const out = createOutput({json: flags.json})
 
     try {
-      const config = await loadConfig()
-      const runner = createProcessRunner()
-      const sdk = createDamlSdk({runner})
-      const hooks = createPluginHookManager()
-      const builder = createBuilder({findDarFile, getDamlSourceMtime, getFileMtime, hooks, sdk})
+      const config = await this.loadProjectConfig()
+      const runner = this.createRunner()
+      const sdk = this.createSdk(runner)
+      const hooks = this.createHooks()
+      const builder = this.createBuilder({hooks, sdk})
+      const projectDir = this.getProjectDir()
 
       // Detect multi-node topology
       const networkName = args.network ?? 'local'
-      const topology = networkName === 'local' ? await detectTopology(process.cwd()) : null
+      const topology = networkName === 'local' ? await this.detectProjectTopology(projectDir) : null
 
       if (topology && topology.participants.length > 0) {
-        await this.deployMultiNode(config, builder, hooks, out, flags, networkName, topology)
+        await this.deployMultiNode(config, builder, hooks, out, flags, networkName, topology, projectDir)
       } else {
-        await this.deploySingleNode(config, builder, hooks, out, flags, networkName)
+        await this.deploySingleNode(config, builder, hooks, out, flags, networkName, projectDir)
       }
     } catch (err) {
       if (err instanceof CantonctlError) {
@@ -143,6 +101,7 @@ export default class Deploy extends Command {
     flags: {dar?: string; 'dry-run': boolean; json: boolean; party?: string},
     networkName: string,
     topology: Awaited<ReturnType<typeof detectTopology>> & object,
+    projectDir: string,
   ): Promise<void> {
     out.log(`Deploying to ${networkName} (multi-node: ${topology.participants.length} participants)...`)
     out.log('')
@@ -152,7 +111,7 @@ export default class Deploy extends Command {
       const baseUrl = `http://localhost:${participant.ports.jsonApi}`
       out.info(`Deploying to ${participant.name} (port ${participant.ports.jsonApi})...`)
 
-      const deployer = createDeployer({
+      const deployer = this.createDeployer({
         builder,
         config: {
           ...config,
@@ -166,9 +125,6 @@ export default class Deploy extends Command {
             },
           },
         },
-        createLedgerClient,
-        createToken: createSandboxToken,
-        fs: {readFile: (p: string) => fs.promises.readFile(p)},
         hooks,
         output: out,
       })
@@ -178,7 +134,7 @@ export default class Deploy extends Command {
         dryRun: flags['dry-run'],
         network: networkName,
         party: flags.party,
-        projectDir: process.cwd(),
+        projectDir,
       })
 
       results.push({
@@ -206,16 +162,9 @@ export default class Deploy extends Command {
     out: ReturnType<typeof createOutput>,
     flags: {dar?: string; 'dry-run': boolean; json: boolean; party?: string},
     networkName: string,
+    projectDir: string,
   ): Promise<void> {
-    const deployer = createDeployer({
-      builder,
-      config,
-      createLedgerClient,
-      createToken: createSandboxToken,
-      fs: {readFile: (p: string) => fs.promises.readFile(p)},
-      hooks,
-      output: out,
-    })
+    const deployer = this.createDeployer({builder, config, hooks, output: out})
 
     out.log(`Deploying to ${networkName}...`)
     out.log('')
@@ -225,7 +174,7 @@ export default class Deploy extends Command {
       dryRun: flags['dry-run'],
       network: networkName,
       party: flags.party,
-      projectDir: process.cwd(),
+      projectDir,
     })
 
     out.result({
@@ -238,5 +187,56 @@ export default class Deploy extends Command {
       success: true,
       timing: {durationMs: result.durationMs},
     })
+  }
+
+  protected createBuilder(deps: {hooks: PluginHookManager; sdk: DamlSdk}): Builder {
+    return createBuilder({
+      findDarFile,
+      getDamlSourceMtime: getNewestDamlSourceMtime,
+      getFileMtime,
+      hooks: deps.hooks,
+      sdk: deps.sdk,
+    })
+  }
+
+  protected createDeployer(deps: {
+    builder: Builder
+    config: CantonctlConfig
+    hooks: PluginHookManager
+    output: ReturnType<typeof createOutput>
+  }): Deployer {
+    return createDeployer({
+      builder: deps.builder,
+      config: deps.config,
+      createLedgerClient,
+      createToken: createSandboxToken,
+      fs: {readFile: (p: string) => fs.promises.readFile(p)},
+      hooks: deps.hooks,
+      output: deps.output,
+    })
+  }
+
+  protected createHooks(): PluginHookManager {
+    return createPluginHookManager()
+  }
+
+  protected createRunner(): ProcessRunner {
+    return createProcessRunner()
+  }
+
+  protected createSdk(runner: ProcessRunner): DamlSdk {
+    return createDamlSdk({runner})
+  }
+
+  protected async detectProjectTopology(projectDir: string): Promise<GeneratedTopology | null> {
+    return detectTopology(projectDir)
+  }
+
+  protected getProjectDir(): string {
+    return process.cwd()
+  }
+
+  protected async loadProjectConfig(): Promise<CantonctlConfig> {
+    return loadConfig()
   }
 }
