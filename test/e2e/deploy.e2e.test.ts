@@ -2,8 +2,8 @@
  * E2E tests for `cantonctl deploy` (Deployer module).
  * Tests run against real Daml SDK and Canton sandbox.
  *
- * Prerequisites: daml CLI on PATH, Java 21+
- * Skip condition: Tests are skipped if daml is not available.
+ * Prerequisites: supported SDK CLI on PATH (`dpm` current, `daml` legacy), Java 21+
+ * Skip condition: Tests are skipped if no supported SDK CLI is available.
  *
  * All tests share a single sandbox to avoid startup overhead.
  */
@@ -22,7 +22,7 @@ import {createLedgerClient} from '../../src/lib/ledger-client.js'
 import {createOutput} from '../../src/lib/output.js'
 import {createProcessRunner} from '../../src/lib/process-runner.js'
 import {scaffoldProject} from '../../src/lib/scaffold.js'
-import {hasDaml, SDK_VERSION} from './helpers.js'
+import {hasSdk, SDK_VERSION} from './helpers.js'
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -67,7 +67,7 @@ async function getDamlSourceMtime(dir: string): Promise<number> {
   return newest
 }
 
-const SDK_AVAILABLE = hasDaml()
+const SDK_AVAILABLE = hasSdk()
 const describeWithSdk = SDK_AVAILABLE ? describe : describe.skip
 
 // ---------------------------------------------------------------------------

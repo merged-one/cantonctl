@@ -101,7 +101,7 @@ export function createDoctor(deps: DoctorDeps): Doctor {
       const javaCheck = await checkJava(runner)
       checks.push(javaCheck)
 
-      // 3. Daml SDK (dpm or daml)
+      // 3. SDK CLI (`dpm` current, `daml` legacy fallback)
       const sdkCheck = await checkSdk(runner)
       checks.push(sdkCheck)
 
@@ -216,9 +216,9 @@ async function checkSdk(runner: ProcessRunner): Promise<CheckResult> {
   const dpmPath = await runner.which('dpm')
   if (dpmPath) {
     try {
-      const result = await runner.run('dpm', ['--version'], {ignoreExitCode: true})
+      const result = await runner.run('dpm', ['version', '--active'], {ignoreExitCode: true})
       return {
-        detail: `dpm ${result.stdout.trim() || 'installed'}`,
+        detail: `dpm ${result.stdout.trim() || result.stderr.trim() || 'installed'}`,
         name: 'Daml SDK',
         required: true,
         status: 'pass',
@@ -233,7 +233,7 @@ async function checkSdk(runner: ProcessRunner): Promise<CheckResult> {
       const result = await runner.run('daml', ['version'], {ignoreExitCode: true})
       const version = result.stdout.trim() || result.stderr.trim()
       return {
-        detail: `daml ${version.split('\n')[0] || 'installed'}`,
+        detail: `daml ${version.split('\n')[0] || 'installed'} (legacy fallback)`,
         name: 'Daml SDK',
         required: true,
         status: 'pass',
@@ -243,7 +243,7 @@ async function checkSdk(runner: ProcessRunner): Promise<CheckResult> {
 
   return {
     detail: 'Not found',
-    fix: 'Install Daml SDK: curl -sSL https://get.daml.com/ | sh -s 3.4.11',
+    fix: 'Install DPM: curl https://get.digitalasset.com/install/install.sh | sh',
     name: 'Daml SDK',
     required: true,
     status: 'fail',

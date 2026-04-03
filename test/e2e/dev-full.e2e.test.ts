@@ -9,10 +9,10 @@
  * Prerequisites:
  *   - Docker + Docker Compose v2 installed and running
  *   - Canton Docker image pulled locally (CI pre-pulls; local devs: docker pull <image>)
- *   - Daml SDK on PATH + Java 21+
+ *   - Supported SDK CLI on PATH (`dpm` current, `daml` legacy) + Java 21+
  *
  * Skip conditions:
- *   - Tests are skipped if Docker, Canton image, or Daml SDK is not available.
+ *   - Tests are skipped if Docker, the Canton image, or a supported SDK CLI is not available.
  *   - This prevents local `npm test` from failing on machines without Docker.
  *
  * Port scheme:
@@ -41,7 +41,7 @@ import {createLedgerClient} from '../../src/lib/ledger-client.js'
 import type {OutputWriter} from '../../src/lib/output.js'
 import {createProcessRunner} from '../../src/lib/process-runner.js'
 import {scaffoldProject} from '../../src/lib/scaffold.js'
-import {CANTON_IMAGE, hasCantonImage, hasDaml, hasDocker, SDK_VERSION} from './helpers.js'
+import {CANTON_IMAGE, hasCantonImage, hasDocker, hasSdk, SDK_VERSION} from './helpers.js'
 
 // ---------------------------------------------------------------------------
 // Skip guards — layered detection
@@ -49,12 +49,12 @@ import {CANTON_IMAGE, hasCantonImage, hasDaml, hasDocker, SDK_VERSION} from './h
 
 const DOCKER_AVAILABLE = hasDocker()
 const IMAGE_AVAILABLE = DOCKER_AVAILABLE && hasCantonImage()
-const SDK_AVAILABLE = hasDaml()
+const SDK_AVAILABLE = hasSdk()
 const CAN_RUN = DOCKER_AVAILABLE && IMAGE_AVAILABLE && SDK_AVAILABLE
 
 if (!DOCKER_AVAILABLE) console.log('SKIP: Docker not available')
 else if (!IMAGE_AVAILABLE) console.log(`SKIP: Canton image not found locally. Run: docker pull ${CANTON_IMAGE}`)
-else if (!SDK_AVAILABLE) console.log('SKIP: Daml SDK not available')
+else if (!SDK_AVAILABLE) console.log('SKIP: supported SDK CLI not available')
 
 const describeIfReady = CAN_RUN ? describe : describe.skip
 

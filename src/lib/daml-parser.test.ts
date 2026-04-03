@@ -114,6 +114,24 @@ template Record
       do return ()
 `
 
+const MULTI_TEMPLATE_EDGE_CASES = `module Main where
+
+template First
+  with
+    owner : Party
+  where
+    signatory owner
+
+    choice Archive_First : ()
+      controller owner
+      do return ()
+
+template Second
+  where
+    choice Ping : ()
+      do return ()
+`
+
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
@@ -242,6 +260,29 @@ describe('DamlParser', () => {
       expect(record.choices).toHaveLength(2)
       expect(record.choices[1].name).toBe('Archive_Record')
       expect(record.choices[1].args).toEqual([])
+    })
+
+    it('parses multiple templates and stops each body at the next template', () => {
+      const result = parseDamlSource(MULTI_TEMPLATE_EDGE_CASES)
+
+      expect(result.templates).toHaveLength(2)
+      expect(result.templates.map(template => template.name)).toEqual(['First', 'Second'])
+      expect(result.templates[0].fields).toEqual([{name: 'owner', type: 'Party'}])
+      expect(result.templates[1].fields).toEqual([])
+    })
+
+    it('returns empty signatory and controller values when they are missing', () => {
+      const result = parseDamlSource(MULTI_TEMPLATE_EDGE_CASES)
+      const second = result.templates[1]
+
+      expect(second.signatory).toBe('')
+      expect(second.choices).toEqual([{
+        args: [],
+        consuming: true,
+        controller: '',
+        name: 'Ping',
+        returnType: '()',
+      }])
     })
 
     it('returns empty templates for non-Daml content', () => {

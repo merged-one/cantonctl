@@ -477,6 +477,23 @@ describe('FullDevServer', () => {
       )
     })
 
+    it('reports non-Error build failures without crashing', async () => {
+      const mockWatcher = createMockWatcher()
+      const deps = createDeps({
+        build: vi.fn().mockRejectedValue('compiler offline'),
+        watch: vi.fn().mockReturnValue(mockWatcher),
+      })
+      const server = createFullDevServer(deps)
+      await server.start({...startOpts, debounceMs: 0})
+
+      const handler = mockWatcher.handlers.get('change')
+      handler?.('/project/daml/Main.daml')
+
+      await new Promise(r => setTimeout(r, 50))
+
+      expect(deps.output.error).toHaveBeenCalledWith('Build failed: compiler offline')
+    })
+
     it('reports upload failures for each participant without crashing', async () => {
       const mockWatcher = createMockWatcher()
       const firstClient = {
@@ -510,6 +527,34 @@ describe('FullDevServer', () => {
       )
       expect(deps.output.error).toHaveBeenCalledWith(
         'Upload to participant2 failed: socket closed',
+      )
+    })
+
+    it('reports plain Error upload failures without crashing', async () => {
+      const mockWatcher = createMockWatcher()
+      const firstClient = {
+        ...createMockClient(),
+        uploadDar: vi.fn().mockRejectedValue(new Error('connection reset')),
+      }
+      const secondClient = createMockClient()
+      let clientCall = 0
+      const deps = createDeps({
+        createClient: vi.fn().mockImplementation(() => {
+          clientCall++
+          return clientCall === 1 ? firstClient : secondClient
+        }),
+        findDarFile: vi.fn().mockResolvedValue('/project/.daml/dist/test.dar'),
+        readFile: vi.fn().mockResolvedValue(new Uint8Array([1, 2, 3])),
+        watch: vi.fn().mockReturnValue(mockWatcher),
+      })
+      const server = createFullDevServer(deps)
+      await server.start({...startOpts, debounceMs: 0})
+
+      mockWatcher.handlers.get('change')?.('/project/daml/Main.daml')
+      await new Promise(r => setTimeout(r, 50))
+
+      expect(deps.output.error).toHaveBeenCalledWith(
+        'Upload to participant1 failed: connection reset',
       )
     })
 

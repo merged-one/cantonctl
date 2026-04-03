@@ -1,12 +1,13 @@
 /**
  * @module daml
  *
- * SDK abstraction for invoking Daml/DPM toolchain commands. Wraps the
- * underlying CLI tools (`dpm` or `daml`) via a {@link ProcessRunner},
- * enabling testability without subprocess mocking.
+ * SDK abstraction for invoking the Canton/Daml toolchain. Wraps the
+ * underlying CLI tools (`dpm` current, `daml` legacy fallback) via a
+ * {@link ProcessRunner}, enabling testability without subprocess mocking.
  *
  * The module auto-detects which tool is available on PATH, preferring
- * `dpm` (the Canton Package Manager) over the legacy `daml` CLI.
+ * `dpm` (the Canton Package Manager) over the legacy `daml` CLI kept only
+ * for older Canton 3.3-era projects.
  *
  * All long-running operations accept an {@link AbortSignal} for graceful
  * cancellation, and all errors are structured {@link CantonctlError} instances.
@@ -125,6 +126,10 @@ export function createDamlSdk(options: DamlSdkOptions): DamlSdk {
   const {runner} = options
   let cachedTool: DamlTool | null = null
 
+  function versionArgsFor(tool: DamlTool): string[] {
+    return tool === 'dpm' ? ['version', '--active'] : ['version']
+  }
+
   /** Detect which tool is on PATH, caching the result. */
   async function resolveTool(): Promise<DamlTool> {
     if (cachedTool) return cachedTool
@@ -142,7 +147,7 @@ export function createDamlSdk(options: DamlSdkOptions): DamlSdk {
     }
 
     throw new CantonctlError(ErrorCode.SDK_NOT_INSTALLED, {
-      suggestion: 'Install the Daml SDK: https://docs.daml.com/getting-started/installation.html\n  Or install dpm: https://www.digitalasset.com/developers',
+      suggestion: 'Install DPM: curl https://get.digitalasset.com/install/install.sh | sh\n  Verify with: dpm version --active\n  Legacy Canton 3.3 only: install daml if you must run older projects.',
     })
   }
 
@@ -150,7 +155,7 @@ export function createDamlSdk(options: DamlSdkOptions): DamlSdk {
     async detect(): Promise<SdkInfo> {
       const tool = await resolveTool()
       const toolPath = (await runner.which(tool))!
-      const result = await runner.run(tool, ['version'], {ignoreExitCode: true})
+      const result = await runner.run(tool, versionArgsFor(tool), {ignoreExitCode: true})
       return {
         path: toolPath,
         tool,

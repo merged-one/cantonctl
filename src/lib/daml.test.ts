@@ -33,6 +33,7 @@ describe('DamlSdk', () => {
       expect(info.tool).toBe('dpm')
       expect(info.path).toBe('/usr/local/bin/dpm')
       expect(info.version).toBe('dpm 3.4.9')
+      expect(runner.run).toHaveBeenCalledWith('dpm', ['version', '--active'], {ignoreExitCode: true})
     })
 
     it('falls back to daml when dpm is not found', async () => {

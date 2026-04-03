@@ -70,16 +70,16 @@ Every cantonctl error includes a code, human-readable message, actionable sugges
 
 ### E2001 — SDK Not Installed
 
-**Message:** Neither dpm nor daml CLI found on PATH.
+**Message:** No supported SDK CLI found on PATH (install dpm; daml is legacy-only).
 
 **Symptoms:**
 - Running `cantonctl dev`, `cantonctl build`, or `cantonctl test` without the Daml SDK installed
 
 **Resolution:**
-1. Install the Daml SDK: https://docs.daml.com/getting-started/installation.html
-2. Or install dpm (Canton Package Manager): https://www.digitalasset.com/developers
-3. Verify installation: `dpm version` or `daml version`
-4. Ensure the binary is on your PATH
+1. Install DPM: `curl https://get.digitalasset.com/install/install.sh | sh`
+2. Verify installation: `dpm version --active`
+3. Ensure `~/.dpm/bin` is on your PATH
+4. Only if you must support older Canton 3.3 projects, keep `daml` as a legacy fallback
 
 ---
 
@@ -101,7 +101,8 @@ Every cantonctl error includes a code, human-readable message, actionable sugges
 **Message:** SDK command exited with a non-zero status.
 
 **Symptoms:**
-- A `dpm` or `daml` subcommand (build, test, codegen) exited with an error
+- A `dpm` subcommand (build, test, codegen) exited with an error
+- Or a legacy `daml` fallback subcommand exited with an error
 - Git clone failed when using `--from` flag
 
 **Resolution:**

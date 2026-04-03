@@ -12,7 +12,7 @@ import {createBuilder} from '../../src/lib/builder.js'
 import {createDamlSdk} from '../../src/lib/daml.js'
 import {createProcessRunner} from '../../src/lib/process-runner.js'
 import {scaffoldProject, type Template} from '../../src/lib/scaffold.js'
-import {hasDaml, SDK_VERSION} from './helpers.js'
+import {hasSdk, SDK_VERSION} from './helpers.js'
 
 async function findDarFile(dir: string): Promise<string | null> {
   try {
@@ -39,7 +39,7 @@ async function getDamlSourceMtime(dir: string): Promise<number> {
   return newest
 }
 
-const SDK_AVAILABLE = hasDaml()
+const SDK_AVAILABLE = hasSdk()
 const describeWithSdk = SDK_AVAILABLE ? describe : describe.skip
 
 let workDir: string

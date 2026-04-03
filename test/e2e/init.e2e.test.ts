@@ -4,8 +4,8 @@
  * End-to-end tests for `cantonctl init`. These tests run on real filesystem
  * and invoke the real Daml SDK for compilation and test execution.
  *
- * Prerequisites: daml CLI on PATH, Java 21+
- * Skip condition: Tests are skipped if daml is not available.
+ * Prerequisites: supported SDK CLI on PATH (`dpm` current, `daml` legacy), Java 21+
+ * Skip condition: Tests are skipped if no supported SDK CLI is available.
  */
 
 import {execSync} from 'node:child_process'
@@ -17,7 +17,7 @@ import {afterAll, beforeAll, describe, expect, it} from 'vitest'
 import {loadConfig} from '../../src/lib/config.js'
 import {scaffoldProject, type Template} from '../../src/lib/scaffold.js'
 import {getUpstreamSource} from '../../src/lib/upstream/manifest.js'
-import {ENV_PATH, hasDaml, SDK_VERSION} from './helpers.js'
+import {ENV_PATH, hasSdk, SDK_COMMAND, SDK_VERSION} from './helpers.js'
 
 const BUILTIN_TEMPLATES: Template[] = [
   'basic',
@@ -55,8 +55,14 @@ function run(cmd: string, cwd: string): {stdout: string; stderr: string; exitCod
   }
 }
 
-const SDK_AVAILABLE = hasDaml()
+const SDK_AVAILABLE = hasSdk()
 const itWithSdk = SDK_AVAILABLE ? it : it.skip
+const SDK_BUILD_COMMAND = SDK_COMMAND === 'daml'
+  ? 'daml build --no-legacy-assistant-warning'
+  : 'dpm build'
+const SDK_TEST_COMMAND = SDK_COMMAND === 'daml'
+  ? 'daml test --no-legacy-assistant-warning'
+  : 'dpm test'
 
 let workDir: string
 
@@ -197,7 +203,7 @@ describe('init E2E: scaffold', () => {
 
 describe('init E2E: Daml compilation', () => {
   for (const template of BUILTIN_TEMPLATES) {
-    itWithSdk(`${template} template compiles with daml build`, () => {
+    itWithSdk(`${template} template compiles with the SDK build command`, () => {
       const projectDir = path.join(workDir, `compile-${template}`)
       scaffoldProject({dir: projectDir, name: `compile-${template}`, template})
 
@@ -207,7 +213,7 @@ describe('init E2E: Daml compilation', () => {
         damlYaml.replace(/sdk-version: .*/, `sdk-version: ${SDK_VERSION}`),
       )
 
-      const result = run('daml build --no-legacy-assistant-warning', projectDir)
+      const result = run(SDK_BUILD_COMMAND, projectDir)
       expect(result.exitCode).toBe(0)
 
       const darDir = path.join(projectDir, '.daml', 'dist')
@@ -218,9 +224,9 @@ describe('init E2E: Daml compilation', () => {
   }
 
   for (const template of BUILTIN_TEMPLATES) {
-    itWithSdk(`${template} template tests pass with daml test`, () => {
+    itWithSdk(`${template} template tests pass with the SDK test command`, () => {
       const projectDir = path.join(workDir, `compile-${template}`)
-      const result = run('daml test --no-legacy-assistant-warning', projectDir)
+      const result = run(SDK_TEST_COMMAND, projectDir)
       expect(result.exitCode).toBe(0)
     })
   }

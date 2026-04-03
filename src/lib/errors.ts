@@ -9,7 +9,7 @@
  *
  * Error code ranges by subsystem:
  * - E1xxx: Configuration errors
- * - E2xxx: SDK/tool errors (dpm, daml)
+ * - E2xxx: SDK/tool errors (`dpm` current, `daml` legacy fallback)
  * - E3xxx: Sandbox/node errors
  * - E4xxx: Build errors
  * - E5xxx: Test errors
@@ -90,7 +90,7 @@ const ERROR_MESSAGES: Record<ErrorCode, string> = {
   [ErrorCode.CONFIG_DIRECTORY_EXISTS]: 'Target directory already exists.',
   [ErrorCode.SERVICE_NOT_CONFIGURED]: 'The requested service endpoint is not configured in the active profile.',
   [ErrorCode.EXPERIMENTAL_CONFIRMATION_REQUIRED]: 'This command requires explicit experimental confirmation.',
-  [ErrorCode.SDK_NOT_INSTALLED]: 'Neither dpm nor daml CLI found on PATH.',
+  [ErrorCode.SDK_NOT_INSTALLED]: 'No supported SDK CLI found on PATH (install dpm; daml is legacy-only).',
   [ErrorCode.SDK_VERSION_MISMATCH]: 'Installed SDK version is incompatible with this project.',
   [ErrorCode.SDK_COMMAND_FAILED]: 'SDK command exited with a non-zero status.',
   [ErrorCode.SANDBOX_START_FAILED]: 'Canton sandbox process exited unexpectedly during startup.',
@@ -135,7 +135,7 @@ export interface CantonctlErrorOptions {
  * @example
  * ```ts
  * const err = new CantonctlError(ErrorCode.SDK_NOT_INSTALLED, {
- *   suggestion: 'Install the Daml SDK: https://docs.daml.com/getting-started/installation.html',
+ *   suggestion: 'Install DPM: curl https://get.digitalasset.com/install/install.sh | sh',
  * })
  * console.log(err.code)       // 'E2001'
  * console.log(err.docsUrl)    // 'https://cantonctl.dev/errors#e2001'

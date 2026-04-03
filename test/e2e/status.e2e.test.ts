@@ -2,7 +2,7 @@
  * E2E tests for `cantonctl status` (LedgerClient queries).
  * Tests verify health checks and party listing against a real sandbox.
  *
- * Prerequisites: daml CLI on PATH, Java 21+
+ * Prerequisites: supported SDK CLI on PATH (`dpm` current, `daml` legacy), Java 21+
  * All tests share a single sandbox to avoid startup overhead.
  */
 
@@ -20,7 +20,7 @@ import {createLedgerClient} from '../../src/lib/ledger-client.js'
 import {createOutput} from '../../src/lib/output.js'
 import {createProcessRunner} from '../../src/lib/process-runner.js'
 import {scaffoldProject} from '../../src/lib/scaffold.js'
-import {hasDaml, SDK_VERSION} from './helpers.js'
+import {hasSdk, SDK_VERSION} from './helpers.js'
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -29,7 +29,7 @@ import {hasDaml, SDK_VERSION} from './helpers.js'
 const CANTON_PORT = 5041
 const JSON_API_PORT = 7611
 
-const SDK_AVAILABLE = hasDaml()
+const SDK_AVAILABLE = hasSdk()
 const describeWithSdk = SDK_AVAILABLE ? describe : describe.skip
 const CLI_ROOT = process.cwd()
 

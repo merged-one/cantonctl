@@ -122,6 +122,40 @@ describe('createStableSplice', () => {
     })).rejects.toMatchObject({code: ErrorCode.CONFIG_SCHEMA_VIOLATION})
   })
 
+  it('accepts explicit traffic expiry timestamps', async () => {
+    const adapter = {
+      createBuyTrafficRequest: vi.fn().mockResolvedValue({request_contract_id: 'request-2'}),
+      metadata: {
+        baseUrl: 'https://validator.example.com',
+        service: 'validator',
+        upstream: [],
+        upstreamSourceIds: ['splice-validator-internal-openapi'],
+        warnings: [],
+      },
+    }
+
+    const splice = createStableSplice({
+      createValidatorUserAdapter: vi.fn().mockReturnValue(adapter),
+    })
+
+    await splice.createTrafficBuy({
+      domainId: 'domain::1',
+      expiresAt: '2026-04-02T20:15:00Z',
+      receivingValidatorPartyId: 'AliceValidator',
+      token: 'jwt-token',
+      trackingId: 'traffic-1',
+      trafficAmount: 512,
+    })
+
+    expect(adapter.createBuyTrafficRequest).toHaveBeenCalledWith({
+      domain_id: 'domain::1',
+      expires_at: 1775160900000000,
+      receiving_validator_party_id: 'AliceValidator',
+      tracking_id: 'traffic-1',
+      traffic_amount: 512,
+    }, undefined)
+  })
+
   it('hydrates token transfer submissions from the stable token-standard factory context', async () => {
     const tokenStandardAdapter = {
       families: {
@@ -297,6 +331,38 @@ describe('createStableSplice', () => {
     })
   })
 
+  it('lists scan updates without a cursor when no after marker is provided', async () => {
+    const scanAdapter = {
+      getUpdateHistory: vi.fn().mockResolvedValue({
+        raw: 'not-a-record',
+        updates: [null, {update_id: 'update-2'}],
+      }),
+      metadata: {
+        baseUrl: 'https://scan.example.com',
+        service: 'scan',
+        upstream: [],
+        upstreamSourceIds: ['splice-scan-external-openapi'],
+        warnings: [],
+      },
+    }
+
+    const splice = createStableSplice({
+      createScanAdapter: vi.fn().mockReturnValue(scanAdapter),
+    })
+
+    const result = await splice.listScanUpdates({
+      pageSize: 2,
+      scanBaseUrl: 'https://scan.example.com',
+    })
+
+    expect(scanAdapter.getUpdateHistory).toHaveBeenCalledWith({
+      after: undefined,
+      page_size: 2,
+    }, undefined)
+    expect(result.raw).toEqual({})
+    expect(result.updates).toEqual([{}, {update_id: 'update-2'}])
+  })
+
   it('extracts stable holding interface views from ledger active contracts', async () => {
     const ledgerAdapter = {
       getActiveContracts: vi.fn().mockResolvedValue({
@@ -418,6 +484,93 @@ describe('createStableSplice', () => {
     ])
   })
 
+  it('keeps holdings without a readable instrument id when no filters are applied', async () => {
+    const ledgerAdapter = {
+      getActiveContracts: vi.fn().mockResolvedValue({
+        activeContracts: [{
+          contractId: 'holding-3',
+          interfaceViews: [{
+            interfaceId: TOKEN_HOLDING_INTERFACE_ID,
+            viewStatus: {code: 0, message: 'OK'},
+            viewValue: {
+              amount: '9.0000000000',
+              instrumentId: 'invalid',
+              owner: 'Alice',
+            },
+          }],
+          synchronizerId: 'sync::2',
+          templateId: 'Registry:BrokenHolding',
+        }],
+      }),
+      metadata: {
+        baseUrl: 'https://ledger.example.com',
+        service: 'ledger',
+        upstream: [],
+        upstreamSourceIds: ['daml-json-ledger-api-openapi'],
+        warnings: [],
+      },
+    }
+
+    const splice = createStableSplice({
+      createLedgerAdapter: vi.fn().mockReturnValue(ledgerAdapter),
+    })
+
+    const result = await splice.listTokenHoldings({
+      ledgerBaseUrl: 'https://ledger.example.com',
+      party: 'Alice',
+      token: 'jwt-token',
+    })
+
+    expect(result.holdings).toEqual([{
+      amount: '9.0000000000',
+      contractId: 'holding-3',
+      instrumentId: undefined,
+      owner: 'Alice',
+      synchronizerId: 'sync::2',
+      templateId: 'Registry:BrokenHolding',
+    }])
+  })
+
+  it('filters holdings that do not match the requested instrument id', async () => {
+    const ledgerAdapter = {
+      getActiveContracts: vi.fn().mockResolvedValue({
+        activeContracts: [{
+          contractId: 'holding-4',
+          interfaceViews: [{
+            interfaceId: TOKEN_HOLDING_INTERFACE_ID,
+            viewStatus: {code: 0, message: 'OK'},
+            viewValue: {
+              amount: '3.0000000000',
+              instrumentId: {admin: 'Registry', id: 'EUR'},
+              owner: 'Alice',
+            },
+          }],
+        }],
+      }),
+      metadata: {
+        baseUrl: 'https://ledger.example.com',
+        service: 'ledger',
+        upstream: [],
+        upstreamSourceIds: ['daml-json-ledger-api-openapi'],
+        warnings: [],
+      },
+    }
+
+    const splice = createStableSplice({
+      createLedgerAdapter: vi.fn().mockReturnValue(ledgerAdapter),
+    })
+
+    const result = await splice.listTokenHoldings({
+      instrumentAdmin: 'Registry',
+      instrumentId: 'USD',
+      ledgerBaseUrl: 'https://ledger.example.com',
+      party: 'Alice',
+      token: 'jwt-token',
+    })
+
+    expect(result.holdings).toEqual([])
+  })
+
   it('falls back to scan-proxy for ANS listing when the owned-entry service is not configured', async () => {
     const scanProxyAdapter = {
       listAnsEntries: vi.fn().mockResolvedValue({
@@ -504,6 +657,39 @@ describe('createStableSplice', () => {
     expect(result.snapshot.recordTime).toBe('2026-04-02T20:10:00Z')
   })
 
+  it('drops malformed scan created events when the snapshot payload is not an array', async () => {
+    const scanAdapter = {
+      getAcsSnapshot: vi.fn().mockResolvedValue({
+        created_events: 'invalid',
+        migration_id: 7,
+        record_time: '2026-04-02T20:10:00Z',
+      }),
+      getAcsSnapshotTimestampBefore: vi.fn().mockResolvedValue({
+        record_time: '2026-04-02T20:10:00Z',
+      }),
+      metadata: {
+        baseUrl: 'https://scan.example.com',
+        generatedSpec: {sourceId: 'splice-scan-external-openapi'},
+        service: 'scan',
+        upstream: [],
+        upstreamSourceIds: ['splice-scan-external-openapi'],
+        warnings: [],
+      },
+    }
+
+    const splice = createStableSplice({
+      createScanAdapter: vi.fn().mockReturnValue(scanAdapter),
+    })
+
+    const result = await splice.getScanAcs({
+      migrationId: 7,
+      pageSize: 10,
+      scanBaseUrl: 'https://scan.example.com',
+    })
+
+    expect(result.createdEvents).toEqual([])
+  })
+
   it('uses the provided scan record time and normalizes created events', async () => {
     const scanAdapter = {
       getAcsSnapshot: vi.fn().mockResolvedValue({
@@ -566,6 +752,55 @@ describe('createStableSplice', () => {
     expect(result.warnings).toEqual(['scan-acs'])
   })
 
+  it('normalizes malformed scan created event payloads', async () => {
+    const scanAdapter = {
+      getAcsSnapshot: vi.fn().mockResolvedValue({
+        created_events: [
+          null,
+          {
+            create_arguments: {owner: 'Alice'},
+            observers: 'Bob',
+            signatories: 'Alice',
+          },
+        ],
+        migration_id: 7,
+        record_time: '2026-04-02T20:10:00Z',
+      }),
+      getAcsSnapshotTimestampBefore: vi.fn(),
+      metadata: {
+        baseUrl: 'https://scan.example.com',
+        generatedSpec: {sourceId: 'splice-scan-external-openapi'},
+        service: 'scan',
+        upstream: [],
+        upstreamSourceIds: ['splice-scan-external-openapi'],
+        warnings: [],
+      },
+    }
+
+    const splice = createStableSplice({
+      createScanAdapter: vi.fn().mockReturnValue(scanAdapter),
+    })
+
+    const result = await splice.getScanAcs({
+      migrationId: 7,
+      pageSize: 10,
+      recordTime: '2026-04-02T20:09:00Z',
+      scanBaseUrl: 'https://scan.example.com',
+    })
+
+    expect(result.createdEvents).toEqual([
+      {},
+      {
+        contractId: undefined,
+        createdAt: undefined,
+        observers: [],
+        payload: {owner: 'Alice'},
+        signatories: [],
+        templateId: undefined,
+      },
+    ])
+  })
+
   it('uses scan for current-state reads when the scan service is configured', async () => {
     const scanAdapter = {
       getDsoInfo: vi.fn().mockResolvedValue({dso_party_id: 'DSO::1220'}),
@@ -605,6 +840,40 @@ describe('createStableSplice', () => {
     }, undefined)
     expect(result.source).toBe('scan')
     expect(result.warnings).toEqual(['scan-current-state'])
+  })
+
+  it('normalizes malformed scan current-state payloads', async () => {
+    const scanAdapter = {
+      getDsoInfo: vi.fn().mockResolvedValue('invalid'),
+      getOpenAndIssuingMiningRounds: vi.fn().mockResolvedValue({
+        issuing_mining_rounds: 'invalid',
+        open_mining_rounds: null,
+      }),
+      metadata: {
+        baseUrl: 'https://scan.example.com',
+        service: 'scan',
+        upstream: [],
+        upstreamSourceIds: ['splice-scan-external-openapi'],
+        warnings: [],
+      },
+    }
+
+    const splice = createStableSplice({
+      createScanAdapter: vi.fn().mockReturnValue(scanAdapter),
+    })
+
+    const result = await splice.getScanCurrentState({
+      scanBaseUrl: 'https://scan.example.com',
+    })
+
+    expect(result).toEqual({
+      dsoInfo: {},
+      endpoint: 'https://scan.example.com',
+      issuingMiningRounds: [],
+      openMiningRounds: [],
+      source: 'scan',
+      warnings: [],
+    })
   })
 
   it('uses scan-proxy for current-state reads when scan is unavailable', async () => {
@@ -647,6 +916,40 @@ describe('createStableSplice', () => {
       openMiningRounds: [{round: 2}],
       source: 'scanProxy',
       warnings: ['fallback'],
+    })
+  })
+
+  it('normalizes malformed scan-proxy current-state payloads', async () => {
+    const scanProxyAdapter = {
+      getDsoInfo: vi.fn().mockResolvedValue(null),
+      getOpenAndIssuingMiningRounds: vi.fn().mockResolvedValue({
+        issuing_mining_rounds: 'invalid',
+        open_mining_rounds: 'invalid',
+      }),
+      metadata: {
+        baseUrl: 'https://scan-proxy.example.com',
+        service: 'scanProxy',
+        upstream: [],
+        upstreamSourceIds: ['splice-scan-proxy-openapi'],
+        warnings: [],
+      },
+    }
+
+    const splice = createStableSplice({
+      createScanProxyAdapter: vi.fn().mockReturnValue(scanProxyAdapter),
+    })
+
+    const result = await splice.getScanCurrentState({
+      scanProxyBaseUrl: 'https://scan-proxy.example.com',
+    })
+
+    expect(result).toEqual({
+      dsoInfo: {},
+      endpoint: 'https://scan-proxy.example.com',
+      issuingMiningRounds: [],
+      openMiningRounds: [],
+      source: 'scanProxy',
+      warnings: [],
     })
   })
 
@@ -700,6 +1003,42 @@ describe('createStableSplice', () => {
     ])
   })
 
+  it('looks up public ans entries by name through the scan surface', async () => {
+    const scanAdapter = {
+      listAnsEntries: vi.fn(),
+      lookupAnsEntryByName: vi.fn().mockResolvedValue({
+        entry: {
+          contract_id: 'ans-lookup-1',
+          name: 'alice.unverified.ans',
+          user: 'Alice',
+        },
+      }),
+      lookupAnsEntryByParty: vi.fn(),
+      metadata: {
+        baseUrl: 'https://scan.example.com',
+        service: 'scan',
+        upstream: [],
+        upstreamSourceIds: ['splice-scan-external-openapi'],
+        warnings: [],
+      },
+    }
+
+    const splice = createStableSplice({
+      createScanAdapter: vi.fn().mockReturnValue(scanAdapter),
+    })
+
+    const result = await splice.listAnsEntries({
+      name: 'alice.unverified.ans',
+      scanBaseUrl: 'https://scan.example.com',
+      source: 'scan',
+    })
+
+    expect(scanAdapter.lookupAnsEntryByName).toHaveBeenCalledWith('alice.unverified.ans', undefined)
+    expect(result.entries).toEqual([
+      expect.objectContaining({contractId: 'ans-lookup-1', name: 'alice.unverified.ans'}),
+    ])
+  })
+
   it('lists public ans entries through the scan surface when a prefix query is used', async () => {
     const scanAdapter = {
       listAnsEntries: vi.fn().mockResolvedValue({
@@ -749,6 +1088,45 @@ describe('createStableSplice', () => {
     ])
   })
 
+  it('drops malformed public ans list payloads from scan surfaces', async () => {
+    const scanAdapter = {
+      listAnsEntries: vi.fn().mockResolvedValue({
+        entries: [null, {name: 'alice.unverified.ans', user: 'Alice'}],
+      }),
+      lookupAnsEntryByName: vi.fn(),
+      lookupAnsEntryByParty: vi.fn(),
+      metadata: {
+        baseUrl: 'https://scan.example.com',
+        service: 'scan',
+        upstream: [],
+        upstreamSourceIds: ['splice-scan-external-openapi'],
+        warnings: [],
+      },
+    }
+
+    const splice = createStableSplice({
+      createScanAdapter: vi.fn().mockReturnValue(scanAdapter),
+    })
+
+    const result = await splice.listAnsEntries({
+      namePrefix: 'alice',
+      scanBaseUrl: 'https://scan.example.com',
+      source: 'scan',
+    })
+
+    expect(result.entries).toEqual([
+      {},
+      {
+        contractId: undefined,
+        description: undefined,
+        expiresAt: undefined,
+        name: 'alice.unverified.ans',
+        url: undefined,
+        user: 'Alice',
+      },
+    ])
+  })
+
   it('uses the owned ans service when requested explicitly even for party queries', async () => {
     const ansAdapter = {
       listEntries: vi.fn().mockResolvedValue({
@@ -782,6 +1160,319 @@ describe('createStableSplice', () => {
     expect(result.entries).toEqual([
       expect.objectContaining({contractId: 'ans-2', name: 'alice.unverified.ans'}),
     ])
+  })
+
+  it('prefers the owned ans service automatically when it is configured and no party lookup is requested', async () => {
+    const ansAdapter = {
+      listEntries: vi.fn().mockResolvedValue({
+        entries: [{
+          amount: 5,
+          contractId: 17,
+          expiresAt: false,
+          name: 'alice.unverified.ans',
+          paymentDuration: {},
+          paymentInterval: [],
+          unit: 9,
+        }],
+      }),
+      metadata: {
+        baseUrl: 'https://ans.example.com',
+        service: 'ans',
+        upstream: [],
+        upstreamSourceIds: ['splice-ans-external-openapi'],
+        warnings: ['ans-auto'],
+      },
+    }
+
+    const splice = createStableSplice({
+      createAnsAdapter: vi.fn().mockReturnValue(ansAdapter),
+    })
+
+    const result = await splice.listAnsEntries({
+      ansBaseUrl: 'https://ans.example.com',
+      namePrefix: 'alice',
+      token: 'jwt-token',
+    })
+
+    expect(result).toEqual({
+      endpoint: 'https://ans.example.com',
+      entries: [{
+        amount: undefined,
+        contractId: undefined,
+        expiresAt: undefined,
+        name: 'alice.unverified.ans',
+        paymentDuration: undefined,
+        paymentInterval: undefined,
+        unit: undefined,
+      }],
+      source: 'ans',
+      warnings: ['ans-auto'],
+    })
+  })
+
+  it('preserves populated owned ans entry fields when they are already strings', async () => {
+    const ansAdapter = {
+      listEntries: vi.fn().mockResolvedValue({
+        entries: [{
+          amount: '1.0',
+          contractId: 'ans-9',
+          expiresAt: '2026-04-03T00:00:00Z',
+          name: 'alice.unverified.ans',
+          paymentDuration: '30',
+          paymentInterval: 'monthly',
+          unit: 'USD',
+        }],
+      }),
+      metadata: {
+        baseUrl: 'https://ans.example.com',
+        service: 'ans',
+        upstream: [],
+        upstreamSourceIds: ['splice-ans-external-openapi'],
+        warnings: [],
+      },
+    }
+
+    const splice = createStableSplice({
+      createAnsAdapter: vi.fn().mockReturnValue(ansAdapter),
+    })
+
+    const result = await splice.listAnsEntries({
+      ansBaseUrl: 'https://ans.example.com',
+      token: 'jwt-token',
+    })
+
+    expect(result.entries).toEqual([{
+      amount: '1.0',
+      contractId: 'ans-9',
+      expiresAt: '2026-04-03T00:00:00Z',
+      name: 'alice.unverified.ans',
+      paymentDuration: '30',
+      paymentInterval: 'monthly',
+      unit: 'USD',
+    }])
+  })
+
+  it('falls back to the owned ans service when party lookups are requested without scan services', async () => {
+    const ansAdapter = {
+      listEntries: vi.fn().mockResolvedValue({
+        entries: [
+          {contractId: 'ans-3', name: 'alice.unverified.ans'},
+          {contractId: 'ans-4', name: 'bob.unverified.ans'},
+        ],
+      }),
+      metadata: {
+        baseUrl: 'https://ans.example.com',
+        service: 'ans',
+        upstream: [],
+        upstreamSourceIds: ['splice-ans-external-openapi'],
+        warnings: [],
+      },
+    }
+
+    const splice = createStableSplice({
+      createAnsAdapter: vi.fn().mockReturnValue(ansAdapter),
+    })
+
+    const result = await splice.listAnsEntries({
+      ansBaseUrl: 'https://ans.example.com',
+      name: 'alice.unverified.ans',
+      party: 'Alice',
+      token: 'jwt-token',
+    })
+
+    expect(result.source).toBe('ans')
+    expect(result.entries).toEqual([
+      {contractId: 'ans-3', name: 'alice.unverified.ans'},
+    ])
+  })
+
+  it('filters owned ans entries that do not match the requested prefix', async () => {
+    const ansAdapter = {
+      listEntries: vi.fn().mockResolvedValue({
+        entries: [
+          {contractId: 'ans-6'},
+          {contractId: 'ans-7', name: 'bob.unverified.ans'},
+          {contractId: 'ans-8', name: 'alice.unverified.ans'},
+        ],
+      }),
+      metadata: {
+        baseUrl: 'https://ans.example.com',
+        service: 'ans',
+        upstream: [],
+        upstreamSourceIds: ['splice-ans-external-openapi'],
+        warnings: [],
+      },
+    }
+
+    const splice = createStableSplice({
+      createAnsAdapter: vi.fn().mockReturnValue(ansAdapter),
+    })
+
+    const result = await splice.listAnsEntries({
+      ansBaseUrl: 'https://ans.example.com',
+      namePrefix: 'alice',
+      token: 'jwt-token',
+    })
+
+    expect(result.entries).toEqual([
+      {contractId: 'ans-8', name: 'alice.unverified.ans'},
+    ])
+  })
+
+  it('uses scan-proxy lookups for named queries when scan is unavailable', async () => {
+    const scanProxyAdapter = {
+      listAnsEntries: vi.fn(),
+      lookupAnsEntryByName: vi.fn().mockResolvedValue(null),
+      lookupAnsEntryByParty: vi.fn(),
+      metadata: {
+        baseUrl: 'https://validator.example.com/api/validator',
+        service: 'scanProxy',
+        upstream: [],
+        upstreamSourceIds: ['splice-scan-proxy-openapi'],
+        warnings: [],
+      },
+    }
+
+    const splice = createStableSplice({
+      createScanProxyAdapter: vi.fn().mockReturnValue(scanProxyAdapter),
+    })
+
+    const result = await splice.listAnsEntries({
+      name: 'alice.unverified.ans',
+      profile: {
+        experimental: true,
+        kind: 'remote-validator',
+        name: 'validator',
+        services: {
+          scanProxy: {url: 'https://validator.example.com/api/validator'},
+        },
+      },
+    })
+
+    expect(scanProxyAdapter.lookupAnsEntryByName).toHaveBeenCalledWith('alice.unverified.ans', undefined)
+    expect(result.entries).toEqual([])
+  })
+
+  it('uses scan-proxy lookups for party queries when scan is unavailable', async () => {
+    const scanProxyAdapter = {
+      listAnsEntries: vi.fn(),
+      lookupAnsEntryByName: vi.fn(),
+      lookupAnsEntryByParty: vi.fn().mockResolvedValue({
+        entry: {
+          contract_id: 'ans-5',
+          name: 'alice.unverified.ans',
+          user: 'Alice',
+        },
+      }),
+      metadata: {
+        baseUrl: 'https://validator.example.com/api/validator',
+        service: 'scanProxy',
+        upstream: [],
+        upstreamSourceIds: ['splice-scan-proxy-openapi'],
+        warnings: [],
+      },
+    }
+
+    const splice = createStableSplice({
+      createScanProxyAdapter: vi.fn().mockReturnValue(scanProxyAdapter),
+    })
+
+    const result = await splice.listAnsEntries({
+      party: 'Alice',
+      profile: {
+        experimental: true,
+        kind: 'remote-validator',
+        name: 'validator',
+        services: {
+          scanProxy: {url: 'https://validator.example.com/api/validator'},
+        },
+      },
+    })
+
+    expect(scanProxyAdapter.lookupAnsEntryByParty).toHaveBeenCalledWith('Alice', undefined)
+    expect(result.entries).toEqual([
+      expect.objectContaining({contractId: 'ans-5', name: 'alice.unverified.ans'}),
+    ])
+  })
+
+  it('returns an empty ans list when a public party lookup misses', async () => {
+    const scanProxyAdapter = {
+      listAnsEntries: vi.fn(),
+      lookupAnsEntryByName: vi.fn(),
+      lookupAnsEntryByParty: vi.fn().mockResolvedValue(null),
+      metadata: {
+        baseUrl: 'https://validator.example.com/api/validator',
+        service: 'scanProxy',
+        upstream: [],
+        upstreamSourceIds: ['splice-scan-proxy-openapi'],
+        warnings: [],
+      },
+    }
+
+    const splice = createStableSplice({
+      createScanProxyAdapter: vi.fn().mockReturnValue(scanProxyAdapter),
+    })
+
+    const result = await splice.listAnsEntries({
+      party: 'Alice',
+      profile: {
+        experimental: true,
+        kind: 'remote-validator',
+        name: 'validator',
+        services: {
+          scanProxy: {url: 'https://validator.example.com/api/validator'},
+        },
+      },
+    })
+
+    expect(result.entries).toEqual([])
+  })
+
+  it('returns an empty ans list when the public list payload is malformed', async () => {
+    const scanProxyAdapter = {
+      listAnsEntries: vi.fn().mockResolvedValue({entries: 'invalid'}),
+      lookupAnsEntryByName: vi.fn(),
+      lookupAnsEntryByParty: vi.fn(),
+      metadata: {
+        baseUrl: 'https://validator.example.com/api/validator',
+        service: 'scanProxy',
+        upstream: [],
+        upstreamSourceIds: ['splice-scan-proxy-openapi'],
+        warnings: [],
+      },
+    }
+
+    const splice = createStableSplice({
+      createScanProxyAdapter: vi.fn().mockReturnValue(scanProxyAdapter),
+    })
+
+    const result = await splice.listAnsEntries({
+      namePrefix: 'alice',
+      profile: {
+        experimental: true,
+        kind: 'remote-validator',
+        name: 'validator',
+        services: {
+          scanProxy: {url: 'https://validator.example.com/api/validator'},
+        },
+      },
+    })
+
+    expect(result.entries).toEqual([])
+  })
+
+  it('throws when no ans-compatible service is configured', async () => {
+    const splice = createStableSplice()
+
+    await expect(splice.listAnsEntries({
+      namePrefix: 'alice',
+      profile: {
+        experimental: false,
+        kind: 'remote-validator',
+        name: 'validator',
+        services: {},
+      },
+    })).rejects.toMatchObject({code: ErrorCode.SERVICE_NOT_CONFIGURED})
   })
 
   it('throws when a traffic request status cannot be found', async () => {
@@ -836,6 +1527,151 @@ describe('createStableSplice', () => {
       trackingId: 'tracking-1',
       warnings: ['operator'],
     })
+  })
+
+  it('falls back to empty transfer context and omits disclosed contracts when the factory context is absent', async () => {
+    const tokenStandardAdapter = {
+      families: {
+        allocation: {family: 'allocation', requestJson: vi.fn(), requestOptionalJson: vi.fn(), sourceId: 'splice-token-allocation-openapi'},
+        allocationInstruction: {family: 'allocationInstruction', requestJson: vi.fn(), requestOptionalJson: vi.fn(), sourceId: 'splice-token-allocation-instruction-openapi'},
+        metadata: {family: 'metadata', requestJson: vi.fn(), requestOptionalJson: vi.fn(), sourceId: 'splice-token-metadata-openapi'},
+        transferInstruction: {
+          family: 'transferInstruction',
+          requestJson: vi.fn().mockResolvedValue({
+            factoryId: 'factory-2',
+            transferKind: 'direct',
+          }),
+          requestOptionalJson: vi.fn(),
+          sourceId: 'splice-token-transfer-instruction-openapi',
+        },
+      },
+      metadata: {
+        baseUrl: 'https://tokens.example.com',
+        families: [],
+        service: 'tokenStandard',
+        upstream: [],
+        upstreamSourceIds: ['splice-token-transfer-instruction-openapi'],
+        warnings: [],
+      },
+    }
+    const ledgerAdapter = {
+      metadata: {
+        baseUrl: 'https://ledger.example.com',
+        service: 'ledger',
+        upstream: [],
+        upstreamSourceIds: ['daml-json-ledger-api-openapi'],
+        warnings: [],
+      },
+      submitAndWait: vi.fn().mockResolvedValue({transaction: {updateId: 'tx-2'}}),
+    }
+
+    const splice = createStableSplice({
+      createLedgerAdapter: vi.fn().mockReturnValue(ledgerAdapter),
+      createTokenStandardAdapter: vi.fn().mockReturnValue(tokenStandardAdapter),
+      now: () => new Date('2026-04-02T20:00:00Z'),
+    })
+
+    await splice.transferToken({
+      amount: '1.0000000000',
+      instrumentAdmin: 'Registry',
+      instrumentId: 'USD',
+      ledgerBaseUrl: 'https://ledger.example.com',
+      receiver: 'Bob',
+      sender: 'Alice',
+      token: 'jwt-token',
+      tokenStandardBaseUrl: 'https://tokens.example.com',
+    })
+
+    expect(ledgerAdapter.submitAndWait).toHaveBeenCalledWith(expect.objectContaining({
+      commands: [{
+        ExerciseCommand: expect.objectContaining({
+          choiceArgument: expect.objectContaining({
+            extraArgs: {
+              context: {values: {}},
+              meta: {values: {}},
+            },
+          }),
+        }),
+      }],
+      disclosedContracts: undefined,
+    }), undefined)
+  })
+
+  it('normalizes sparse disclosed contracts returned by the transfer factory', async () => {
+    const tokenStandardAdapter = {
+      families: {
+        allocation: {family: 'allocation', requestJson: vi.fn(), requestOptionalJson: vi.fn(), sourceId: 'splice-token-allocation-openapi'},
+        allocationInstruction: {family: 'allocationInstruction', requestJson: vi.fn(), requestOptionalJson: vi.fn(), sourceId: 'splice-token-allocation-instruction-openapi'},
+        metadata: {family: 'metadata', requestJson: vi.fn(), requestOptionalJson: vi.fn(), sourceId: 'splice-token-metadata-openapi'},
+        transferInstruction: {
+          family: 'transferInstruction',
+          requestJson: vi.fn().mockResolvedValue({
+            choiceContext: {
+              disclosedContracts: [
+                {},
+                {contractId: 'holding-2'},
+              ],
+            },
+            factoryId: 'factory-3',
+            transferKind: 'direct',
+          }),
+          requestOptionalJson: vi.fn(),
+          sourceId: 'splice-token-transfer-instruction-openapi',
+        },
+      },
+      metadata: {
+        baseUrl: 'https://tokens.example.com',
+        families: [],
+        service: 'tokenStandard',
+        upstream: [],
+        upstreamSourceIds: ['splice-token-transfer-instruction-openapi'],
+        warnings: [],
+      },
+    }
+    const ledgerAdapter = {
+      metadata: {
+        baseUrl: 'https://ledger.example.com',
+        service: 'ledger',
+        upstream: [],
+        upstreamSourceIds: ['daml-json-ledger-api-openapi'],
+        warnings: [],
+      },
+      submitAndWait: vi.fn().mockResolvedValue({transaction: {updateId: 'tx-3'}}),
+    }
+
+    const splice = createStableSplice({
+      createLedgerAdapter: vi.fn().mockReturnValue(ledgerAdapter),
+      createTokenStandardAdapter: vi.fn().mockReturnValue(tokenStandardAdapter),
+      now: () => new Date('2026-04-02T20:00:00Z'),
+    })
+
+    await splice.transferToken({
+      amount: '1.0000000000',
+      instrumentAdmin: 'Registry',
+      instrumentId: 'USD',
+      ledgerBaseUrl: 'https://ledger.example.com',
+      receiver: 'Bob',
+      sender: 'Alice',
+      token: 'jwt-token',
+      tokenStandardBaseUrl: 'https://tokens.example.com',
+    })
+
+    expect(ledgerAdapter.submitAndWait).toHaveBeenCalledWith(expect.objectContaining({
+      disclosedContracts: [
+        {
+          contractId: '',
+          createdEventBlob: '',
+          synchronizerId: '',
+          templateId: '',
+        },
+        {
+          contractId: 'holding-2',
+          createdEventBlob: '',
+          synchronizerId: '',
+          templateId: '',
+        },
+      ],
+    }), undefined)
   })
 })
 

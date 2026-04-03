@@ -5,8 +5,8 @@
  * Tests the full stack: Daml source parsing, REST API, sandbox integration,
  * template discovery, contract creation, multi-party contract queries.
  *
- * Prerequisites: daml CLI on PATH, Java 21+
- * Skip condition: Tests are skipped if daml is not available.
+ * Prerequisites: supported SDK CLI on PATH (`dpm` current, `daml` legacy), Java 21+
+ * Skip condition: Tests are skipped if no supported SDK CLI is available.
  *
  * Real-world workloads tested:
  * 1. Token operations: create → query → exercise choices
@@ -35,13 +35,13 @@ import {createProcessRunner} from '../../src/lib/process-runner.js'
 import {scaffoldProject} from '../../src/lib/scaffold.js'
 import {createServeServer, type ServeServer} from '../../src/lib/serve.js'
 import {createTestRunner} from '../../src/lib/test-runner.js'
-import {hasDaml, SDK_VERSION} from './helpers.js'
+import {hasSdk, SDK_VERSION} from './helpers.js'
 
 // ---------------------------------------------------------------------------
 // Setup
 // ---------------------------------------------------------------------------
 
-const SDK_AVAILABLE = hasDaml()
+const SDK_AVAILABLE = hasSdk()
 const describeWithSdk = SDK_AVAILABLE ? describe : describe.skip
 
 async function findDarFile(dir: string): Promise<string | null> {

@@ -17,7 +17,7 @@ cantonctl test [flags]
 
 ## Behavior
 
-Delegates to `dpm test` or `daml test` (auto-detected). Captures the exit code to determine pass/fail and forwards the SDK's output with ANSI codes stripped (per ADR-0012).
+Delegates to `dpm test` for the current Canton 3.4 toolchain. If only the legacy `daml` CLI is installed, cantonctl falls back to `daml test` for older projects. The command captures the exit code to determine pass/fail and forwards the SDK's output with ANSI codes stripped (per ADR-0012).
 
 - **Exit code 0** → all tests passed
 - **Exit code 1** → one or more tests failed (command exits with code 1)
@@ -63,7 +63,7 @@ On failure:
 
 | Code | Error | Resolution |
 |------|-------|------------|
-| E2001 | SDK not installed | Install dpm or daml |
+| E2001 | SDK not installed | Install DPM: `curl https://get.digitalasset.com/install/install.sh | sh` |
 | E5001 | Test execution failed | Review failing test output |
 
 ## Source

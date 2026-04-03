@@ -1,4 +1,6 @@
 import * as path from 'node:path'
+import * as nodeFs from 'node:fs'
+import {fileURLToPath} from 'node:url'
 import {describe, expect, it, vi} from 'vitest'
 
 import {loadConfig, type ConfigFileSystem} from './config.js'
@@ -30,6 +32,8 @@ const PINNED_SDK_VERSION = (() => {
   const version = source.kind === 'git' ? source.ref : source.version
   return version.replace(/^v/, '').split('-')[0]
 })()
+
+const TEMPLATE_ROOT = fileURLToPath(new URL('../../assets/templates/', import.meta.url))
 
 interface WrittenFile {
   path: string
@@ -201,6 +205,36 @@ describe('scaffoldProject', () => {
     expect(packageJson).toContain('@canton-network/wallet-sdk')
     expect(packageJson).not.toContain('validator-internal')
   })
+
+  it('throws when bundled template files are missing', () => {
+    const filesPath = path.join(TEMPLATE_ROOT, 'basic', 'files')
+    const backupPath = `${filesPath}.tmp-test`
+    nodeFs.renameSync(filesPath, backupPath)
+
+    try {
+      expect(() => scaffoldProject({
+        dir: '/projects/my-app',
+        fs: createMockScaffoldFs(),
+        name: 'my-app',
+        template: 'basic',
+      })).toThrow(CantonctlError)
+    } finally {
+      nodeFs.renameSync(backupPath, filesPath)
+    }
+  })
+
+  it('ignores non-file entries while walking bundled template files', () => {
+    const symlinkPath = path.join(TEMPLATE_ROOT, 'basic', 'files', 'symlink.tmp-test')
+    nodeFs.symlinkSync(path.join(TEMPLATE_ROOT, 'basic', 'files', 'daml', 'Main.daml'), symlinkPath)
+
+    try {
+      const fs = createMockScaffoldFs()
+      const result = scaffoldProject({dir: '/projects/my-app', fs, name: 'my-app', template: 'basic'})
+      expect(result.files).not.toContain('symlink.tmp-test')
+    } finally {
+      nodeFs.unlinkSync(symlinkPath)
+    }
+  })
 })
 
 describe('generateConfig', () => {
@@ -310,6 +344,18 @@ describe('generateDamlSource', () => {
     const source = generateDamlSource('splice-dapp-sdk')
     expect(source).toContain('template WalletConnection')
     expect(source).toContain('choice RememberProvider')
+  })
+
+  it('throws when a bundled template file is missing', () => {
+    const filePath = path.join(TEMPLATE_ROOT, 'basic', 'files', 'daml', 'Main.daml')
+    const backupPath = `${filePath}.tmp-test`
+    nodeFs.renameSync(filePath, backupPath)
+
+    try {
+      expect(() => generateDamlSource('basic')).toThrow(CantonctlError)
+    } finally {
+      nodeFs.renameSync(backupPath, filePath)
+    }
   })
 })
 
@@ -425,5 +471,50 @@ describe('scaffoldFromUrl', () => {
       runner,
       url: 'https://github.com/user/missing-template',
     })).rejects.toThrow(CantonctlError)
+  })
+})
+
+describe('module initialization', () => {
+  it('throws when a bundled template manifest is missing', async () => {
+    const manifestPath = path.join(TEMPLATE_ROOT, 'basic', 'template.json')
+    const backupPath = `${manifestPath}.tmp-test`
+    nodeFs.renameSync(manifestPath, backupPath)
+
+    try {
+      vi.resetModules()
+      await expect(import('./scaffold.js')).rejects.toMatchObject({code: ErrorCode.CONFIG_SCHEMA_VIOLATION})
+    } finally {
+      nodeFs.renameSync(backupPath, manifestPath)
+    }
+  })
+
+  it('throws when a bundled template manifest contains invalid json', async () => {
+    const manifestPath = path.join(TEMPLATE_ROOT, 'basic', 'template.json')
+    const original = nodeFs.readFileSync(manifestPath, 'utf8')
+    nodeFs.writeFileSync(manifestPath, '{"description":')
+
+    try {
+      vi.resetModules()
+      await expect(import('./scaffold.js')).rejects.toMatchObject({code: ErrorCode.CONFIG_SCHEMA_VIOLATION})
+    } finally {
+      nodeFs.writeFileSync(manifestPath, original)
+    }
+  })
+
+  it('drops non-Error manifest parse failures from the wrapped cause', async () => {
+    const originalParse = JSON.parse
+    JSON.parse = (() => { throw 'bad manifest' }) as typeof JSON.parse
+
+    try {
+      vi.resetModules()
+      try {
+        await import('./scaffold.js')
+      } catch (err) {
+        expect((err as {code?: string}).code).toBe(ErrorCode.CONFIG_SCHEMA_VIOLATION)
+        expect((err as Error & {cause?: unknown}).cause).toBeUndefined()
+      }
+    } finally {
+      JSON.parse = originalParse
+    }
   })
 })

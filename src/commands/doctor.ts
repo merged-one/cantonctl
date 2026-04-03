@@ -2,7 +2,7 @@
  * @module commands/doctor
  *
  * Environment diagnostics — checks all prerequisites and reports status.
- * Offers to install missing required dependencies (Daml SDK).
+ * Offers to install missing required dependencies (DPM for current toolchains).
  * Thin oclif wrapper over {@link createDoctor}.
  */
 
@@ -110,20 +110,20 @@ export default class Doctor extends Command {
         out.success(summary)
       }
 
-      // Offer to install missing SDK
+      // Offer to install missing SDK CLI
       if (flags.fix || process.stdout.isTTY) {
         const sdkCheck = result.checks.find(c => c.name === 'Daml SDK' && c.status === 'fail')
         if (sdkCheck) {
           out.log('')
-          const shouldInstall = flags.fix || await this.confirm('Daml SDK is missing. Install it now? (y/N) ')
+          const shouldInstall = flags.fix || await this.confirm('DPM is missing. Install it now? (y/N) ')
           if (shouldInstall) {
             out.log('')
-            out.info('Installing Daml SDK 3.4.11...')
+            out.info('Installing DPM...')
             try {
               this.installSdk()
-              out.success('Daml SDK installed. Run "cantonctl doctor" again to verify.')
+              out.success('DPM installed. Run "cantonctl doctor" again to verify.')
             } catch {
-              out.error('SDK installation failed. Install manually: curl -sSL https://get.daml.com/ | sh -s 3.4.11')
+              out.error('SDK installation failed. Install manually: curl https://get.digitalasset.com/install/install.sh | sh')
             }
           }
         }
@@ -173,7 +173,7 @@ export default class Doctor extends Command {
   }
 
   protected installSdk(): void {
-    execSync('curl -sSL https://get.daml.com/ | sh -s 3.4.11', {
+    execSync('curl -fsSL https://get.digitalasset.com/install/install.sh | sh', {
       stdio: 'inherit',
       timeout: 300_000,
     })

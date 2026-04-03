@@ -80,7 +80,7 @@ function createDoctorRunner(options: {
         return {exitCode: 0, stderr: 'openjdk version "21.0.10"', stdout: ''}
       }
 
-      if (cmd === 'dpm' && args[0] === '--version') {
+      if (cmd === 'dpm' && args[0] === 'version' && args[1] === '--active') {
         return {exitCode: 0, stderr: '', stdout: '1.0.0'}
       }
 
@@ -1459,7 +1459,7 @@ describe('runtime command surface', () => {
       expect(result.error).toBeDefined()
       expect(result.stdout).toContain('Institutional-grade CLI toolchain for Canton Network')
       expect(result.stdout).toContain('Checking your development environment...')
-      expect(question).toHaveBeenCalledWith('Daml SDK is missing. Install it now? (y/N) ', expect.any(Function))
+      expect(question).toHaveBeenCalledWith('DPM is missing. Install it now? (y/N) ', expect.any(Function))
       expect(result.stderr).toContain('required check failed')
     } finally {
       restoreTty()
@@ -1486,8 +1486,8 @@ describe('runtime command surface', () => {
     const result = await captureOutput(() => TestDoctor.run(['--fix'], {root: CLI_ROOT}))
     expect(result.error).toBeDefined()
     expect(installSdk).toHaveBeenCalled()
-    expect(result.stdout).toContain('Installing Daml SDK 3.4.11...')
-    expect(result.stdout).toContain('Daml SDK installed. Run "cantonctl doctor" again to verify.')
+    expect(result.stdout).toContain('Installing DPM...')
+    expect(result.stdout).toContain('DPM installed. Run "cantonctl doctor" again to verify.')
   })
 
   it('reports doctor installation failures when the automated fix command errors', async () => {

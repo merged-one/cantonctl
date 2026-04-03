@@ -58,7 +58,7 @@ function createMockRunner(overrides: Partial<{
         return {exitCode: 0, stderr: '', stdout: '3.4.11'}
       }
 
-      if (cmd === 'dpm' && args[0] === '--version') {
+      if (cmd === 'dpm' && args[0] === 'version' && args[1] === '--active') {
         return {exitCode: 0, stderr: '', stdout: '1.0.0'}
       }
 
@@ -251,7 +251,7 @@ describe('Doctor', () => {
     it('falls back to an installed marker when dpm version output is blank', async () => {
       const runner = createMockRunner({
         runImpl: (cmd, args) => {
-          if (cmd === 'dpm' && args[0] === '--version') {
+          if (cmd === 'dpm' && args[0] === 'version' && args[1] === '--active') {
             return {exitCode: 0, stderr: '', stdout: ''}
           }
           return undefined
@@ -271,7 +271,7 @@ describe('Doctor', () => {
     it('falls back from dpm to daml when dpm probing fails', async () => {
       const runner = createMockRunner({
         runImpl: (cmd, args) => {
-          if (cmd === 'dpm' && args[0] === '--version') {
+          if (cmd === 'dpm' && args[0] === 'version' && args[1] === '--active') {
             throw new Error('dpm broken')
           }
           return undefined
@@ -290,6 +290,7 @@ describe('Doctor', () => {
       const sdkCheck = result.checks.find(c => c.name === 'Daml SDK')
       expect(sdkCheck?.status).toBe('pass')
       expect(sdkCheck?.detail).toContain('daml 3.4.11')
+      expect(sdkCheck?.detail).toContain('legacy fallback')
     })
 
     it('fails when daml probing throws after dpm is unavailable', async () => {
@@ -337,7 +338,7 @@ describe('Doctor', () => {
 
       const sdkCheck = result.checks.find(c => c.name === 'Daml SDK')
       expect(sdkCheck?.status).toBe('pass')
-      expect(sdkCheck?.detail).toBe('daml installed')
+      expect(sdkCheck?.detail).toBe('daml installed (legacy fallback)')
     })
 
     it('warns when Docker is not available', async () => {

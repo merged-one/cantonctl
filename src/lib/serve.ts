@@ -244,8 +244,15 @@ async function defaultResolveProfileToken(options: {
     return options.fallbackToken
   }
 
-  const networkName = Object.entries(options.config.networkProfiles ?? {})
-    .find(([, profileName]) => profileName === options.profileName)?.[0] ?? options.profileName
+  let networkName = options.profileName
+  if (options.config.networkProfiles) {
+    for (const [candidateNetwork, profileName] of Object.entries(options.config.networkProfiles)) {
+      if (profileName === options.profileName) {
+        networkName = candidateNetwork
+        break
+      }
+    }
+  }
 
   const {backend} = await createBackendWithFallback()
   const store = createCredentialStore({backend, env: process.env})
@@ -348,7 +355,7 @@ export function createServeServer(deps: ServeServerDeps): ServeServer {
 
         return {
           profile,
-          source: currentProfileSource ?? 'argument',
+          source: currentProfileSource as ProfileResolutionSource,
         }
       }
 
@@ -405,9 +412,11 @@ export function createServeServer(deps: ServeServerDeps): ServeServer {
         const singleNodeBaseUrl = initialProfile?.profile
           ? getLedgerBaseUrl(initialProfile.profile, ledgerUrl)
           : ledgerUrl
-        const singleNodeToken = initialProfile?.profile
-          ? (await tokenForProfile(initialProfile.profile.name) ?? '')
-          : token
+        let singleNodeToken = token
+        if (initialProfile?.profile) {
+          const resolvedToken = await tokenForProfile(initialProfile.profile.name)
+          singleNodeToken = resolvedToken === undefined ? '' : resolvedToken
+        }
 
         participantClients.push({
           client: getOrCreateLedgerClient(singleNodeBaseUrl, singleNodeToken),
@@ -437,7 +446,7 @@ export function createServeServer(deps: ServeServerDeps): ServeServer {
           participantClients: [{
             client: profileClient,
             name: current.profile.name,
-            port: parsePort(baseUrl, participantClients[0]?.port ?? 7575),
+            port: parsePort(baseUrl, participantClients[0].port),
           }],
         }
       }
@@ -640,13 +649,17 @@ export function createServeServer(deps: ServeServerDeps): ServeServer {
         }
 
         try {
-          const pageSize = typeof req.query.pageSize === 'string'
-            ? Number.parseInt(req.query.pageSize, 10) || 20
-            : 20
+          let pageSize = 20
+          if (typeof req.query.pageSize === 'string') {
+            const parsedPageSize = Number.parseInt(req.query.pageSize, 10)
+            pageSize = parsedPageSize || 20
+          }
+          let after: {migrationId: number; recordTime: string} | undefined
+          if (afterMigrationId !== undefined) {
+            after = {migrationId: afterMigrationId, recordTime: afterRecordTime!}
+          }
           const result = await stableSplice.listScanUpdates({
-            after: afterMigrationId !== undefined && afterRecordTime
-              ? {migrationId: afterMigrationId, recordTime: afterRecordTime}
-              : undefined,
+            after,
             pageSize,
             profile: activeProfileContext(),
           })
@@ -856,27 +869,19 @@ export function createServeServer(deps: ServeServerDeps): ServeServer {
       // ── Template Discovery ──────────────────────────────────────
 
       app.get('/api/templates', async (_req: Request, res: Response) => {
-        try {
-          const templates = await scanDamlTemplates(projectDir)
-          res.json({templates})
-        } catch (err) {
-          res.status(500).json({error: String(err)})
-        }
+        const templates = await scanDamlTemplates(projectDir)
+        res.json({templates})
       })
 
       app.get('/api/templates/:name', async (req: Request, res: Response) => {
-        try {
-          const templates = await scanDamlTemplates(projectDir)
-          const template = templates.find(t => t.name === String(req.params.name))
-          if (!template) {
-            res.status(404).json({error: `Template "${req.params.name}" not found`})
-            return
-          }
-
-          res.json(template)
-        } catch (err) {
-          res.status(500).json({error: String(err)})
+        const templates = await scanDamlTemplates(projectDir)
+        const template = templates.find(t => t.name === String(req.params.name))
+        if (!template) {
+          res.status(404).json({error: `Template "${req.params.name}" not found`})
+          return
         }
+
+        res.json(template)
       })
 
       // ── Multi-Party Contracts ─────────────────────────────────
@@ -889,23 +894,19 @@ export function createServeServer(deps: ServeServerDeps): ServeServer {
         }
 
         const partyIds = partiesParam.split(',').map(p => p.trim()).filter(Boolean)
-        try {
-          const results: Record<string, Array<Record<string, unknown>>> = {}
-          await Promise.all(
-            partyIds.map(async (party) => {
-              try {
-                const targetClient = await clientForParty(party)
-                const result = await targetClient.getActiveContracts({filter: {party}})
-                results[party] = result.activeContracts
-              } catch {
-                results[party] = []
-              }
-            }),
-          )
-          res.json({contracts: results})
-        } catch (err) {
-          res.status(500).json({error: String(err)})
-        }
+        const results: Record<string, Array<Record<string, unknown>>> = {}
+        await Promise.all(
+          partyIds.map(async (party) => {
+            try {
+              const targetClient = await clientForParty(party)
+              const result = await targetClient.getActiveContracts({filter: {party}})
+              results[party] = result.activeContracts
+            } catch {
+              results[party] = []
+            }
+          }),
+        )
+        res.json({contracts: results})
       })
 
       // ── Single-Party Contracts ────────────────────────────────

@@ -2,7 +2,7 @@
  * E2E tests for `cantonctl build --watch` (Builder watch mode).
  * Tests verify file watching triggers rebuild with real Daml SDK.
  *
- * Prerequisites: daml CLI on PATH, Java 21+
+ * Prerequisites: supported SDK CLI on PATH (`dpm` current, `daml` legacy), Java 21+
  */
 
 import * as fs from 'node:fs'
@@ -16,7 +16,7 @@ import {createDamlSdk} from '../../src/lib/daml.js'
 import type {OutputWriter} from '../../src/lib/output.js'
 import {createProcessRunner} from '../../src/lib/process-runner.js'
 import {scaffoldProject} from '../../src/lib/scaffold.js'
-import {hasDaml, SDK_VERSION} from './helpers.js'
+import {hasSdk, SDK_VERSION} from './helpers.js'
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -62,7 +62,7 @@ function createTestOutput(): OutputWriter & {messages: string[]} {
   }
 }
 
-const SDK_AVAILABLE = hasDaml()
+const SDK_AVAILABLE = hasSdk()
 const describeWithSdk = SDK_AVAILABLE ? describe : describe.skip
 
 // ---------------------------------------------------------------------------

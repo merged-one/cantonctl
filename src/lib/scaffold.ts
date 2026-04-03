@@ -35,8 +35,8 @@ type TemplateConfigPreset = 'sandbox' | 'splice'
 export interface TemplateManifest {
   configPreset?: TemplateConfigPreset
   description: string
-  extraDirectories?: string[]
-  gitignore?: string[]
+  extraDirectories: string[]
+  gitignore: string[]
 }
 
 export interface TemplateSummary {
@@ -119,7 +119,7 @@ export function scaffoldProject(opts: ScaffoldOptions): ScaffoldResult {
   const directories = [
     dir,
     ...BASE_DIRECTORIES.map(baseDir => path.join(dir, baseDir)),
-    ...(manifest.extraDirectories ?? []).map(extraDir => path.join(dir, extraDir)),
+    ...manifest.extraDirectories.map(extraDir => path.join(dir, extraDir)),
   ]
 
   for (const directory of directories) {
@@ -258,7 +258,7 @@ export function generateDamlTest(template: Template): string {
 
 function generateGitignore(template: Template): string {
   const lines = ['.cantonctl/', '.daml/', 'node_modules/', 'dist/', '*.dar']
-  lines.push(...(TEMPLATE_MANIFESTS[template].gitignore ?? []))
+  lines.push(...TEMPLATE_MANIFESTS[template].gitignore)
   return lines.join('\n') + '\n'
 }
 

@@ -24,7 +24,7 @@ import {detectTopology, type GeneratedTopology} from '../lib/topology.js'
 const NETWORKS = ['local', 'devnet', 'testnet', 'mainnet'] as const
 
 interface DeployArgs {
-  network?: string
+  network: string
 }
 
 interface DeployFlags {
@@ -291,7 +291,7 @@ async function runDeployCommand(
     const builder = command.createBuilder({hooks, sdk})
     const projectDir = command.getProjectDir()
 
-    const networkName = args.network ?? 'local'
+    const networkName = args.network
     const topology = networkName === 'local' ? await command.detectProjectTopology(projectDir) : null
 
     if (topology && topology.participants.length > 0) {

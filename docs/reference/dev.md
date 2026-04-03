@@ -19,7 +19,7 @@ cantonctl dev [flags]
 
 ## Startup Sequence
 
-1. **SDK detection** — Finds `dpm` (preferred) or `daml` on PATH
+1. **SDK detection** — Finds `dpm` on PATH for current Canton 3.4 workflows, with legacy `daml` fallback only for older projects
 2. **Port check** — Verifies both ports are free before starting
 3. **Sandbox start** — Spawns `dpm sandbox --port <port> --json-api-port <jsonApiPort>`
 4. **Health polling** — Retries `GET /v2/version` every 1s for up to 60s
@@ -31,7 +31,7 @@ cantonctl dev [flags]
 
 When a `.daml` file changes in the `daml/` directory:
 
-1. Build is triggered via `dpm build` (or `daml build`)
+1. Build is triggered via `dpm build` on the current toolchain, with legacy `daml build` fallback only when `dpm` is unavailable
 2. The `.dar` file is located in `.daml/dist/`
 3. The DAR is uploaded to the running sandbox via `POST /v2/dars`
 
@@ -79,7 +79,7 @@ cantonctl dev --json
 
 | Code | Error | Resolution |
 |------|-------|------------|
-| E2001 | SDK not installed | Install dpm or daml: https://docs.daml.com/getting-started/installation.html |
+| E2001 | SDK not installed | Install DPM: `curl https://get.digitalasset.com/install/install.sh | sh` |
 | E3001 | Sandbox start failed | Check SDK installation and port availability |
 | E3002 | Port in use | Stop the existing process or use `--port` / `--json-api-port` |
 | E3003 | Health timeout | Sandbox didn't become healthy within 60s. Check logs. |
@@ -87,7 +87,8 @@ cantonctl dev --json
 
 ## Prerequisites
 
-- `dpm` or `daml` CLI on PATH
+- `dpm` CLI on PATH for the current Canton 3.4 flow
+- Legacy `daml` is still auto-detected only for older projects
 - A `cantonctl.yaml` in the current directory (or any parent)
 
 ## Source
