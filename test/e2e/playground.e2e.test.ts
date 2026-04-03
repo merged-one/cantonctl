@@ -16,8 +16,10 @@
  */
 
 import * as fs from 'node:fs'
+import * as http from 'node:http'
 import * as os from 'node:os'
 import * as path from 'node:path'
+import type {AddressInfo} from 'node:net'
 import {watch} from 'chokidar'
 import {afterAll, afterEach, beforeAll, describe, expect, it} from 'vitest'
 
@@ -48,6 +50,70 @@ async function findDarFile(dir: string): Promise<string | null> {
     const dar = entries.find(e => e.endsWith('.dar'))
     return dar ? path.join(dir, dar) : null
   } catch { return null }
+}
+
+interface MockRequest {
+  body: unknown
+  headers: http.IncomingHttpHeaders
+  method: string
+  pathname: string
+  searchParams: URLSearchParams
+}
+
+interface MockResponse {
+  body: unknown
+  status?: number
+}
+
+async function startJsonServer(
+  handler: (request: MockRequest) => Promise<MockResponse> | MockResponse,
+): Promise<{close(): Promise<void>; url: string}> {
+  const server = http.createServer(async (request, response) => {
+    const chunks: Buffer[] = []
+    for await (const chunk of request) {
+      chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk))
+    }
+
+    const text = Buffer.concat(chunks).toString('utf8')
+    let body: unknown
+    if (text) {
+      try {
+        body = JSON.parse(text)
+      } catch {
+        body = text
+      }
+    }
+
+    const url = new URL(request.url ?? '/', 'http://127.0.0.1')
+    const result = await handler({
+      body,
+      headers: request.headers,
+      method: request.method ?? 'GET',
+      pathname: url.pathname,
+      searchParams: url.searchParams,
+    })
+
+    response.statusCode = result.status ?? 200
+    response.setHeader('Content-Type', 'application/json')
+    response.end(JSON.stringify(result.body))
+  })
+
+  await new Promise<void>((resolve, reject) => {
+    server.once('error', reject)
+    server.listen(0, '127.0.0.1', () => resolve())
+  })
+
+  const address = server.address() as AddressInfo
+  return {
+    async close() {
+      await new Promise<void>((resolve, reject) => server.close(error => error ? reject(error) : resolve()))
+    },
+    url: `http://127.0.0.1:${address.port}`,
+  }
+}
+
+function writeConfig(projectDir: string, contents: string): void {
+  fs.writeFileSync(path.join(projectDir, 'cantonctl.yaml'), contents)
 }
 
 let workDir: string
@@ -83,24 +149,168 @@ async function apiPost<T>(path: string, body: unknown): Promise<T> {
   return res.json() as Promise<T>
 }
 
+async function apiPut<T>(path: string, body: unknown): Promise<T> {
+  const res = await fetch(`http://localhost:${SERVE_PORT}${path}`, {
+    method: 'PUT',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify(body),
+  })
+  if (!res.ok) throw new Error(`API ${res.status}: ${await res.text()}`)
+  return res.json() as Promise<T>
+}
+
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
 
 describeWithSdk('Playground E2E', () => {
   let devServer: DevServer
+  let remoteAnsServer: {close(): Promise<void>; url: string}
+  let remoteLedgerServer: {close(): Promise<void>; url: string}
+  let remoteScanServer: {close(): Promise<void>; url: string}
   let serveServer: ServeServer
+  let remoteTokenStandardServer: {close(): Promise<void>; url: string}
+  let remoteValidatorServer: {close(): Promise<void>; url: string}
   const projectDir = () => path.join(workDir, 'playground-test')
 
   // ── Scaffold + start sandbox + start serve server ──────────
 
   beforeAll(async () => {
+    remoteLedgerServer = await startJsonServer((request) => {
+      if (request.method === 'GET' && request.pathname === '/') {
+        return {body: {service: 'ledger'}}
+      }
+
+      if (request.method === 'GET' && request.pathname === '/v2/version') {
+        return {body: {version: '3.5.0'}}
+      }
+
+      if (request.method === 'GET' && request.pathname === '/v2/state/ledger-end') {
+        return {body: {offset: 42}}
+      }
+
+      if (request.method === 'POST' && request.pathname === '/v2/state/active-contracts') {
+        return {
+          body: [
+            {
+              contractEntry: {
+                JsActiveContract: {
+                  createdEvent: {
+                    contractId: 'holding-1',
+                    interfaceViews: [{
+                      interfaceId: '#splice-api-token-holding-v1:Splice.Api.Token.HoldingV1:Holding',
+                      viewStatus: {code: 0, message: 'OK'},
+                      viewValue: {
+                        amount: '5.0000000000',
+                        owner: 'Alice',
+                      },
+                    }],
+                    templateId: 'Splice:Holding',
+                  },
+                  synchronizerId: 'sync::1',
+                },
+              },
+            },
+          ],
+        }
+      }
+
+      return {body: {error: 'not found'}, status: 404}
+    })
+
+    remoteScanServer = await startJsonServer((request) => {
+      if (request.method === 'GET' && request.pathname === '/') {
+        return {body: {service: 'scan'}}
+      }
+
+      if (request.method === 'POST' && request.pathname === '/v2/updates') {
+        return {
+          body: {
+            transactions: [{
+              events_by_id: {e1: {ignored: true}},
+              migration_id: 7,
+              record_time: '2026-04-02T20:00:00Z',
+              root_event_ids: ['e1'],
+              update_id: 'update-1',
+            }],
+          },
+        }
+      }
+
+      return {body: {error: 'not found'}, status: 404}
+    })
+
+    remoteValidatorServer = await startJsonServer((request) => {
+      if (request.method === 'GET' && request.pathname === '/api/validator') {
+        return {body: {service: 'validator'}}
+      }
+
+      return {body: {error: 'not found'}, status: 404}
+    })
+
+    remoteTokenStandardServer = await startJsonServer((request) => {
+      if (request.method === 'GET' && request.pathname === '/') {
+        return {body: {service: 'token-standard'}}
+      }
+
+      return {body: {error: 'not found'}, status: 404}
+    })
+
+    remoteAnsServer = await startJsonServer((request) => {
+      if (request.method === 'GET' && request.pathname === '/') {
+        return {body: {service: 'ans'}}
+      }
+
+      return {body: {error: 'not found'}, status: 404}
+    })
+
     // 1. Scaffold token project
     scaffoldProject({
       name: 'playground-test',
       dir: path.join(workDir, 'playground-test'),
       template: 'token',
     })
+
+    writeConfig(projectDir(), `version: 1
+
+project:
+  name: playground-test
+  sdk-version: "${SDK_VERSION}"
+
+default-profile: sandbox
+
+networks:
+  local:
+    profile: sandbox
+  devnet:
+    kind: splice
+    profile: splice-devnet
+
+parties:
+  - name: Alice
+    role: operator
+  - name: Bob
+    role: participant
+
+profiles:
+  sandbox:
+    kind: sandbox
+    ledger:
+      port: ${SANDBOX_PORT}
+      json-api-port: ${JSON_API_PORT}
+  splice-devnet:
+    kind: remote-validator
+    ledger:
+      url: "${remoteLedgerServer.url}"
+    scan:
+      url: "${remoteScanServer.url}"
+    validator:
+      url: "${remoteValidatorServer.url}/api/validator"
+    tokenStandard:
+      url: "${remoteTokenStandardServer.url}"
+    ans:
+      url: "${remoteAnsServer.url}"
+`)
 
     const dir = projectDir()
     const out = createOutput({json: true, quiet: true})
@@ -144,6 +354,7 @@ describeWithSdk('Playground E2E', () => {
       createLedgerClient,
       createToken: createSandboxToken,
       output: out,
+      resolveProfileToken: async ({profileName}) => profileName === 'splice-devnet' ? 'remote-profile-token' : 'sandbox-token',
       testRunner,
     })
 
@@ -157,6 +368,11 @@ describeWithSdk('Playground E2E', () => {
   afterAll(async () => {
     await serveServer?.stop()
     await devServer?.stop()
+    await remoteLedgerServer?.close()
+    await remoteScanServer?.close()
+    await remoteValidatorServer?.close()
+    await remoteTokenStandardServer?.close()
+    await remoteAnsServer?.close()
   })
 
   // ── Health ─────────────────────────────────────────────────
@@ -165,6 +381,96 @@ describeWithSdk('Playground E2E', () => {
     const health = await apiGet<{healthy: boolean; version?: string}>('/api/health')
     expect(health.healthy).toBe(true)
     expect(health.version).toBeDefined()
+  })
+
+  it('switches the active profile and reports service health for splice services', async () => {
+    const initial = await apiGet<{
+      profiles: Array<{isDefault: boolean; kind: string; name: string}>
+      selectedProfile: {kind: string; name: string}
+      source: string
+    }>('/api/profile')
+    expect(initial.selectedProfile.name).toBe('sandbox')
+    expect(initial.source).toBe('default-profile')
+
+    const updated = await apiPut<{
+      selectedProfile: {kind: string; name: string}
+      source: string
+    }>('/api/profile', {profile: 'splice-devnet'})
+    expect(updated.selectedProfile).toEqual(expect.objectContaining({
+      kind: 'remote-validator',
+      name: 'splice-devnet',
+    }))
+    expect(updated.source).toBe('argument')
+
+    const status = await apiGet<{
+      healthy: boolean
+      profile: {kind: string; name: string}
+      services: Array<{endpoint?: string; healthy: boolean; name: string; status: string; version?: string}>
+    }>('/api/profile/status')
+
+    expect(status.profile).toEqual(expect.objectContaining({
+      kind: 'remote-validator',
+      name: 'splice-devnet',
+    }))
+    expect(status.healthy).toBe(true)
+    expect(status.services).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        endpoint: remoteLedgerServer.url,
+        healthy: true,
+        name: 'ledger',
+        status: 'healthy',
+        version: '3.5.0',
+      }),
+      expect.objectContaining({
+        endpoint: remoteScanServer.url,
+        healthy: true,
+        name: 'scan',
+        status: 'healthy',
+      }),
+      expect.objectContaining({
+        endpoint: `${remoteValidatorServer.url}/api/validator`,
+        healthy: true,
+        name: 'validator',
+        status: 'healthy',
+      }),
+    ]))
+  })
+
+  it('reads stable splice token holdings and scan updates through the active profile', async () => {
+    await apiPut('/api/profile', {profile: 'splice-devnet'})
+
+    const holdings = await apiGet<{
+      holdings: Array<{amount: string; contractId: string; owner: string}>
+    }>('/api/splice/token-holdings?party=Alice')
+    expect(holdings.holdings).toEqual([
+      expect.objectContaining({amount: '5.0000000000', contractId: 'holding-1', owner: 'Alice'}),
+    ])
+
+    const updates = await apiGet<{
+      updates: Array<{kind: string; migrationId: number; recordTime: string; updateId: string}>
+    }>('/api/splice/scan/updates?pageSize=2')
+    expect(updates.updates).toEqual([
+      expect.objectContaining({
+        kind: 'transaction',
+        migrationId: 7,
+        recordTime: '2026-04-02T20:00:00Z',
+        updateId: 'update-1',
+      }),
+    ])
+
+    const compat = await apiGet<{
+      checks: Array<{name: string; status: string}>
+      profile: {kind: string; name: string}
+    }>('/api/profile/compat')
+    expect(compat.profile).toEqual(expect.objectContaining({
+      kind: 'remote-validator',
+      name: 'splice-devnet',
+    }))
+    expect(compat.checks.length).toBeGreaterThan(0)
+
+    await apiPut('/api/profile', {profile: 'sandbox'})
+    const health = await apiGet<{healthy: boolean; version?: string}>('/api/health')
+    expect(health.healthy).toBe(true)
   })
 
   // ── Template Discovery ─────────────────────────────────────

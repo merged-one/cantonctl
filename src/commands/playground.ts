@@ -24,6 +24,7 @@ import * as path from 'node:path'
 import {fileURLToPath} from 'node:url'
 
 import {createBuilder} from '../lib/builder.js'
+import {resolveProfile} from '../lib/compat.js'
 import {loadConfig} from '../lib/config.js'
 import {createDamlSdk} from '../lib/daml.js'
 import {createFullDevServer, type FullDevServer} from '../lib/dev-server-full.js'
@@ -66,6 +67,7 @@ export default class Playground extends Command {
   static override examples = [
     '<%= config.bin %> playground',
     '<%= config.bin %> playground --full',
+    '<%= config.bin %> playground --profile splice-devnet --no-open',
     '<%= config.bin %> playground --port 8080',
     '<%= config.bin %> playground --no-open',
   ]
@@ -100,6 +102,9 @@ export default class Playground extends Command {
       default: 4000,
       description: 'Playground server port',
     }),
+    profile: Flags.string({
+      description: 'Resolved runtime profile to expose through the playground IDE',
+    }),
     'sandbox-port': Flags.integer({
       default: 5001,
       description: 'Canton sandbox port (single sandbox mode)',
@@ -127,7 +132,17 @@ export default class Playground extends Command {
     const config = await loadConfig()
     const runner = createProcessRunner()
     const sdk = createDamlSdk({runner})
-    const ledgerUrl = `http://localhost:${flags['json-api-port']}`
+    const resolvedProfile = config.profiles && Object.keys(config.profiles).length > 0
+      ? resolveProfile(config, flags.profile)
+      : null
+    const profileLedger = resolvedProfile?.profile.services.ledger
+    const ledgerUrl = profileLedger?.url
+      ?? `http://localhost:${profileLedger?.['json-api-port'] ?? flags['json-api-port']}`
+    const shouldStartFullRuntime = !flags['no-sandbox'] && flags.full
+    const shouldStartSandbox =
+      !flags['no-sandbox']
+      && !flags.full
+      && (resolvedProfile?.profile.kind ?? 'sandbox') === 'sandbox'
 
     // Start sandbox or multi-node topology
     let devServer: Awaited<ReturnType<typeof createDevServer>> | null = null
@@ -141,7 +156,7 @@ export default class Playground extends Command {
       } catch { return null }
     }
 
-    if (!flags['no-sandbox'] && flags.full) {
+    if (shouldStartFullRuntime) {
       out.log('')
       out.info('Starting multi-node Canton topology via Docker...')
 
@@ -168,7 +183,7 @@ export default class Playground extends Command {
       })
 
       out.success('Multi-node topology ready')
-    } else if (!flags['no-sandbox']) {
+    } else if (shouldStartSandbox) {
       out.log('')
       out.info('Starting Canton sandbox...')
 
@@ -191,6 +206,9 @@ export default class Playground extends Command {
       })
 
       out.success('Canton sandbox ready')
+    } else if (!flags['no-sandbox'] && resolvedProfile) {
+      out.log('')
+      out.info(`Using profile "${resolvedProfile.profile.name}" without starting a managed sandbox`)
     }
 
     // Find playground UI static files
@@ -227,8 +245,13 @@ export default class Playground extends Command {
 
     await server.start({
       ledgerUrl,
-      multiNode: flags.full,
+      multiNode: flags.full
+        ? true
+        : resolvedProfile?.profile.kind === 'canton-multi'
+          ? undefined
+          : false,
       port: flags.port,
+      profileName: resolvedProfile?.profile.name,
       projectDir,
       staticDir,
     })
@@ -247,6 +270,7 @@ export default class Playground extends Command {
     out.log(`  API:         http://localhost:${flags.port}/api`)
     out.log(`  WebSocket:   ws://localhost:${flags.port}`)
     out.log(`  Ledger API:  ${ledgerUrl}`)
+    if (resolvedProfile) out.log(`  Profile:     ${resolvedProfile.profile.name} (${resolvedProfile.profile.kind})`)
     out.log(`  Project:     ${projectDir}`)
     out.log('')
     out.log('Press Ctrl+C to stop')

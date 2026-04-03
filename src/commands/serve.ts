@@ -22,6 +22,7 @@ import * as net from 'node:net'
 import * as path from 'node:path'
 
 import {createBuilder} from '../lib/builder.js'
+import {resolveProfile} from '../lib/compat.js'
 import {loadConfig} from '../lib/config.js'
 import {createDamlSdk} from '../lib/daml.js'
 import {createDevServer} from '../lib/dev-server.js'
@@ -52,6 +53,7 @@ export default class Serve extends Command {
   static override examples = [
     '<%= config.bin %> serve',
     '<%= config.bin %> serve --port 8080',
+    '<%= config.bin %> serve --profile splice-devnet --no-sandbox',
     '<%= config.bin %> serve --no-sandbox',
     '<%= config.bin %> serve --json',
   ]
@@ -73,6 +75,9 @@ export default class Serve extends Command {
       char: 'p',
       default: 4000,
       description: 'Server port',
+    }),
+    profile: Flags.string({
+      description: 'Resolved runtime profile to expose through the IDE server',
     }),
     'sandbox-port': Flags.integer({
       default: 5001,
@@ -102,11 +107,19 @@ export default class Serve extends Command {
     const config = await loadConfig()
     const runner = createProcessRunner()
     const sdk = createDamlSdk({runner})
-    const ledgerUrl = `http://localhost:${flags['json-api-port']}`
+    const resolvedProfile = config.profiles && Object.keys(config.profiles).length > 0
+      ? resolveProfile(config, flags.profile)
+      : null
+    const profileLedger = resolvedProfile?.profile.services.ledger
+    const ledgerUrl = profileLedger?.url
+      ?? `http://localhost:${profileLedger?.['json-api-port'] ?? flags['json-api-port']}`
+    const shouldStartSandbox =
+      !flags['no-sandbox']
+      && (resolvedProfile?.profile.kind ?? 'sandbox') === 'sandbox'
 
     // Start sandbox if needed
     let devServer: Awaited<ReturnType<typeof createDevServer>> | null = null
-    if (!flags['no-sandbox']) {
+    if (shouldStartSandbox) {
       out.info('Starting Canton sandbox...')
 
       devServer = createDevServer({
@@ -134,6 +147,8 @@ export default class Serve extends Command {
       })
 
       out.success('Canton sandbox ready')
+    } else if (!flags['no-sandbox'] && resolvedProfile) {
+      out.info(`Using profile "${resolvedProfile.profile.name}" without starting a managed sandbox`)
     }
 
     // Create serve dependencies
@@ -164,6 +179,7 @@ export default class Serve extends Command {
     await server.start({
       ledgerUrl,
       port: flags.port,
+      profileName: resolvedProfile?.profile.name,
       projectDir,
     })
 
@@ -171,6 +187,13 @@ export default class Serve extends Command {
       data: {
         ledgerUrl,
         port: flags.port,
+        profile: resolvedProfile?.profile
+          ? {
+            experimental: resolvedProfile.profile.experimental,
+            kind: resolvedProfile.profile.kind,
+            name: resolvedProfile.profile.name,
+          }
+          : undefined,
         projectDir,
         protocol: 'canton-ide-protocol/v1',
         websocket: `ws://localhost:${flags.port}`,
@@ -183,6 +206,7 @@ export default class Serve extends Command {
       out.log(`  API:         http://localhost:${flags.port}/api`)
       out.log(`  WebSocket:   ws://localhost:${flags.port}`)
       out.log(`  Ledger API:  ${ledgerUrl}`)
+      if (resolvedProfile) out.log(`  Profile:     ${resolvedProfile.profile.name} (${resolvedProfile.profile.kind})`)
       out.log(`  Project:     ${projectDir}`)
       out.log('')
       out.log('Connect any IDE client to this server.')

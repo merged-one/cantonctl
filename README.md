@@ -92,8 +92,11 @@ cantonctl playground
 ```
 cantonctl playground                   # Open browser IDE
 cantonctl playground --port 8080       # Custom port
+cantonctl playground --profile splice-devnet --no-open
 cantonctl serve                        # Headless API only (for VS Code, Neovim)
 ```
+
+Both `serve` and `playground` are now profile-aware: the IDE server exposes `/api/profile`, `/api/profile/status`, `/api/profile/compat`, plus stable Splice reads for token holdings and Scan updates. The browser playground can switch profiles at runtime and surfaces configured service health for ledger, scan or scan-proxy, validator, token-standard, and ANS endpoints.
 
 **What it solves** (mapped to [Q1 2026 Developer Survey](https://forum.canton.network/t/canton-network-developer-experience-and-tooling-survey-analysis-2026/8412) pain points):
 
@@ -136,8 +139,8 @@ cantonctl serve                        # Headless API only (for VS Code, Neovim)
 | `cantonctl validator experimental ...` | Operator-only validator-internal onboarding, external-party, and setup-proposal flows | Experimental |
 | `cantonctl clean` | Remove build artifacts (.daml/, dist/, .cantonctl/) | Implemented |
 | `cantonctl doctor` | Check prerequisites plus optional profile-aware diagnostics | Implemented |
-| `cantonctl serve` | Start Canton IDE Protocol server (REST + WebSocket) | Implemented |
-| `cantonctl playground` | Open Remix-like browser IDE with Monaco editor | Implemented |
+| `cantonctl serve` | Start the profile-aware Canton IDE Protocol server (REST + WebSocket) | Implemented |
+| `cantonctl playground` | Open the profile-aware browser IDE with Monaco editor and Splice service views | Implemented |
 
 All commands except `console` and `playground` support `--json` for CI pipeline integration. All errors include error codes, suggestions, and documentation links.
 
