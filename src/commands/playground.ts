@@ -116,8 +116,10 @@ export default class Playground extends Command {
       ? resolveProfile(config, flags.profile)
       : null
     const profileLedger = resolvedProfile?.profile.services.ledger
+    const sandboxJsonApiPort = profileLedger?.['json-api-port'] ?? flags['json-api-port']
+    const sandboxPort = profileLedger?.port ?? flags['sandbox-port']
     const ledgerUrl = profileLedger?.url
-      ?? `http://localhost:${profileLedger?.['json-api-port'] ?? flags['json-api-port']}`
+      ?? `http://localhost:${sandboxJsonApiPort}`
     const shouldStartFullRuntime = !flags['no-sandbox'] && flags.full
     const shouldStartSandbox =
       !flags['no-sandbox']
@@ -154,8 +156,8 @@ export default class Playground extends Command {
       devServer = this.createSandboxServer({config, output: out, sdk})
 
       await devServer.start({
-        jsonApiPort: flags['json-api-port'],
-        port: flags['sandbox-port'],
+        jsonApiPort: sandboxJsonApiPort,
+        port: sandboxPort,
         projectDir,
       })
 

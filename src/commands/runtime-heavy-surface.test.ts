@@ -1340,6 +1340,89 @@ describe('runtime-heavy command surface', () => {
     expect(result.stdout).toContain('Connect any IDE client to this server.')
   })
 
+  it('serve starts a sandbox profile on the resolved ledger ports', async () => {
+    const sandboxStart = vi.fn().mockResolvedValue(undefined)
+    const serverStart = vi.fn().mockResolvedValue(undefined)
+
+    class TestServe extends Serve {
+      protected override createManagedSandboxServer(): DevServer {
+        return {
+          start: sandboxStart,
+          stop: vi.fn(),
+        }
+      }
+
+      protected override createRunner(): ProcessRunner {
+        return createRunner()
+      }
+
+      protected override createSdk(): DamlSdk {
+        return createSdk()
+      }
+
+      protected override createServeBuilder(): Builder {
+        return createServeBuilder()
+      }
+
+      protected override createServeServer(): ServeServer {
+        return {
+          broadcast: vi.fn(),
+          start: serverStart,
+          stop: vi.fn(),
+        }
+      }
+
+      protected override createServeTestRunner(): TestRunner {
+        return createServeTestRunner()
+      }
+
+      protected override getProjectDir(): string {
+        return '/repo'
+      }
+
+      protected override async isServePortInUse(): Promise<boolean> {
+        return false
+      }
+
+      protected override async loadProjectConfig(): Promise<CantonctlConfig> {
+        return {
+          ...createConfig(),
+          profiles: {
+            ...createConfig().profiles,
+            sandbox: {
+              ...createConfig().profiles!.sandbox,
+              services: {
+                ...createConfig().profiles!.sandbox.services,
+                ledger: {port: 6101, 'json-api-port': 8675},
+              },
+            },
+          },
+        }
+      }
+
+      protected override projectExists(): boolean {
+        return true
+      }
+
+      protected override async waitForShutdown(): Promise<void> {}
+    }
+
+    const result = await captureOutput(() => TestServe.run([], {root: CLI_ROOT}))
+    expect(result.error).toBeUndefined()
+    expect(sandboxStart).toHaveBeenCalledWith(expect.objectContaining({
+      jsonApiPort: 8675,
+      port: 6101,
+      projectDir: '/repo',
+    }))
+    expect(serverStart).toHaveBeenCalledWith(expect.objectContaining({
+      ledgerUrl: 'http://localhost:8675',
+      port: 4000,
+      profileName: 'sandbox',
+      projectDir: '/repo',
+    }))
+    expect(result.stdout).toContain('Ledger API:  http://localhost:8675')
+  })
+
   it('serve runs without profiles and omits profile details in human mode', async () => {
     const serverStart = vi.fn().mockResolvedValue(undefined)
 
@@ -1880,6 +1963,93 @@ describe('runtime-heavy command surface', () => {
       profileName: 'splice-devnet',
     }))
     expect(result.stdout).toContain('Using profile "splice-devnet" without starting a managed sandbox')
+  })
+
+  it('playground starts a sandbox profile on the resolved ledger ports', async () => {
+    const sandboxStart = vi.fn().mockResolvedValue(undefined)
+    const serverStart = vi.fn().mockResolvedValue(undefined)
+
+    class TestPlayground extends Playground {
+      protected override createRunner(): ProcessRunner {
+        return createRunner()
+      }
+
+      protected override createSdk(): DamlSdk {
+        return createSdk()
+      }
+
+      protected override createSandboxServer(): DevServer {
+        return {
+          start: sandboxStart,
+          stop: vi.fn(),
+        }
+      }
+
+      protected override createServeBuilder(): Builder {
+        return createServeBuilder()
+      }
+
+      protected override createServeServer(): ServeServer {
+        return {
+          broadcast: vi.fn(),
+          start: serverStart,
+          stop: vi.fn(),
+        }
+      }
+
+      protected override createServeTestRunner(): TestRunner {
+        return createServeTestRunner()
+      }
+
+      protected override async isPlaygroundPortInUse(): Promise<boolean> {
+        return false
+      }
+
+      protected override async loadProjectConfig(): Promise<CantonctlConfig> {
+        return {
+          ...createConfig(),
+          profiles: {
+            ...createConfig().profiles,
+            sandbox: {
+              ...createConfig().profiles!.sandbox,
+              services: {
+                ...createConfig().profiles!.sandbox.services,
+                ledger: {port: 6101, 'json-api-port': 8675},
+              },
+            },
+          },
+        }
+      }
+
+      protected override openBrowser(): void {
+        throw new Error('should not open browser in test')
+      }
+
+      protected override projectExists(): boolean {
+        return true
+      }
+
+      protected override resolveStaticDir(): string | undefined {
+        return '/repo/playground/dist'
+      }
+
+      protected override async waitForShutdown(): Promise<void> {}
+    }
+
+    const result = await captureOutput(() => TestPlayground.run(['--no-open'], {root: CLI_ROOT}))
+    expect(result.error).toBeUndefined()
+    expect(sandboxStart).toHaveBeenCalledWith(expect.objectContaining({
+      jsonApiPort: 8675,
+      port: 6101,
+      projectDir: process.cwd(),
+    }))
+    expect(serverStart).toHaveBeenCalledWith(expect.objectContaining({
+      ledgerUrl: 'http://localhost:8675',
+      port: 4000,
+      profileName: 'sandbox',
+      projectDir: process.cwd(),
+    }))
+    expect(result.stdout).toContain('Ledger API:  http://localhost:8675')
   })
 
   it('playground skips the remote-profile banner when sandbox startup is explicitly disabled', async () => {

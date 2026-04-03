@@ -98,8 +98,10 @@ export default class Serve extends Command {
       ? resolveProfile(config, flags.profile)
       : null
     const profileLedger = resolvedProfile?.profile.services.ledger
+    const sandboxJsonApiPort = profileLedger?.['json-api-port'] ?? flags['json-api-port']
+    const sandboxPort = profileLedger?.port ?? flags['sandbox-port']
     const ledgerUrl = profileLedger?.url
-      ?? `http://localhost:${profileLedger?.['json-api-port'] ?? flags['json-api-port']}`
+      ?? `http://localhost:${sandboxJsonApiPort}`
     const shouldStartSandbox =
       !flags['no-sandbox']
       && (resolvedProfile?.profile.kind ?? 'sandbox') === 'sandbox'
@@ -112,8 +114,8 @@ export default class Serve extends Command {
       devServer = this.createManagedSandboxServer({config, output: out, sdk})
 
       await devServer.start({
-        jsonApiPort: flags['json-api-port'],
-        port: flags['sandbox-port'],
+        jsonApiPort: sandboxJsonApiPort,
+        port: sandboxPort,
         projectDir,
       })
 
