@@ -1,4 +1,4 @@
-import {exec} from 'node:child_process'
+import {execFile} from 'node:child_process'
 import * as fs from 'node:fs'
 import * as net from 'node:net'
 import * as path from 'node:path'
@@ -102,15 +102,18 @@ export function isTcpPortInUse(
 export function openBrowserUrl(
   url: string,
   deps: {
-    exec?: typeof exec
+    execFile?: typeof execFile
     platform?: NodeJS.Platform
   } = {},
 ): void {
-  const execImpl = deps.exec ?? exec
+  const execFileImpl = deps.execFile ?? execFile
   const platform = deps.platform ?? process.platform
-  const cmd = platform === 'darwin' ? 'open'
-    : platform === 'win32' ? 'start'
-      : 'xdg-open'
+  const command = platform === 'darwin'
+    ? {file: 'open', args: [url]}
+    : platform === 'win32'
+      ? {file: 'rundll32.exe', args: ['url.dll,FileProtocolHandler', url]}
+      : {file: 'xdg-open', args: [url]}
 
-  execImpl(`${cmd} ${url}`)
+  const child = execFileImpl(command.file, command.args, () => {})
+  child.on('error', () => {})
 }

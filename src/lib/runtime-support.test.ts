@@ -150,15 +150,24 @@ describe('runtime-support', () => {
   })
 
   it('opens the browser with the platform-specific command', () => {
-    const exec = vi.fn() as unknown as typeof import('node:child_process').exec
+    const execFile = vi.fn((() => ({on: vi.fn()}) as never)) as unknown as typeof import('node:child_process').execFile
 
-    openBrowserUrl('http://localhost:4000', {exec, platform: 'darwin'})
-    openBrowserUrl('http://localhost:4000', {exec, platform: 'linux'})
-    openBrowserUrl('http://localhost:4000', {exec, platform: 'win32'})
+    openBrowserUrl('http://localhost:4000', {execFile, platform: 'darwin'})
+    openBrowserUrl('http://localhost:4000', {execFile, platform: 'linux'})
+    openBrowserUrl('http://localhost:4000', {execFile, platform: 'win32'})
 
-    expect(exec).toHaveBeenNthCalledWith(1, 'open http://localhost:4000')
-    expect(exec).toHaveBeenNthCalledWith(2, 'xdg-open http://localhost:4000')
-    expect(exec).toHaveBeenNthCalledWith(3, 'start http://localhost:4000')
+    expect(execFile).toHaveBeenNthCalledWith(1, 'open', ['http://localhost:4000'], expect.any(Function))
+    expect(execFile).toHaveBeenNthCalledWith(2, 'xdg-open', ['http://localhost:4000'], expect.any(Function))
+    expect(execFile).toHaveBeenNthCalledWith(3, 'rundll32.exe', ['url.dll,FileProtocolHandler', 'http://localhost:4000'], expect.any(Function))
+  })
+
+  it('passes URLs as a single execFile argument without shell interpolation', () => {
+    const execFile = vi.fn((() => ({on: vi.fn()}) as never)) as unknown as typeof import('node:child_process').execFile
+    const url = 'http://localhost:4000/?a=1&b=2;echo injected'
+
+    openBrowserUrl(url, {execFile, platform: 'linux'})
+
+    expect(execFile).toHaveBeenCalledWith('xdg-open', [url], expect.any(Function))
   })
 
   it('covers the default dependency paths with real filesystem and socket state', async () => {
@@ -234,10 +243,16 @@ describe('runtime-support', () => {
 
   it('covers openBrowserUrl defaults through the live child_process binding', () => {
     const childProcess = require('node:child_process') as typeof import('node:child_process')
-    const originalExec = childProcess.exec
-    const execMock = Object.assign(
+    const originalExecFile = childProcess.execFile
+    const expectedCommand = process.platform === 'darwin'
+      ? ['open', ['http://localhost:4001']]
+      : process.platform === 'win32'
+        ? ['rundll32.exe', ['url.dll,FileProtocolHandler', 'http://localhost:4001']]
+        : ['xdg-open', ['http://localhost:4001']]
+    const execFileMock = Object.assign(
       vi.fn((
-        _command: string,
+        _file: string,
+        _args: readonly string[] | null | undefined,
         maybeOptionsOrCallback?: unknown,
         maybeCallback?: ((error: Error | null, stdout: string | Buffer, stderr: string | Buffer) => void),
       ) => {
@@ -245,19 +260,19 @@ describe('runtime-support', () => {
           ? maybeOptionsOrCallback as (error: Error | null, stdout: string | Buffer, stderr: string | Buffer) => void
           : maybeCallback
         callback?.(null, '', '')
-        return {} as never
+        return {on: vi.fn()} as never
       }),
-      {__promisify__: originalExec.__promisify__},
-    ) as unknown as typeof childProcess.exec
+      {__promisify__: originalExecFile.__promisify__},
+    ) as unknown as typeof childProcess.execFile
 
-    childProcess.exec = execMock
+    childProcess.execFile = execFileMock
     syncBuiltinESMExports()
 
     try {
       openBrowserUrl('http://localhost:4001')
-      expect(execMock).toHaveBeenCalledWith(expect.stringMatching(/http:\/\/localhost:4001$/))
+      expect(execFileMock).toHaveBeenCalledWith(expectedCommand[0], expectedCommand[1], expect.any(Function))
     } finally {
-      childProcess.exec = originalExec
+      childProcess.execFile = originalExecFile
       syncBuiltinESMExports()
     }
   })
