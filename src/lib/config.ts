@@ -235,7 +235,7 @@ export async function resolveConfig(options: ResolveConfigOptions = {}): Promise
   }
 
   // Layer 2: Project config
-  const projectRaw = readRawProjectConfig({dir: options.dir, fs: fsImpl})
+  const projectRaw = readRawProjectConfig(options.dir ?? process.cwd(), fsImpl)
 
   // Merge: project over user
   let merged = mergeConfigLayers(userPartial, projectRaw)
@@ -272,12 +272,12 @@ export function mergeConfigs(base: CantonctlConfig, overrides: PartialConfig): C
  * Internal merge that works with partial configs on both sides.
  * Returns a full CantonctlConfig when base is complete.
  */
-function mergeConfigsRaw(base: PartialConfig | CantonctlConfig, overrides: PartialConfig | CantonctlConfig): CantonctlConfig {
+function mergeConfigsRaw(base: CantonctlConfig, overrides: PartialConfig): CantonctlConfig {
   const result: Record<string, unknown> = {...base}
 
   // Merge project (shallow merge)
   if (overrides.project) {
-    result.project = {...(base.project ?? {}), ...overrides.project}
+    result.project = {...base.project, ...overrides.project}
   }
 
   // Merge networks (deep per-network merge)
@@ -333,7 +333,7 @@ function mergeConfigsRaw(base: PartialConfig | CantonctlConfig, overrides: Parti
         ...baseProfile,
         ...overrideProfile,
         services: {
-          ...(baseProfile.services ?? {}),
+          ...baseProfile.services,
           ...(overrideProfile.services ?? {}),
         },
       }
@@ -439,7 +439,7 @@ function parseYaml(raw: string): unknown {
     return yaml.load(raw)
   } catch (err) {
     throw new CantonctlError(ErrorCode.CONFIG_INVALID_YAML, {
-      cause: err instanceof Error ? err : undefined,
+      cause: err as Error,
       suggestion: 'Check your YAML syntax. Common issues: incorrect indentation, missing colons, or unquoted special characters.',
     })
   }
@@ -502,9 +502,7 @@ function collectNetworkProfiles(
       continue
     }
 
-    if (normalized.profiles[name]) {
-      networkProfiles[name] = name
-    }
+    networkProfiles[name] = name
   }
 
   if (
@@ -519,9 +517,7 @@ function collectNetworkProfiles(
   return networkProfiles
 }
 
-function readRawProjectConfig(options: LoadConfigOptions = {}): RawConfig {
-  const fsImpl = options.fs ?? nodeFs
-  const searchDir = options.dir ?? process.cwd()
+function readRawProjectConfig(searchDir: string, fsImpl: ConfigFileSystem): RawConfig {
   const configPath = findConfig(searchDir, fsImpl)
 
   if (!configPath) {
@@ -552,12 +548,10 @@ function readRawProjectConfig(options: LoadConfigOptions = {}): RawConfig {
   return result.data
 }
 
-function mergeConfigLayers(base: RawPartialConfig, overrides: RawPartialConfig | RawConfig): RawPartialConfig {
+function mergeConfigLayers(base: RawPartialConfig, overrides: RawConfig): RawPartialConfig {
   const result: Record<string, unknown> = {...base}
 
-  if (overrides.project) {
-    result.project = {...(base.project ?? {}), ...overrides.project}
-  }
+  result.project = {...(base.project ?? {}), ...overrides.project}
 
   if (overrides.networks || base.networks) {
     const baseNetworks = (base.networks ?? {}) as unknown as Record<string, Record<string, unknown>>
@@ -606,9 +600,7 @@ function mergeConfigLayers(base: RawPartialConfig, overrides: RawPartialConfig |
     result['default-profile'] = overrides['default-profile']
   }
 
-  if (overrides.version !== undefined) {
-    result.version = overrides.version
-  }
+  result.version = overrides.version
 
   return result as RawPartialConfig
 }

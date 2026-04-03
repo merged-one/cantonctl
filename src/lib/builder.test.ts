@@ -406,6 +406,27 @@ describe('Builder', () => {
       expect(output.error).toHaveBeenCalledWith(expect.stringContaining('ENOENT'))
     })
 
+    it('stringifies non-Error build failures', async () => {
+      const sdk = createMockSdk()
+      sdk.build.mockRejectedValue('missing tool')
+      const deps = createDefaultDeps({getFileMtime: vi.fn().mockResolvedValue(null), sdk})
+      const builder = createBuilder(deps)
+      const mockWatcher = createMockWatcher()
+      const output = createMockOutput()
+
+      await builder.watch({
+        debounceMs: 0,
+        output,
+        projectDir: '/project',
+        watch: vi.fn().mockReturnValue(mockWatcher),
+      })
+
+      mockWatcher.handlers.get('change')?.('/project/daml/Main.daml')
+      await new Promise(r => setTimeout(r, 50))
+
+      expect(output.error).toHaveBeenCalledWith('Build failed: missing tool')
+    })
+
     it('shows DAR filename in success message', async () => {
       const deps = createDefaultDeps({getFileMtime: vi.fn().mockResolvedValue(null)})
       const builder = createBuilder(deps)
@@ -442,6 +463,27 @@ describe('Builder', () => {
 
       // Stop should clear the timer without building
       await stop()
+      expect(mockWatcher.close).toHaveBeenCalled()
+      expect(deps.sdk.build).not.toHaveBeenCalled()
+    })
+
+    it('AbortSignal clears a pending debounce timer before any rebuild starts', async () => {
+      const deps = createDefaultDeps({getFileMtime: vi.fn().mockResolvedValue(null)})
+      const builder = createBuilder(deps)
+      const mockWatcher = createMockWatcher()
+      const controller = new AbortController()
+
+      await builder.watch({
+        debounceMs: 5000,
+        output: createMockOutput(),
+        projectDir: '/project',
+        signal: controller.signal,
+        watch: vi.fn().mockReturnValue(mockWatcher),
+      })
+
+      mockWatcher.handlers.get('change')?.('/project/daml/Main.daml')
+      controller.abort()
+
       expect(mockWatcher.close).toHaveBeenCalled()
       expect(deps.sdk.build).not.toHaveBeenCalled()
     })

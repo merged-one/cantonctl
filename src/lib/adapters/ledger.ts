@@ -281,7 +281,9 @@ export function normalizeLedgerActiveContractsResponse(
     if (!isRecord(item)) continue
     const contractEntry = readRecord(item, 'contractEntry')
     const activeContract = contractEntry ? readRecord(contractEntry, 'JsActiveContract') : undefined
-    const createdEvent = activeContract ? readRecord(activeContract, 'createdEvent') : undefined
+    if (!activeContract) continue
+
+    const createdEvent = readRecord(activeContract, 'createdEvent')
     if (!createdEvent) continue
 
     activeContracts.push({
@@ -290,7 +292,7 @@ export function normalizeLedgerActiveContractsResponse(
       interfaceViews: normalizeLedgerInterfaceViews(createdEvent.interfaceViews),
       offset: readNumber(createdEvent, 'offset'),
       payload: createdEvent.createArgument,
-      synchronizerId: activeContract ? readString(activeContract, 'synchronizerId') : undefined,
+      synchronizerId: readString(activeContract, 'synchronizerId'),
       templateId: readString(createdEvent, 'templateId'),
     })
   }

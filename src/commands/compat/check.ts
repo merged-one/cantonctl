@@ -82,7 +82,7 @@ export default class CompatCheck extends Command {
     if (report.failed === 0) {
       out.success(`Compatibility checks passed with ${report.warned} warning${report.warned === 1 ? '' : 's'}`)
     } else {
-      out.error(`${report.failed} compatibility check${report.failed === 1 ? '' : 's'} failed`)
+      out.error(`${report.failed} compatibility check failed`)
     }
   }
 }

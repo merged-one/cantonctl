@@ -51,4 +51,18 @@ describe('createTokenStandardAdapter', () => {
       }),
     )
   })
+
+  it('supports optional family lookups through the selected transport client', async () => {
+    const fetch = vi.fn().mockResolvedValue(new Response('', {status: 404}))
+
+    const adapter = createTokenStandardAdapter({
+      baseUrl: 'https://token.example.com',
+      fetch,
+    })
+
+    await expect(adapter.families.allocation.requestOptionalJson({
+      method: 'GET',
+      path: '/v1/allocations/missing',
+    })).resolves.toBeNull()
+  })
 })

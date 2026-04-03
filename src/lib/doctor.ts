@@ -194,7 +194,7 @@ async function checkJava(runner: ProcessRunner): Promise<CheckResult> {
     const majorVersion = versionMatch ? Number.parseInt(versionMatch[1], 10) : 0
 
     return {
-      detail: output.split('\n')[0]?.trim() ?? 'Unknown version',
+      detail: output.split('\n')[0]?.trim() || 'Unknown version',
       fix: majorVersion < 21 ? 'Upgrade to Java 21: brew install openjdk@21' : undefined,
       name: 'Java 21',
       required: true,
@@ -264,8 +264,9 @@ async function checkDocker(runner: ProcessRunner): Promise<CheckResult> {
     }
 
     const result = await runner.run('docker', ['--version'], {ignoreExitCode: true})
+    const detail = result.stdout.trim().replace('Docker version ', '').split(',')[0] || 'Installed'
     return {
-      detail: result.stdout.trim().replace('Docker version ', '').split(',')[0] ?? 'Installed',
+      detail,
       name: 'Docker',
       required: false,
       status: result.exitCode === 0 ? 'pass' : 'warn',
@@ -295,7 +296,7 @@ async function checkDockerCompose(runner: ProcessRunner): Promise<CheckResult> {
     }
 
     return {
-      detail: result.stdout.trim().replace('Docker Compose version ', '') ?? 'Installed',
+      detail: result.stdout.trim().replace('Docker Compose version ', '') || 'Installed',
       name: 'Docker Compose',
       required: false,
       status: 'pass',

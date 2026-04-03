@@ -92,7 +92,7 @@ export function listProfiles(config: CantonctlConfig): ProfileListEntry[] {
     }))
     .sort((left, right) => {
       if (left.isDefault !== right.isDefault) {
-        return left.isDefault ? -1 : 1
+        return Number(right.isDefault) - Number(left.isDefault)
       }
 
       return left.name.localeCompare(right.name)
@@ -204,8 +204,7 @@ function getConfiguredServiceNames(profile: NormalizedProfile): ServiceName[] {
 function getServiceEndpoint(profile: NormalizedProfile, name: ServiceName): string | undefined {
   switch (name) {
     case 'ledger': {
-      const ledger = profile.services.ledger
-      if (!ledger) return undefined
+      const ledger = profile.services.ledger!
       if (ledger.url) return ledger.url
       return `http://localhost:${ledger['json-api-port'] ?? 7575}`
     }
@@ -230,8 +229,7 @@ function getServiceEndpoint(profile: NormalizedProfile, name: ServiceName): stri
 function buildServiceDetail(profile: NormalizedProfile, name: ServiceName): string {
   switch (name) {
     case 'ledger': {
-      const ledger = profile.services.ledger
-      if (!ledger) return 'Not configured'
+      const ledger = profile.services.ledger!
       const parts = []
       if (ledger.port !== undefined) parts.push(`port ${ledger.port}`)
       if (ledger['json-api-port'] !== undefined) parts.push(`json-api-port ${ledger['json-api-port']}`)
@@ -240,8 +238,7 @@ function buildServiceDetail(profile: NormalizedProfile, name: ServiceName): stri
     }
 
     case 'auth': {
-      const auth = profile.services.auth
-      if (!auth) return 'Not configured'
+      const auth = profile.services.auth!
       const parts: string[] = [auth.kind]
       if (auth.issuer) parts.push(`issuer ${auth.issuer}`)
       if (auth.audience) parts.push(`audience ${auth.audience}`)
@@ -249,8 +246,7 @@ function buildServiceDetail(profile: NormalizedProfile, name: ServiceName): stri
     }
 
     case 'localnet': {
-      const localnet = profile.services.localnet
-      if (!localnet) return 'Not configured'
+      const localnet = profile.services.localnet!
       const parts = []
       if (localnet.distribution) parts.push(localnet.distribution)
       if (localnet.version) parts.push(`version ${localnet.version}`)

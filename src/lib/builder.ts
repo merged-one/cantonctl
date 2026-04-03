@@ -193,11 +193,7 @@ export function createBuilder(deps: BuilderDeps): Builder {
         try {
           output.info('Rebuilding...')
           const result = await runBuild({projectDir, force: true})
-          if (result.darPath) {
-            output.success(`Build successful: ${result.darPath.split('/').pop()}`)
-          } else {
-            output.success('Build successful')
-          }
+          output.success(`Build successful: ${result.darPath!.split('/').pop()}`)
         } catch (err) {
           if (err instanceof CantonctlError) {
             output.error(`${err.code}: ${err.message}`)

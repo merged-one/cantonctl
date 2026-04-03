@@ -1,9 +1,17 @@
 import {captureOutput} from '@oclif/test'
+import {chmodSync, mkdtempSync, rmSync, writeFileSync} from 'node:fs'
+import {tmpdir} from 'node:os'
+import {join} from 'node:path'
 import {afterEach, describe, expect, it, vi} from 'vitest'
 
+import * as configModule from '../lib/config.js'
 import type {CantonctlConfig} from '../lib/config.js'
 import {CantonctlError, ErrorCode} from '../lib/errors.js'
+import * as jwtModule from '../lib/jwt.js'
+import * as ledgerClientModule from '../lib/ledger-client.js'
 import type {LedgerClient} from '../lib/ledger-client.js'
+import * as processRunnerModule from '../lib/process-runner.js'
+import * as topologyModule from '../lib/topology.js'
 import type {GeneratedTopology} from '../lib/topology.js'
 import Doctor from './doctor.js'
 import Status from './status.js'
@@ -57,11 +65,13 @@ function createDoctorRunner(options: {
   composeAvailable?: boolean
   dockerPresent?: boolean
   imagePresent?: boolean
+  javaPresent?: boolean
   sdk?: 'daml' | 'dpm' | 'missing'
 } = {}) {
   const composeAvailable = options.composeAvailable ?? true
   const dockerPresent = options.dockerPresent ?? true
   const imagePresent = options.imagePresent ?? true
+  const javaPresent = options.javaPresent ?? true
   const sdk = options.sdk ?? 'dpm'
 
   return {
@@ -98,7 +108,7 @@ function createDoctorRunner(options: {
     }),
     spawn: vi.fn(),
     which: vi.fn().mockImplementation(async (cmd: string) => {
-      if (cmd === 'java') return '/usr/bin/java'
+      if (cmd === 'java') return javaPresent ? '/usr/bin/java' : null
       if (cmd === 'docker') return dockerPresent ? '/usr/bin/docker' : null
       if (cmd === 'dpm') return sdk === 'dpm' ? '/usr/bin/dpm' : null
       if (cmd === 'daml') return sdk === 'daml' ? '/usr/bin/daml' : null
@@ -215,6 +225,141 @@ describe('runtime command surface', () => {
     }))
   })
 
+  it('covers status helper factories directly', async () => {
+    const config = createConfig()
+    const token = 'jwt-token'
+    const topology: GeneratedTopology = {
+      bootstrapScript: '',
+      cantonConf: '',
+      dockerCompose: '',
+      participants: [{
+        name: 'participant1',
+        parties: ['Alice'],
+        ports: {admin: 2001, jsonApi: 7575, ledgerApi: 6865},
+      }],
+      synchronizer: {admin: 10001, publicApi: 10002},
+    }
+    const client = {
+      allocateParty: vi.fn(),
+      getActiveContracts: vi.fn(),
+      getLedgerEnd: vi.fn(),
+      getParties: vi.fn(),
+      getVersion: vi.fn(),
+      submitAndWait: vi.fn(),
+      uploadDar: vi.fn(),
+    } as unknown as LedgerClient
+
+    const createClientSpy = vi.spyOn(ledgerClientModule, 'createLedgerClient').mockReturnValue(client)
+    const createTokenSpy = vi.spyOn(jwtModule, 'createSandboxToken').mockResolvedValue(token)
+    const detectTopologySpy = vi.spyOn(topologyModule, 'detectTopology').mockResolvedValue(topology)
+    const loadConfigSpy = vi.spyOn(configModule, 'loadConfig').mockResolvedValue(config)
+
+    class StatusHarness extends Status {
+      public callCreateStatusLedgerClient(baseUrl?: string, authToken?: string): LedgerClient {
+        return this.createStatusLedgerClient(baseUrl, authToken)
+      }
+
+      public async callCreateStatusToken(commandConfig?: CantonctlConfig): Promise<string> {
+        return this.createStatusToken(commandConfig)
+      }
+
+      public async callDetectProjectTopology(cwd?: string): Promise<GeneratedTopology | null> {
+        return this.detectProjectTopology(cwd)
+      }
+
+      public async callLoadProjectConfig(): Promise<CantonctlConfig> {
+        return this.loadProjectConfig()
+      }
+    }
+
+    const harness = new StatusHarness([], {} as never)
+    expect(harness.callCreateStatusLedgerClient('https://ledger.example.com', token)).toBe(client)
+    await expect(harness.callCreateStatusToken(config)).resolves.toBe(token)
+    await expect(harness.callDetectProjectTopology('/repo')).resolves.toBe(topology)
+    await expect(harness.callDetectProjectTopology()).resolves.toBe(topology)
+    await expect(harness.callLoadProjectConfig()).resolves.toBe(config)
+    await expect(harness.callCreateStatusToken()).resolves.toBe(token)
+
+    expect(createClientSpy).toHaveBeenCalledWith({baseUrl: 'https://ledger.example.com', token})
+    expect(createTokenSpy).toHaveBeenNthCalledWith(1, {
+      actAs: ['Alice'],
+      admin: true,
+      applicationId: 'cantonctl',
+      readAs: ['Alice'],
+    })
+    expect(createTokenSpy).toHaveBeenNthCalledWith(2, {
+      actAs: ['admin'],
+      admin: true,
+      applicationId: 'cantonctl',
+      readAs: [],
+    })
+    expect(detectTopologySpy).toHaveBeenNthCalledWith(1, '/repo')
+    expect(detectTopologySpy).toHaveBeenNthCalledWith(2, process.cwd())
+    expect(loadConfigSpy).toHaveBeenCalledOnce()
+  })
+
+  it('covers doctor helper factories directly', async () => {
+    const config = createConfig()
+    const runner = createDoctorRunner()
+    const createRunnerSpy = vi.spyOn(processRunnerModule, 'createProcessRunner').mockReturnValue(runner as never)
+    const loadConfigSpy = vi.spyOn(configModule, 'loadConfig').mockResolvedValue(config)
+
+    class DoctorHarness extends Doctor {
+      public callCreateRunner() {
+        return this.createRunner()
+      }
+
+      public callCreateReadlineInterface() {
+        return this.createReadlineInterface()
+      }
+
+      public callInstallSdk(): void {
+        this.installSdk()
+      }
+
+      public async callLoadProjectConfig(): Promise<CantonctlConfig> {
+        return this.loadProjectConfig()
+      }
+
+      public callResolveProfileSummary(commandConfig: CantonctlConfig, profileName?: string) {
+        return this.resolveProfileSummary(commandConfig, profileName)
+      }
+    }
+
+    const harness = new DoctorHarness([], {} as never)
+    expect(harness.callCreateRunner()).toBe(runner)
+    const rl = harness.callCreateReadlineInterface()
+    expect(rl.question).toEqual(expect.any(Function))
+    rl.close()
+
+    const fakeBinDir = mkdtempSync(join(tmpdir(), 'doctor-install-'))
+    const fakeCurlPath = join(fakeBinDir, 'curl')
+    const originalPath = process.env.PATH
+    writeFileSync(fakeCurlPath, '#!/bin/sh\necho "exit 0"\n')
+    chmodSync(fakeCurlPath, 0o755)
+    await expect(harness.callLoadProjectConfig()).resolves.toBe(config)
+    expect(harness.callResolveProfileSummary(config, 'sandbox')).toEqual({
+      experimental: false,
+      kind: 'sandbox',
+      name: 'sandbox',
+    })
+    expect(harness.callResolveProfileSummary({
+      ...config,
+      'default-profile': 'missing',
+    })).toBeUndefined()
+
+    try {
+      process.env.PATH = originalPath ? `${fakeBinDir}:${originalPath}` : fakeBinDir
+      harness.callInstallSdk()
+    } finally {
+      process.env.PATH = originalPath
+      rmSync(fakeBinDir, {force: true, recursive: true})
+    }
+
+    expect(createRunnerSpy).toHaveBeenCalledOnce()
+    expect(loadConfigSpy).toHaveBeenCalledOnce()
+  })
+
   it('reports multi-node ledger status in json mode', async () => {
     const config = createConfig()
 
@@ -302,6 +447,121 @@ describe('runtime command surface', () => {
       services: [
         expect.objectContaining({name: 'ledger', status: 'healthy'}),
       ],
+    }))
+  })
+
+  it('reports multi-node status in json mode without an inferred profile', async () => {
+    class TestStatus extends Status {
+      protected override async detectProjectTopology(): Promise<GeneratedTopology | null> {
+        return {
+          bootstrapScript: '',
+          cantonConf: '',
+          dockerCompose: '',
+          participants: [{
+            name: 'participant1',
+            parties: ['Alice'],
+            ports: {admin: 2001, jsonApi: 7575, ledgerApi: 6865},
+          }],
+          synchronizer: {admin: 10001, publicApi: 10002},
+        }
+      }
+
+      protected override async loadProjectConfig(): Promise<CantonctlConfig> {
+        return {
+          'default-profile': 'missing',
+          networks: {
+            local: {port: 5001, 'json-api-port': 7575, type: 'sandbox'},
+          },
+          profiles: {},
+          project: {name: 'demo', 'sdk-version': '3.4.11'},
+          version: 1,
+        }
+      }
+
+      protected override createStatusLedgerClient(): LedgerClient {
+        return {
+          allocateParty: vi.fn(),
+          getActiveContracts: vi.fn(),
+          getLedgerEnd: vi.fn(),
+          getParties: vi.fn(async () => ({partyDetails: []})),
+          getVersion: vi.fn(async () => ({version: '3.4.11'})),
+          submitAndWait: vi.fn(),
+          uploadDar: vi.fn(),
+        } as never
+      }
+
+      protected override async createStatusToken(): Promise<string> {
+        return 'token'
+      }
+    }
+
+    const result = await captureOutput(() => TestStatus.run(['--json'], {root: CLI_ROOT}))
+    expect(result.error).toBeUndefined()
+
+    const json = parseJson(result.stdout)
+    expect(json.data).toEqual(expect.objectContaining({
+      mode: 'multi-node',
+      services: [
+        expect.objectContaining({
+          detail: 'json-api-port 7575',
+          endpoint: 'http://localhost:7575',
+          name: 'ledger',
+        }),
+      ],
+    }))
+    expect(Object.prototype.hasOwnProperty.call(json.data, 'profile')).toBe(false)
+  })
+
+  it('marks non-ledger inferred profile services as configured in multi-node json mode', async () => {
+    class TestStatus extends Status {
+      protected override async detectProjectTopology(): Promise<GeneratedTopology | null> {
+        return {
+          bootstrapScript: '',
+          cantonConf: '',
+          dockerCompose: '',
+          participants: [{
+            name: 'participant1',
+            parties: ['Alice'],
+            ports: {admin: 2001, jsonApi: 7575, ledgerApi: 6865},
+          }],
+          synchronizer: {admin: 10001, publicApi: 10002},
+        }
+      }
+
+      protected override async loadProjectConfig(): Promise<CantonctlConfig> {
+        const config = createConfig()
+        return {
+          ...config,
+          'default-profile': 'splice-devnet',
+        }
+      }
+
+      protected override createStatusLedgerClient(): LedgerClient {
+        return {
+          allocateParty: vi.fn(),
+          getActiveContracts: vi.fn(),
+          getLedgerEnd: vi.fn(),
+          getParties: vi.fn(async () => ({partyDetails: []})),
+          getVersion: vi.fn(async () => ({version: '3.4.11'})),
+          submitAndWait: vi.fn(),
+          uploadDar: vi.fn(),
+        } as never
+      }
+
+      protected override async createStatusToken(): Promise<string> {
+        return 'token'
+      }
+    }
+
+    const result = await captureOutput(() => TestStatus.run(['--json'], {root: CLI_ROOT}))
+    expect(result.error).toBeUndefined()
+
+    const json = parseJson(result.stdout)
+    expect(json.data).toEqual(expect.objectContaining({
+      services: expect.arrayContaining([
+        expect.objectContaining({name: 'ledger', status: 'healthy'}),
+        expect.objectContaining({name: 'validator', status: 'configured'}),
+      ]),
     }))
   })
 
@@ -406,6 +666,27 @@ describe('runtime command surface', () => {
     expect(json.success).toBe(false)
     expect(json.error).toEqual(expect.objectContaining({
       code: ErrorCode.CONFIG_SCHEMA_VIOLATION,
+    }))
+  })
+
+  it('serializes missing network errors with an explicit none fallback when no networks are configured', async () => {
+    class TestStatus extends Status {
+      protected override async loadProjectConfig(): Promise<CantonctlConfig> {
+        return {
+          ...createConfig(),
+          networks: undefined,
+        }
+      }
+    }
+
+    const result = await captureOutput(() => TestStatus.run(['--network', 'missing', '--json'], {root: CLI_ROOT}))
+    expect(result.error).toBeDefined()
+
+    const json = parseJson(result.stdout)
+    expect(json.success).toBe(false)
+    expect(json.error).toEqual(expect.objectContaining({
+      code: ErrorCode.CONFIG_SCHEMA_VIOLATION,
+      suggestion: expect.stringContaining('Available: none'),
     }))
   })
 
@@ -566,6 +847,36 @@ describe('runtime command surface', () => {
     expect(result.stderr).toContain('Profile is marked experimental')
   })
 
+  it('renders blank strings for missing profile party fields in human mode', async () => {
+    class TestStatus extends Status {
+      protected override async loadProjectConfig(): Promise<CantonctlConfig> {
+        return createConfig()
+      }
+
+      protected override createStatusLedgerClient(): LedgerClient {
+        return {
+          allocateParty: vi.fn(),
+          getActiveContracts: vi.fn(),
+          getLedgerEnd: vi.fn(),
+          getParties: vi.fn(async () => ({
+            partyDetails: [{}],
+          })),
+          getVersion: vi.fn(async () => ({version: '3.4.11'})),
+          submitAndWait: vi.fn(),
+          uploadDar: vi.fn(),
+        } as never
+      }
+
+      protected override async createStatusToken(): Promise<string> {
+        return 'token'
+      }
+    }
+
+    const result = await captureOutput(() => TestStatus.run(['--profile', 'sandbox'], {root: CLI_ROOT}))
+    expect(result.error).toBeUndefined()
+    expect(result.stdout).toContain('┌───────┬────┐')
+  })
+
   it('renders multi-node status in human mode without an inferred profile and exits when any participant is unreachable', async () => {
     class TestStatus extends Status {
       protected override async detectProjectTopology(): Promise<GeneratedTopology | null> {
@@ -637,6 +948,51 @@ describe('runtime command surface', () => {
     expect(result.stdout).toContain('ledger')
   })
 
+  it('renders multi-node status with an inferred local profile in human mode', async () => {
+    class TestStatus extends Status {
+      protected override async detectProjectTopology(): Promise<GeneratedTopology | null> {
+        return {
+          bootstrapScript: '',
+          cantonConf: '',
+          dockerCompose: '',
+          participants: [{
+            name: 'participant1',
+            parties: ['Alice'],
+            ports: {admin: 2001, jsonApi: 7575, ledgerApi: 6865},
+          }],
+          synchronizer: {admin: 10001, publicApi: 10002},
+        }
+      }
+
+      protected override async loadProjectConfig(): Promise<CantonctlConfig> {
+        return createConfig()
+      }
+
+      protected override createStatusLedgerClient(): LedgerClient {
+        return {
+          allocateParty: vi.fn(),
+          getActiveContracts: vi.fn(),
+          getLedgerEnd: vi.fn(),
+          getParties: vi.fn(async () => ({
+            partyDetails: [{displayName: 'Alice', identifier: 'Alice::1224'}],
+          })),
+          getVersion: vi.fn(async () => ({version: '3.4.11'})),
+          submitAndWait: vi.fn(),
+          uploadDar: vi.fn(),
+        } as never
+      }
+
+      protected override async createStatusToken(): Promise<string> {
+        return 'token'
+      }
+    }
+
+    const result = await captureOutput(() => TestStatus.run([], {root: CLI_ROOT}))
+    expect(result.error).toBeUndefined()
+    expect(result.stdout).toContain('Mode: multi-node (Docker topology)')
+    expect(result.stdout).toContain('Profile: sandbox (sandbox)')
+  })
+
   it('renders single-node remote status in human mode without an inferred profile', async () => {
     class TestStatus extends Status {
       protected override async detectProjectTopology(): Promise<GeneratedTopology | null> {
@@ -681,6 +1037,300 @@ describe('runtime command surface', () => {
     expect(result.stdout).toContain('https://ledger.example.com')
   })
 
+  it('reports single-node remote status in json mode without an inferred profile', async () => {
+    class TestStatus extends Status {
+      protected override async detectProjectTopology(): Promise<GeneratedTopology | null> {
+        return null
+      }
+
+      protected override async loadProjectConfig(): Promise<CantonctlConfig> {
+        return {
+          'default-profile': 'missing',
+          networks: {
+            devnet: {type: 'remote', url: 'https://ledger.example.com'},
+          },
+          profiles: {},
+          project: {name: 'demo', 'sdk-version': '3.4.11'},
+          version: 1,
+        }
+      }
+
+      protected override createStatusLedgerClient(): LedgerClient {
+        return {
+          allocateParty: vi.fn(),
+          getActiveContracts: vi.fn(),
+          getLedgerEnd: vi.fn(),
+          getParties: vi.fn(async () => ({partyDetails: []})),
+          getVersion: vi.fn(async () => ({version: '3.4.11'})),
+          submitAndWait: vi.fn(),
+          uploadDar: vi.fn(),
+        } as never
+      }
+
+      protected override async createStatusToken(): Promise<string> {
+        return 'token'
+      }
+    }
+
+    const result = await captureOutput(() => TestStatus.run(['--network', 'devnet', '--json'], {root: CLI_ROOT}))
+    expect(result.error).toBeUndefined()
+
+    const json = parseJson(result.stdout)
+    expect(json.data).toEqual(expect.objectContaining({
+      healthy: true,
+      mode: 'single-node',
+      network: 'devnet',
+      parties: [],
+      services: [
+        expect.objectContaining({
+          detail: 'remote ledger endpoint',
+          endpoint: 'https://ledger.example.com',
+          name: 'ledger',
+        }),
+      ],
+      version: '3.4.11',
+    }))
+    expect(Object.prototype.hasOwnProperty.call(json.data, 'profile')).toBe(false)
+  })
+
+  it('renders single-node status with a same-name inferred profile and party table', async () => {
+    class TestStatus extends Status {
+      protected override async detectProjectTopology(): Promise<GeneratedTopology | null> {
+        return null
+      }
+
+      protected override async loadProjectConfig(): Promise<CantonctlConfig> {
+        return {
+          'default-profile': 'missing',
+          networks: {
+            devnet: {type: 'remote', url: 'https://ledger.example.com'},
+          },
+          parties: [{name: 'Alice', role: 'operator'}],
+          profiles: {
+            devnet: {
+              experimental: false,
+              kind: 'remote-validator',
+              name: 'devnet',
+              services: {
+                ledger: {url: 'https://ledger.example.com'},
+                validator: {url: 'https://validator.example.com'},
+              },
+            },
+          },
+          project: {name: 'demo', 'sdk-version': '3.4.11'},
+          version: 1,
+        }
+      }
+
+      protected override createStatusLedgerClient(): LedgerClient {
+        return {
+          allocateParty: vi.fn(),
+          getActiveContracts: vi.fn(),
+          getLedgerEnd: vi.fn(),
+          getParties: vi.fn(async () => ({
+            partyDetails: [{displayName: 'Alice', identifier: 'Alice::1224', isLocal: false}],
+          })),
+          getVersion: vi.fn(async () => ({version: '3.4.11'})),
+          submitAndWait: vi.fn(),
+          uploadDar: vi.fn(),
+        } as never
+      }
+
+      protected override async createStatusToken(): Promise<string> {
+        return 'token'
+      }
+    }
+
+    const result = await captureOutput(() => TestStatus.run(['--network', 'devnet'], {root: CLI_ROOT}))
+    expect(result.error).toBeUndefined()
+    expect(result.stdout).toContain('Profile: devnet (remote-validator)')
+    expect(result.stdout).toContain('Party')
+    expect(result.stdout).toContain('Alice::1224')
+  })
+
+  it('renders a local single-node fallback service table when no profile can be inferred', async () => {
+    class TestStatus extends Status {
+      protected override async detectProjectTopology(): Promise<GeneratedTopology | null> {
+        return null
+      }
+
+      protected override async loadProjectConfig(): Promise<CantonctlConfig> {
+        return {
+          networks: {
+            local: {port: 5001, 'json-api-port': 7575, type: 'sandbox'},
+          },
+          project: {name: 'demo', 'sdk-version': '3.4.11'},
+          version: 1,
+        }
+      }
+
+      protected override createStatusLedgerClient(): LedgerClient {
+        return {
+          allocateParty: vi.fn(),
+          getActiveContracts: vi.fn(),
+          getLedgerEnd: vi.fn(),
+          getParties: vi.fn(async () => ({partyDetails: [{}]})),
+          getVersion: vi.fn(async () => ({version: '3.4.11'})),
+          submitAndWait: vi.fn(),
+          uploadDar: vi.fn(),
+        } as never
+      }
+
+      protected override async createStatusToken(): Promise<string> {
+        return 'token'
+      }
+    }
+
+    const result = await captureOutput(() => TestStatus.run([], {root: CLI_ROOT}))
+    expect(result.error).toBeUndefined()
+    expect(result.stdout).toContain('Network: local')
+    expect(result.stdout).toContain('http://localhost:7575')
+  })
+
+  it('reports fallback single-node status against the default json api port when the local network omits it', async () => {
+    class TestStatus extends Status {
+      protected override async detectProjectTopology(): Promise<GeneratedTopology | null> {
+        return null
+      }
+
+      protected override async loadProjectConfig(): Promise<CantonctlConfig> {
+        return {
+          networks: {
+            local: {port: 5001, type: 'sandbox'},
+          },
+          project: {name: 'demo', 'sdk-version': '3.4.11'},
+          version: 1,
+        }
+      }
+
+      protected override createStatusLedgerClient(): LedgerClient {
+        return {
+          allocateParty: vi.fn(),
+          getActiveContracts: vi.fn(),
+          getLedgerEnd: vi.fn(),
+          getParties: vi.fn(),
+          getVersion: vi.fn().mockRejectedValue(new Error('offline')),
+          submitAndWait: vi.fn(),
+          uploadDar: vi.fn(),
+        } as never
+      }
+
+      protected override async createStatusToken(): Promise<string> {
+        return 'token'
+      }
+    }
+
+    const result = await captureOutput(() => TestStatus.run(['--json'], {root: CLI_ROOT}))
+    expect(result.error).toBeDefined()
+
+    const json = parseJson(result.stdout)
+    expect(json.data).toEqual(expect.objectContaining({
+      healthy: false,
+      mode: 'sandbox',
+      network: 'local',
+      services: [
+        expect.objectContaining({
+          detail: 'json-api-port 7575',
+          endpoint: 'http://localhost:7575',
+          status: 'unreachable',
+        }),
+      ],
+    }))
+    expect(Object.prototype.hasOwnProperty.call(json.data, 'profile')).toBe(false)
+  })
+
+  it('covers status private helper branches directly', async () => {
+    class HelperStatus extends Status {
+      protected override createStatusLedgerClient(): LedgerClient {
+        return {
+          allocateParty: vi.fn(),
+          getActiveContracts: vi.fn(),
+          getLedgerEnd: vi.fn(),
+          getParties: vi.fn(async () => ({partyDetails: []})),
+          getVersion: vi.fn(async () => ({})),
+          submitAndWait: vi.fn(),
+          uploadDar: vi.fn(),
+        } as never
+      }
+    }
+
+    const harness = new HelperStatus([], {} as never) as unknown as {
+      getLedgerStatus(baseUrl: string, token: string): Promise<{healthy: boolean; parties: Array<Record<string, unknown>>; version?: string}>
+      printServiceTable(out: {table: ReturnType<typeof vi.fn>}, services: Array<Record<string, unknown>>): void
+      shouldCheckLedgerHealth(profile: NonNullable<CantonctlConfig['profiles']>[string]): boolean
+    }
+    const out = {table: vi.fn()}
+
+    await expect(harness.getLedgerStatus('https://ledger.example.com', 'token')).resolves.toEqual({
+      healthy: true,
+      parties: [],
+      version: '',
+    })
+
+    harness.printServiceTable(out, [{
+      detail: 'Localnet configuration',
+      endpoint: undefined,
+      name: 'localnet',
+      stability: 'config-only',
+      status: 'configured',
+    }])
+    expect(out.table).toHaveBeenCalledWith(
+      ['Service', 'Status', 'Endpoint', 'Stability'],
+      [['localnet', 'configured', '-', 'config-only']],
+    )
+
+    expect(harness.shouldCheckLedgerHealth({
+      experimental: false,
+      kind: 'sandbox',
+      name: 'empty',
+      services: {},
+    })).toBe(false)
+    expect(harness.shouldCheckLedgerHealth({
+      experimental: false,
+      kind: 'sandbox',
+      name: 'local',
+      services: {ledger: {}},
+    })).toBe(true)
+    expect(harness.shouldCheckLedgerHealth({
+      experimental: false,
+      kind: 'remote-validator',
+      name: 'loopback',
+      services: {ledger: {url: 'http://127.0.0.1:7575'}},
+    })).toBe(true)
+  })
+
+  it('renders single-node unreachable status in human mode', async () => {
+    class TestStatus extends Status {
+      protected override async detectProjectTopology(): Promise<GeneratedTopology | null> {
+        return null
+      }
+
+      protected override async loadProjectConfig(): Promise<CantonctlConfig> {
+        return createConfig()
+      }
+
+      protected override createStatusLedgerClient(): LedgerClient {
+        return {
+          allocateParty: vi.fn(),
+          getActiveContracts: vi.fn(),
+          getLedgerEnd: vi.fn(),
+          getParties: vi.fn(),
+          getVersion: vi.fn().mockRejectedValue(new Error('offline')),
+          submitAndWait: vi.fn(),
+          uploadDar: vi.fn(),
+        } as never
+      }
+
+      protected override async createStatusToken(): Promise<string> {
+        return 'token'
+      }
+    }
+
+    const result = await captureOutput(() => TestStatus.run([], {root: CLI_ROOT}))
+    expect(result.error).toBeDefined()
+    expect(result.stderr).toContain('Ledger not reachable at http://localhost:7575')
+  })
+
   it('runs doctor in human mode even when project config is absent', async () => {
     class TestDoctor extends Doctor {
       protected override createRunner() {
@@ -696,6 +1346,69 @@ describe('runtime command surface', () => {
     expect(result.error).toBeUndefined()
     expect(result.stdout).toContain('Checking your development environment...')
     expect(result.stdout).toContain('checks passed')
+  })
+
+  it('renders doctor warning summaries when only optional checks warn', async () => {
+    class TestDoctor extends Doctor {
+      protected override createRunner() {
+        return createDoctorRunner({composeAvailable: false})
+      }
+
+      protected override async loadProjectConfig(): Promise<CantonctlConfig> {
+        return createConfig()
+      }
+    }
+
+    const result = await captureOutput(() => TestDoctor.run([], {root: CLI_ROOT}))
+    expect(result.error).toBeUndefined()
+    expect(result.stdout).toContain('Checking your development environment...')
+    expect(result.stderr).toContain('optional')
+  })
+
+  it('renders doctor plural failure summaries when multiple required checks fail', async () => {
+    class TestDoctor extends Doctor {
+      protected override createRunner() {
+        return createDoctorRunner({javaPresent: false, sdk: 'missing'})
+      }
+
+      protected override async loadProjectConfig(): Promise<CantonctlConfig> {
+        return createConfig()
+      }
+    }
+
+    const result = await captureOutput(() => TestDoctor.run([], {root: CLI_ROOT}))
+    expect(result.error).toBeDefined()
+    expect(result.stderr).toContain('required checks failed')
+  })
+
+  it('skips the install prompt when tty mode is active but the sdk check already passed', async () => {
+    const restoreTty = setStdoutTty(true)
+    const question = vi.fn()
+
+    class TestDoctor extends Doctor {
+      protected override createRunner() {
+        return createDoctorRunner()
+      }
+
+      protected override createReadlineInterface() {
+        return {
+          close: vi.fn(),
+          question,
+        } as never
+      }
+
+      protected override async loadProjectConfig(): Promise<CantonctlConfig> {
+        return createConfig()
+      }
+    }
+
+    try {
+      const result = await captureOutput(() => TestDoctor.run([], {root: CLI_ROOT}))
+      expect(result.error).toBeUndefined()
+      expect(question).not.toHaveBeenCalled()
+    } finally {
+      restoreTty()
+    }
   })
 
   it('fails doctor when profile diagnostics are requested without project config', async () => {

@@ -151,8 +151,8 @@ export default class Status extends Command {
       }))
       : [
         {
-          detail: `json-api-port ${topology.participants[0]?.ports.jsonApi ?? 7575}`,
-          endpoint: `http://localhost:${topology.participants[0]?.ports.jsonApi ?? 7575}`,
+          detail: `json-api-port ${topology.participants[0].ports.jsonApi}`,
+          endpoint: `http://localhost:${topology.participants[0].ports.jsonApi}`,
           name: 'ledger' as const,
           sourceIds: ['canton-json-ledger-api-openapi'] as const,
           stability: 'stable-external' as const,

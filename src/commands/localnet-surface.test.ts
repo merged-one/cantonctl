@@ -1,9 +1,14 @@
+import * as fs from 'node:fs'
 import {captureOutput} from '@oclif/test'
-import {describe, expect, it} from 'vitest'
+import {afterEach, describe, expect, it, vi} from 'vitest'
 
 import {CantonctlError, ErrorCode} from '../lib/errors.js'
-import type {Localnet, LocalnetCommandResult, LocalnetStatusResult} from '../lib/localnet.js'
-import type {LocalnetWorkspace} from '../lib/localnet-workspace.js'
+import * as localnetModule from '../lib/localnet.js'
+import type {Localnet, LocalnetCommandResult, LocalnetDeps, LocalnetStatusResult} from '../lib/localnet.js'
+import * as localnetWorkspaceModule from '../lib/localnet-workspace.js'
+import type {LocalnetWorkspace, LocalnetWorkspaceDetectorDeps} from '../lib/localnet-workspace.js'
+import * as processRunnerModule from '../lib/process-runner.js'
+import type {ProcessRunner} from '../lib/process-runner.js'
 import LocalnetDown from './localnet/down.js'
 import LocalnetStatus from './localnet/status.js'
 import LocalnetUp from './localnet/up.js'
@@ -93,7 +98,97 @@ function parseJson(stdout: string): Record<string, unknown> {
   return JSON.parse(stdout.trim()) as Record<string, unknown>
 }
 
+afterEach(() => {
+  vi.restoreAllMocks()
+})
+
 describe('localnet command surface', () => {
+  it('wires the default localnet factories for up, status, and down commands', async () => {
+    const accessSpy = vi.spyOn(fs.promises, 'access').mockResolvedValue(undefined)
+    const readFileSpy = vi.spyOn(fs.promises, 'readFile').mockResolvedValue('ROOT=1')
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue({
+      ok: true,
+      status: 200,
+      text: async () => 'ready',
+    } as Response)
+
+    const runner = {
+      run: vi.fn(),
+      spawn: vi.fn(),
+      which: vi.fn(),
+    } satisfies ProcessRunner
+    vi.spyOn(processRunnerModule, 'createProcessRunner').mockReturnValue(runner)
+
+    const detectorDeps: LocalnetWorkspaceDetectorDeps[] = []
+    const localnetDeps: LocalnetDeps[] = []
+    const detector = {detect: vi.fn().mockResolvedValue(createWorkspace())}
+    const localnet = {
+      down: vi.fn(),
+      status: vi.fn(),
+      up: vi.fn(),
+    } satisfies Localnet
+
+    vi.spyOn(localnetWorkspaceModule, 'createLocalnetWorkspaceDetector').mockImplementation(deps => {
+      detectorDeps.push(deps)
+      return detector
+    })
+    vi.spyOn(localnetModule, 'createLocalnet').mockImplementation(deps => {
+      localnetDeps.push(deps)
+      return localnet
+    })
+
+    class UpHarness extends LocalnetUp {
+      public callCreateLocalnet(): Localnet {
+        return this.createLocalnet()
+      }
+    }
+
+    class StatusHarness extends LocalnetStatus {
+      public callCreateLocalnet(): Localnet {
+        return this.createLocalnet()
+      }
+    }
+
+    class DownHarness extends LocalnetDown {
+      public callCreateLocalnet(): Localnet {
+        return this.createLocalnet()
+      }
+    }
+
+    const commands = [
+      new UpHarness([], {} as never),
+      new StatusHarness([], {} as never),
+      new DownHarness([], {} as never),
+    ]
+
+    for (const command of commands) {
+      expect(command.callCreateLocalnet()).toBe(localnet)
+    }
+
+    expect(detectorDeps).toHaveLength(3)
+    expect(localnetDeps).toHaveLength(3)
+    expect(localnetDeps.map(entry => entry.runner)).toEqual([runner, runner, runner])
+
+    for (const deps of detectorDeps) {
+      await deps.access('/workspace/Makefile')
+      await deps.readFile('/workspace/.env')
+    }
+
+    for (const deps of localnetDeps) {
+      await deps.detectWorkspace('/workspace')
+      await deps.fetch('https://validator.example.com/readyz')
+    }
+
+    expect(accessSpy).toHaveBeenCalledTimes(3)
+    expect(accessSpy).toHaveBeenCalledWith('/workspace/Makefile')
+    expect(readFileSpy).toHaveBeenCalledTimes(3)
+    expect(readFileSpy).toHaveBeenCalledWith('/workspace/.env', 'utf8')
+    expect(detector.detect).toHaveBeenCalledTimes(3)
+    expect(detector.detect).toHaveBeenCalledWith('/workspace')
+    expect(fetchSpy).toHaveBeenCalledTimes(3)
+    expect(fetchSpy).toHaveBeenCalledWith('https://validator.example.com/readyz')
+  })
+
   it('emits localnet up status in json mode', async () => {
     class TestLocalnetUp extends LocalnetUp {
       protected override createLocalnet(): Localnet {
@@ -297,6 +392,38 @@ describe('localnet command surface', () => {
     expect(result.stdout).toContain('splice')
   })
 
+  it('renders placeholder ports for localnet up containers without published bindings', async () => {
+    class TestLocalnetUp extends LocalnetUp {
+      protected override createLocalnet(): Localnet {
+        return {
+          down: async () => {
+            throw new Error('unused')
+          },
+          status: async () => {
+            throw new Error('unused')
+          },
+          up: async () => ({
+            ...createStatusResult(true),
+            containers: [{
+              healthy: true,
+              name: 'splice',
+              service: 'splice',
+              status: 'Up (healthy)',
+            }],
+          }),
+        }
+      }
+    }
+
+    const result = await captureOutput(() => TestLocalnetUp.run([
+      '--workspace',
+      '../quickstart',
+    ], {root: CLI_ROOT}))
+    expect(result.error).toBeUndefined()
+    expect(result.stdout).toContain('Up (healthy)')
+    expect(result.stdout).toContain('-')
+  })
+
   it('fails localnet up in human mode when validator health degrades before containers start', async () => {
     class TestLocalnetUp extends LocalnetUp {
       protected override createLocalnet(): Localnet {
@@ -330,6 +457,45 @@ describe('localnet command surface', () => {
     expect(result.stdout).toContain('validator readyz')
     expect(result.stdout).toContain('unreachable (error)')
     expect(result.stdout).not.toContain('Container')
+  })
+
+  it('renders localnet status container placeholders and error readyz output in human mode', async () => {
+    class TestLocalnetStatus extends LocalnetStatus {
+      protected override createLocalnet(): Localnet {
+        return {
+          down: async () => {
+            throw new Error('unused')
+          },
+          status: async () => ({
+            ...createStatusResult(false),
+            containers: [{
+              healthy: false,
+              name: 'splice',
+              service: 'splice',
+              status: 'Up (unhealthy)',
+            }],
+            health: {
+              validatorReadyz: {
+                ...createStatusResult(false).health.validatorReadyz,
+                status: 0,
+              },
+            },
+          }),
+          up: async () => {
+            throw new Error('unused')
+          },
+        }
+      }
+    }
+
+    const result = await captureOutput(() => TestLocalnetStatus.run([
+      '--workspace',
+      '../quickstart',
+    ], {root: CLI_ROOT}))
+    expect(result.error).toBeDefined()
+    expect(result.stdout).toContain('unreachable (error)')
+    expect(result.stdout).toContain('Up (unhealthy)')
+    expect(result.stdout).toContain('-')
   })
 
   it('serializes CantonctlError failures for localnet commands', async () => {

@@ -106,6 +106,23 @@ describe('LocalNet runtime wrapper', () => {
     ])
   })
 
+  it('parses headerless status output, preserves unhealthy rows, and skips malformed lines', () => {
+    const stdout = [
+      'splice    splice:0.5.3  "/entrypoint.sh"  splice    12 seconds ago  Up 10 seconds (unhealthy)  0.0.0.0:4903->4903/tcp',
+      'malformed row',
+    ].join('\n')
+
+    expect(parseLocalnetStatusOutput(stdout)).toEqual([
+      {
+        healthy: false,
+        name: 'splice',
+        ports: '0.0.0.0:4903->4903/tcp',
+        service: 'splice',
+        status: 'Up 10 seconds (unhealthy)',
+      },
+    ])
+  })
+
   it('checks validator readyz and returns discovered URLs in status()', async () => {
     const detector = createDetector()
     const runner = createMockRunner()
@@ -216,6 +233,25 @@ describe('LocalNet runtime wrapper', () => {
 
     expect(result.health.validatorReadyz).toEqual({
       body: 'connection refused',
+      healthy: false,
+      status: 0,
+      url: 'http://127.0.0.1:4903/api/validator/readyz',
+    })
+  })
+
+  it('stringifies non-Error readyz failures', async () => {
+    const detector = createDetector()
+    const runner = createMockRunner()
+    const localnet = createLocalnet({
+      detectWorkspace: (workspace: string) => detector.detect(workspace),
+      fetch: vi.fn().mockRejectedValue('offline'),
+      runner,
+    })
+
+    const result = await localnet.status({workspace: QUICKSTART_FIXTURE})
+
+    expect(result.health.validatorReadyz).toEqual({
+      body: 'offline',
       healthy: false,
       status: 0,
       url: 'http://127.0.0.1:4903/api/validator/readyz',

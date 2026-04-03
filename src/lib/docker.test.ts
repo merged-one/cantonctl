@@ -97,6 +97,22 @@ describe('DockerManager', () => {
         code: 'E3004',
       })
     })
+
+    it('normalizes non-Error runner failures without attaching a cause', async () => {
+      const runner = createMockRunner()
+      const output = createMockOutput()
+      ;(runner.run as ReturnType<typeof vi.fn>).mockRejectedValue('docker missing')
+
+      const docker = createDockerManager({output, runner})
+      await expect(docker.checkAvailable()).rejects.toThrow(CantonctlError)
+      try {
+        await docker.checkAvailable()
+      } catch (err) {
+        const error = err as CantonctlError & {cause?: unknown}
+        expect(error.code).toBe('E3004')
+        expect(error.cause).toBeUndefined()
+      }
+    })
   })
 
   describe('composeUp', () => {

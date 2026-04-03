@@ -100,7 +100,7 @@ export function createLocalnetWorkspaceDetector(
       const missing: string[] = []
       for (const entry of requiredPaths) {
         if (!await exists(entry, access)) {
-          missing.push(path.relative(root, entry) || entry)
+          missing.push(path.relative(root, entry))
         }
       }
 

@@ -59,12 +59,12 @@ export default class AuthLogin extends Command {
 
     try {
       const config = await this.loadCommandConfig()
-      const network = config.networks?.[networkName]
       const authProfile = resolveAuthProfile({
         config,
         network: networkName,
         requestedMode: flags.mode && isAuthProfileMode(flags.mode) ? flags.mode : undefined,
       })
+      const network = config.networks![networkName]!
 
       if (authProfile.requiresExplicitExperimental && !flags.experimental) {
         throw new CantonctlError(ErrorCode.EXPERIMENTAL_CONFIRMATION_REQUIRED, {
@@ -79,15 +79,6 @@ export default class AuthLogin extends Command {
         for (const warning of authProfile.warnings) {
           out.warn(warning)
         }
-      }
-
-      if (!network) {
-        throw new CantonctlError(ErrorCode.CONFIG_SCHEMA_VIOLATION, {
-          context: {availableNetworks: Object.keys(config.networks ?? {}), network: networkName},
-          suggestion:
-            `Network "${networkName}" not found in cantonctl.yaml. ` +
-            `Available: ${Object.keys(config.networks ?? {}).join(', ') || 'none'}`,
-        })
       }
 
       // Get token: from flag or prompt when the mode actually persists operator credentials.

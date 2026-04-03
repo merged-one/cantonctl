@@ -1,9 +1,11 @@
 import {captureOutput} from '@oclif/test'
-import {describe, expect, it} from 'vitest'
+import {afterEach, describe, expect, it, vi} from 'vitest'
 
+import * as configModule from '../lib/config.js'
 import type {ResolvedAuthProfile} from '../lib/auth-profile.js'
 import type {CantonctlConfig} from '../lib/config.js'
 import {CantonctlError, ErrorCode} from '../lib/errors.js'
+import type {OutputWriter} from '../lib/output.js'
 import type {
   ExperimentalValidatorContext,
 } from './validator/experimental/base.js'
@@ -15,6 +17,10 @@ import ValidatorExperimentalRegisterUser from './validator/experimental/register
 import ValidatorExperimentalSetupPreapproval from './validator/experimental/setup-preapproval.js'
 
 const CLI_ROOT = process.cwd()
+
+afterEach(() => {
+  vi.restoreAllMocks()
+})
 
 function createConfig(): CantonctlConfig {
   return {
@@ -116,6 +122,33 @@ class TestExperimentalBase extends ExperimentalValidatorCommand {
 }
 
 describe('experimental validator command base', () => {
+  it('delegates config loading and rethrows unexpected command errors', async () => {
+    const config = createConfig()
+    const loadConfigSpy = vi.spyOn(configModule, 'loadConfig').mockResolvedValue(config)
+
+    class DefaultExperimentalBase extends ExperimentalValidatorCommand {
+      public async run(): Promise<void> {}
+
+      public callHandleCommandError(error: unknown, out: OutputWriter): never {
+        return this.handleCommandError(error, out)
+      }
+
+      public async callLoadCommandConfig(): Promise<CantonctlConfig> {
+        return this.loadCommandConfig()
+      }
+    }
+
+    try {
+      const command = new DefaultExperimentalBase([], {} as never)
+      await expect(command.callLoadCommandConfig()).resolves.toBe(config)
+      expect(loadConfigSpy).toHaveBeenCalledTimes(1)
+      expect(() => command.callHandleCommandError(new Error('boom'), {result: vi.fn()} as unknown as OutputWriter))
+        .toThrow('boom')
+    } finally {
+      loadConfigSpy.mockRestore()
+    }
+  })
+
   it('resolves profile-backed validator context with an explicit token', async () => {
     const command = new TestExperimentalBase([], {} as never)
 
@@ -165,6 +198,86 @@ describe('experimental validator command base', () => {
     await expect(command.callResolveExperimentalContext({
       network: 'local',
     })).rejects.toMatchObject({code: ErrorCode.DEPLOY_AUTH_FAILED})
+  })
+
+  it('suggests auth login when a non-localnet profile has no operator token', async () => {
+    const command = new TestExperimentalBase([], {} as never)
+
+    await expect(command.callResolveExperimentalContext({
+      network: 'devnet',
+    })).rejects.toMatchObject({
+      code: ErrorCode.DEPLOY_AUTH_FAILED,
+      suggestion: expect.stringContaining('cantonctl auth login devnet'),
+    })
+  })
+
+  it('supports explicit validator urls for docker networks without mapped profiles', async () => {
+    class OrphanLocalnetBase extends ExperimentalValidatorCommand {
+      public async run(): Promise<void> {}
+
+      public async callResolveExperimentalContext(options: {
+        network: string
+        token?: string
+        validatorUrl?: string
+      }) {
+        return this.resolveExperimentalContext(options)
+      }
+
+      protected override async loadCommandConfig(): Promise<CantonctlConfig> {
+        return {
+          networks: {
+            orphan: {type: 'docker'},
+          },
+          project: {name: 'demo', 'sdk-version': '3.4.11'},
+          version: 1,
+        }
+      }
+    }
+
+    const command = new OrphanLocalnetBase([], {} as never)
+    const context = await command.callResolveExperimentalContext({
+      network: 'orphan',
+      token: 'jwt-token',
+      validatorUrl: 'https://validator.orphan',
+    })
+
+    expect(context.authProfile.profileName).toBeUndefined()
+    expect(context.authProfile.mode).toBe('localnet-unsafe-hmac')
+    expect(context.validatorUrl).toBe('https://validator.orphan')
+    expect(context.adapter.metadata.baseUrl).toBe('https://validator.orphan')
+  })
+
+  it('uses the localnet-unsafe-hmac suggestion when no token exists for an unmapped docker network', async () => {
+    class OrphanLocalnetBase extends ExperimentalValidatorCommand {
+      public async run(): Promise<void> {}
+
+      public async callResolveExperimentalContext(options: {
+        network: string
+        token?: string
+        validatorUrl?: string
+      }) {
+        return this.resolveExperimentalContext(options)
+      }
+
+      protected override async loadCommandConfig(): Promise<CantonctlConfig> {
+        return {
+          networks: {
+            orphan: {type: 'docker'},
+          },
+          project: {name: 'demo', 'sdk-version': '3.4.11'},
+          version: 1,
+        }
+      }
+    }
+
+    const command = new OrphanLocalnetBase([], {} as never)
+    await expect(command.callResolveExperimentalContext({
+      network: 'orphan',
+      validatorUrl: 'https://validator.orphan',
+    })).rejects.toMatchObject({
+      code: ErrorCode.DEPLOY_AUTH_FAILED,
+      suggestion: expect.stringContaining('localnet-unsafe-hmac'),
+    })
   })
 
   it('requires explicit experimental confirmation', () => {

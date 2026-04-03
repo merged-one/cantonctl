@@ -725,6 +725,41 @@ describe('core command surface', () => {
     })
   })
 
+  it('acknowledges local-only auth profiles in human mode without persisting credentials', async () => {
+    const storeToken = vi.fn()
+
+    class TestAuthLogin extends AuthLogin {
+      protected override async createBackend() {
+        return {backend: createKeychainBackend(), isKeychain: false}
+      }
+
+      protected override createCredentialStore() {
+        return {
+          list: vi.fn(),
+          remove: vi.fn(),
+          resolve: vi.fn(),
+          resolveRecord: vi.fn(),
+          retrieve: vi.fn(),
+          retrieveRecord: vi.fn(),
+          store: storeToken,
+        }
+      }
+
+      protected override async loadCommandConfig(): Promise<CantonctlConfig> {
+        return createConfig()
+      }
+    }
+
+    const result = await captureOutput(() => TestAuthLogin.run([
+      'local',
+      '--experimental',
+    ], {root: CLI_ROOT}))
+    expect(result.error).toBeUndefined()
+    expect(storeToken).not.toHaveBeenCalled()
+    expect(result.stdout).toContain('No credential persisted for local')
+    expect(result.stdout).toContain('Acknowledged localnet-unsafe-hmac for local')
+  })
+
   it('requires explicit experimental acknowledgement for operator auth modes', async () => {
     class TestAuthLogin extends AuthLogin {
       protected override async loadCommandConfig(): Promise<CantonctlConfig> {
@@ -745,6 +780,93 @@ describe('core command surface', () => {
     expect(json.error).toEqual(expect.objectContaining({
       code: ErrorCode.EXPERIMENTAL_CONFIRMATION_REQUIRED,
     }))
+  })
+
+  it('fails when no token is provided for remote auth profiles', async () => {
+    class TestAuthLogin extends AuthLogin {
+      protected override async loadCommandConfig(): Promise<CantonctlConfig> {
+        return createConfig()
+      }
+
+      protected override createReadlineInterface() {
+        return {
+          close: vi.fn(),
+          question: vi.fn((_message: string, callback: (value: string) => void) => {
+            callback('')
+          }),
+        } as never
+      }
+    }
+
+    const result = await captureOutput(() => TestAuthLogin.run([
+      'devnet',
+      '--experimental',
+      '--json',
+    ], {root: CLI_ROOT}))
+    expect(result.error).toBeDefined()
+
+    const json = parseJson(result.stdout)
+    expect(json.success).toBe(false)
+    expect(json.error).toEqual(expect.objectContaining({
+      code: ErrorCode.DEPLOY_AUTH_FAILED,
+    }))
+  })
+
+  it('prompts for JWT tokens and uses the JSON API port when a remote network omits url', async () => {
+    const storeToken = vi.fn()
+    const getVersion = vi.fn().mockResolvedValue({version: '3.4.11'})
+    const createLedgerClientSpy = vi.fn().mockReturnValue({getVersion})
+    const question = vi.fn((_message: string, callback: (value: string) => void) => {
+      callback('prompt-token')
+    })
+
+    class TestAuthLogin extends AuthLogin {
+      protected override async createBackend() {
+        return {backend: createKeychainBackend(), isKeychain: true}
+      }
+
+      protected override createCredentialStore() {
+        return {
+          list: vi.fn(),
+          remove: vi.fn(),
+          resolve: vi.fn(),
+          resolveRecord: vi.fn(),
+          retrieve: vi.fn(),
+          retrieveRecord: vi.fn(),
+          store: storeToken,
+        }
+      }
+
+      protected override createLedgerClient(options: {baseUrl: string; token: string}) {
+        return createLedgerClientSpy(options)
+      }
+
+      protected override async loadCommandConfig(): Promise<CantonctlConfig> {
+        return {
+          ...createConfig(),
+          networks: {
+            ...createConfig().networks,
+            ops: {'json-api-port': 7676, auth: 'jwt', type: 'remote'},
+          },
+        }
+      }
+
+      protected override createReadlineInterface() {
+        return {
+          close: vi.fn(),
+          question,
+        } as never
+      }
+    }
+
+    const result = await captureOutput(() => TestAuthLogin.run(['ops', '--json'], {root: CLI_ROOT}))
+    expect(result.error).toBeUndefined()
+    expect(question).toHaveBeenCalledWith('Enter JWT token: ', expect.any(Function))
+    expect(createLedgerClientSpy).toHaveBeenCalledWith({
+      baseUrl: 'http://localhost:7676',
+      token: 'prompt-token',
+    })
+    expect(storeToken).toHaveBeenCalledWith('ops', 'prompt-token', {mode: 'env-or-keychain-jwt'})
   })
 
   it('stores remote auth tokens after connectivity verification', async () => {
@@ -796,6 +918,99 @@ describe('core command surface', () => {
       persisted: true,
       source: 'keychain',
     })
+  })
+
+  it('accepts an explicit auth mode override for login', async () => {
+    const storeToken = vi.fn()
+
+    class TestAuthLogin extends AuthLogin {
+      protected override async createBackend() {
+        return {backend: createKeychainBackend(), isKeychain: true}
+      }
+
+      protected override createCredentialStore() {
+        return {
+          list: vi.fn(),
+          remove: vi.fn(),
+          resolve: vi.fn(),
+          resolveRecord: vi.fn(),
+          retrieve: vi.fn(),
+          retrieveRecord: vi.fn(),
+          store: storeToken,
+        }
+      }
+
+      protected override createLedgerClient() {
+        return {
+          getVersion: vi.fn().mockResolvedValue({version: '3.4.11'}),
+        } as never
+      }
+
+      protected override async loadCommandConfig(): Promise<CantonctlConfig> {
+        return createConfig()
+      }
+    }
+
+    const result = await captureOutput(() => TestAuthLogin.run([
+      'devnet',
+      '--mode',
+      'bearer-token',
+      '--token',
+      'jwt-token',
+      '--json',
+    ], {root: CLI_ROOT}))
+    expect(result.error).toBeUndefined()
+    expect(storeToken).toHaveBeenCalledWith('devnet', 'jwt-token', {mode: 'bearer-token'})
+
+    const json = parseJson(result.stdout)
+    expect(json.success).toBe(true)
+    expect(json.data).toEqual({
+      mode: 'bearer-token',
+      network: 'devnet',
+      persisted: true,
+      source: 'keychain',
+    })
+    expect(json.warnings).toEqual(expect.arrayContaining([
+      expect.stringContaining('Operator override'),
+    ]))
+  })
+
+  it('rethrows unexpected auth login failures', async () => {
+    class TestAuthLogin extends AuthLogin {
+      protected override async createBackend() {
+        return {backend: createKeychainBackend(), isKeychain: true}
+      }
+
+      protected override createCredentialStore() {
+        return {
+          list: vi.fn(),
+          remove: vi.fn(),
+          resolve: vi.fn(),
+          resolveRecord: vi.fn(),
+          retrieve: vi.fn(),
+          retrieveRecord: vi.fn(),
+          store: vi.fn().mockRejectedValue(new Error('boom')),
+        }
+      }
+
+      protected override createLedgerClient() {
+        return {
+          getVersion: vi.fn().mockResolvedValue({version: '3.4.11'}),
+        } as never
+      }
+
+      protected override async loadCommandConfig(): Promise<CantonctlConfig> {
+        return createConfig()
+      }
+    }
+
+    await expect(TestAuthLogin.run([
+      'devnet',
+      '--experimental',
+      '--json',
+      '--token',
+      'jwt-token',
+    ], {root: CLI_ROOT})).rejects.toThrow('boom')
   })
 
   it('removes stored auth credentials in json mode', async () => {
@@ -985,6 +1200,140 @@ describe('core command surface', () => {
         }),
       ]),
     }))
+  })
+
+  it('reports generated and env-backed localnet auth sources distinctly', async () => {
+    const records = new Map<string, ResolvedCredential | null>([
+      ['devnet', null],
+      ['local', {source: 'env', token: 'jwt'}],
+    ])
+
+    class TestAuthStatus extends AuthStatus {
+      protected override async createBackend() {
+        return {backend: createKeychainBackend(), isKeychain: false}
+      }
+
+      protected override createCredentialStore() {
+        return {
+          list: vi.fn(),
+          remove: vi.fn(),
+          resolve: vi.fn(),
+          resolveRecord: vi.fn(async (network: string) => records.get(network) ?? null),
+          retrieve: vi.fn(),
+          retrieveRecord: vi.fn(),
+          store: vi.fn(),
+        }
+      }
+
+      protected override async loadCommandConfig(): Promise<CantonctlConfig> {
+        return createConfig()
+      }
+    }
+
+    const result = await captureOutput(() => TestAuthStatus.run(['--json'], {root: CLI_ROOT}))
+    expect(result.error).toBeUndefined()
+
+    const json = parseJson(result.stdout)
+    expect(json.data).toEqual(expect.objectContaining({
+      networks: expect.arrayContaining([
+        expect.objectContaining({
+          authenticated: true,
+          network: 'local',
+          source: 'env',
+        }),
+      ]),
+    }))
+  })
+
+  it('reports stored localnet credentials using the backend source', async () => {
+    const records = new Map<string, ResolvedCredential | null>([
+      ['devnet', null],
+      ['local', {
+        mode: 'localnet-unsafe-hmac',
+        source: 'stored',
+        storedAt: '2026-04-02T20:00:00Z',
+        token: 'jwt',
+      }],
+    ])
+
+    class TestAuthStatus extends AuthStatus {
+      protected override async createBackend() {
+        return {backend: createKeychainBackend(), isKeychain: false}
+      }
+
+      protected override createCredentialStore() {
+        return {
+          list: vi.fn(),
+          remove: vi.fn(),
+          resolve: vi.fn(),
+          resolveRecord: vi.fn(async (network: string) => records.get(network) ?? null),
+          retrieve: vi.fn(),
+          retrieveRecord: vi.fn(),
+          store: vi.fn(),
+        }
+      }
+
+      protected override async loadCommandConfig(): Promise<CantonctlConfig> {
+        return createConfig()
+      }
+    }
+
+    const result = await captureOutput(() => TestAuthStatus.run(['--json'], {root: CLI_ROOT}))
+    expect(result.error).toBeUndefined()
+
+    const json = parseJson(result.stdout)
+    expect(json.data).toEqual(expect.objectContaining({
+      networks: expect.arrayContaining([
+        expect.objectContaining({
+          authenticated: true,
+          network: 'local',
+          source: 'memory',
+        }),
+      ]),
+    }))
+  })
+
+  it('renders env-backed and unauthenticated auth status rows in human mode', async () => {
+    const records = new Map<string, ResolvedCredential | null>([
+      ['devnet', {source: 'env', token: 'jwt'}],
+      ['local', null],
+      ['ops', null],
+    ])
+
+    class TestAuthStatus extends AuthStatus {
+      protected override async createBackend() {
+        return {backend: createKeychainBackend(), isKeychain: false}
+      }
+
+      protected override createCredentialStore() {
+        return {
+          list: vi.fn(),
+          remove: vi.fn(),
+          resolve: vi.fn(),
+          resolveRecord: vi.fn(async (network: string) => records.get(network) ?? null),
+          retrieve: vi.fn(),
+          retrieveRecord: vi.fn(),
+          store: vi.fn(),
+        }
+      }
+
+      protected override async loadCommandConfig(): Promise<CantonctlConfig> {
+        return {
+          ...createConfig(),
+          networks: {
+            ...createConfig().networks,
+            ops: {auth: 'jwt', type: 'remote', url: 'https://ops.example.com'},
+          },
+        }
+      }
+    }
+
+    const result = await captureOutput(() => TestAuthStatus.run([], {root: CLI_ROOT}))
+    expect(result.error).toBeUndefined()
+    expect(result.stdout).toContain('devnet')
+    expect(result.stdout).toContain('env')
+    expect(result.stdout).toContain('ops')
+    expect(result.stdout).toContain('no')
   })
 
   it('prints guidance when no networks are configured for auth status', async () => {

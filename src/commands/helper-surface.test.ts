@@ -1,15 +1,18 @@
 import * as fs from 'node:fs/promises'
 import * as os from 'node:os'
 import * as path from 'node:path'
+import {PassThrough} from 'node:stream'
 import {captureOutput} from '@oclif/test'
 import {afterEach, describe, expect, it, vi} from 'vitest'
 
+import * as configModule from '../lib/config.js'
 import type {ResolvedCredential} from '../lib/credential-store.js'
 import type {CantonctlConfig} from '../lib/config.js'
 import {CantonctlError, ErrorCode} from '../lib/errors.js'
 import type {OutputWriter} from '../lib/output.js'
 import type {StableSplice} from '../lib/splice-public.js'
 import AuthLogin from './auth/login.js'
+import AuthLogout from './auth/logout.js'
 import AuthStatus from './auth/status.js'
 import Clean from './clean.js'
 import CodegenSync from './codegen/sync.js'
@@ -96,6 +99,10 @@ describe('command helper coverage', () => {
         return this.maybeLoadProfileContext(options)
       }
 
+      public callLoadCommandConfig() {
+        return this.loadCommandConfig()
+      }
+
       public callHandleCommandError(error: unknown, writer: OutputWriter): never {
         return this.handleCommandError(error, writer)
       }
@@ -116,6 +123,10 @@ describe('command helper coverage', () => {
     }
 
     class BaseHarness extends StableSurfaceCommand {
+      public callLoadCommandConfig() {
+        return this.loadCommandConfig()
+      }
+
       public callCreateStableSplice() {
         return this.createStableSplice()
       }
@@ -124,6 +135,7 @@ describe('command helper coverage', () => {
     }
 
     const harness = new Harness([], {} as never)
+    const loadConfigSpy = vi.spyOn(configModule, 'loadConfig').mockResolvedValue(createConfig())
     await expect(harness.callMaybeLoadProfileContext({needsProfile: false})).resolves.toBeUndefined()
     await expect(harness.callMaybeLoadProfileContext({needsProfile: false, profileName: 'splice-devnet'}))
       .resolves.toEqual(expect.objectContaining({kind: 'remote-validator', name: 'splice-devnet'}))
@@ -131,6 +143,7 @@ describe('command helper coverage', () => {
       .resolves.toEqual(expect.objectContaining({kind: 'remote-validator', name: 'splice-devnet'}))
     await expect(harness.callMaybeLoadProfileContext({needsProfile: true}))
       .resolves.toEqual(expect.objectContaining({kind: 'sandbox', name: 'sandbox'}))
+    await expect(harness.callLoadCommandConfig()).resolves.toEqual(createConfig())
     expect(harness.callOutputFor(true)).toEqual(expect.objectContaining({result: expect.any(Function)}))
     expect(() => harness.callHandleCommandError(new CantonctlError(ErrorCode.CONFIG_NOT_FOUND), out))
       .toThrow()
@@ -139,10 +152,12 @@ describe('command helper coverage', () => {
       error: expect.objectContaining({code: ErrorCode.CONFIG_NOT_FOUND}),
       success: false,
     }))
+    await expect(new BaseHarness([], {} as never).callLoadCommandConfig()).resolves.toEqual(createConfig())
     expect(new BaseHarness([], {} as never).callCreateStableSplice()).toEqual(expect.objectContaining({
       listScanUpdates: expect.any(Function),
       transferToken: expect.any(Function),
     }))
+    loadConfigSpy.mockRestore()
   })
 
   it('covers Clean prompt confirmation through the default cleaner factory', async () => {
@@ -273,18 +288,71 @@ describe('command helper coverage', () => {
     expect(result.stderr).toContain('Stored credential mode "bearer-token" overrides the inferred "oidc-client-credentials" profile.')
   })
 
-  it('covers auth login default backend helper creation', async () => {
-    class Harness extends AuthLogin {
+  it('covers auth command helper factories and config loading', async () => {
+    const config = createConfig()
+    const loadConfigSpy = vi.spyOn(configModule, 'loadConfig').mockResolvedValue(config)
+
+    class LoginHarness extends AuthLogin {
+      public callCreateBackend() {
+        return this.createBackend()
+      }
+
+      public callCreateReadlineInterface() {
+        return this.createReadlineInterface({
+          input: new PassThrough(),
+          output: new PassThrough(),
+        })
+      }
+
+      public callLoadCommandConfig() {
+        return this.loadCommandConfig()
+      }
+    }
+
+    class LogoutHarness extends AuthLogout {
       public callCreateBackend() {
         return this.createBackend()
       }
     }
 
-    const result = await new Harness([], {} as never).callCreateBackend()
-    expect(result).toEqual(expect.objectContaining({
-      backend: expect.any(Object),
-      isKeychain: expect.any(Boolean),
-    }))
+    class StatusHarness extends AuthStatus {
+      public callCreateBackend() {
+        return this.createBackend()
+      }
+
+      public callLoadCommandConfig() {
+        return this.loadCommandConfig()
+      }
+    }
+
+    try {
+      const loginBackend = await new LoginHarness([], {} as never).callCreateBackend()
+      expect(loginBackend).toEqual(expect.objectContaining({
+        backend: expect.any(Object),
+        isKeychain: expect.any(Boolean),
+      }))
+
+      const logoutBackend = await new LogoutHarness([], {} as never).callCreateBackend()
+      expect(logoutBackend).toEqual(expect.objectContaining({
+        backend: expect.any(Object),
+      }))
+
+      const statusBackend = await new StatusHarness([], {} as never).callCreateBackend()
+      expect(statusBackend).toEqual(expect.objectContaining({
+        backend: expect.any(Object),
+        isKeychain: expect.any(Boolean),
+      }))
+
+      const rl = new LoginHarness([], {} as never).callCreateReadlineInterface()
+      expect(rl.question).toEqual(expect.any(Function))
+      rl.close()
+
+      await expect(new LoginHarness([], {} as never).callLoadCommandConfig()).resolves.toBe(config)
+      await expect(new StatusHarness([], {} as never).callLoadCommandConfig()).resolves.toBe(config)
+      expect(loadConfigSpy).toHaveBeenCalledTimes(2)
+    } finally {
+      loadConfigSpy.mockRestore()
+    }
   })
 
   it('covers dev helper shutdown and cleanup paths in interactive mode', async () => {

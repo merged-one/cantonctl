@@ -284,6 +284,38 @@ describe('stable splice command surface', () => {
     expect(result.stderr).toContain('ownership-check-pending')
   })
 
+  it('renders ans create fallback values when explicit endpoints bypass profile resolution', async () => {
+    class TestAnsCreate extends AnsCreate {
+      protected override createStableSplice(): StableSplice {
+        return {
+          createAnsEntry: async () => ({
+            endpoint: 'https://ans.example.com',
+            response: {},
+            source: 'ans',
+            warnings: [],
+          }),
+        } as unknown as StableSplice
+      }
+
+      protected override async loadCommandConfig(): Promise<CantonctlConfig> {
+        throw new Error('config should not load when explicit endpoints are supplied')
+      }
+    }
+
+    const result = await captureOutput(() => TestAnsCreate.run([
+      '--ans-url',
+      'https://ans.example.com',
+      '--description',
+      'Alice profile',
+      '--name',
+      'alice.unverified.ans',
+    ], {root: CLI_ROOT}))
+    expect(result.error).toBeUndefined()
+    expect(result.stdout).toContain('Entry: alice.unverified.ans')
+    expect(result.stdout).toContain('Subscription request: -')
+    expect(result.stdout).toContain('Entry context: -')
+  })
+
   it('executes ans create through the instance run path', async () => {
     const createAnsEntry = vi.fn().mockResolvedValue({
       endpoint: 'https://ans.example.com',
@@ -477,6 +509,33 @@ describe('stable splice command surface', () => {
     expect(result.stderr).toContain('using-scan-proxy')
   })
 
+  it('renders ans listing fallbacks when explicit scan endpoints bypass profile resolution', async () => {
+    class TestAnsList extends AnsList {
+      protected override createStableSplice(): StableSplice {
+        return {
+          listAnsEntries: async () => ({
+            endpoint: 'https://scan.example.com',
+            entries: [{}],
+            source: 'scan',
+            warnings: [],
+          }),
+        } as unknown as StableSplice
+      }
+
+      protected override async loadCommandConfig(): Promise<CantonctlConfig> {
+        throw new Error('config should not load when explicit endpoints are supplied')
+      }
+    }
+
+    const result = await captureOutput(() => TestAnsList.run([
+      '--scan-url',
+      'https://scan.example.com',
+    ], {root: CLI_ROOT}))
+    expect(result.error).toBeUndefined()
+    expect(result.stdout).toContain('Source: scan')
+    expect(result.stdout).toContain('-')
+  })
+
   it('executes ans list through the instance run path', async () => {
     const listAnsEntries = vi.fn().mockResolvedValue({
       endpoint: 'https://ans.example.com',
@@ -643,6 +702,98 @@ describe('stable splice command surface', () => {
     }))
   })
 
+  it('emits scan current-state summaries when only scan-proxy is explicitly supplied', async () => {
+    const getScanCurrentState = vi.fn(async () => ({
+      dsoInfo: {dso_party_id: null},
+      endpoint: 'https://scan-proxy.example.com',
+      issuingMiningRounds: [],
+      openMiningRounds: [],
+      source: 'scanProxy',
+      warnings: [],
+    }))
+
+    class TestScanCurrentState extends ScanCurrentState {
+      protected override createStableSplice(): StableSplice {
+        return {
+          getScanCurrentState,
+        } as unknown as StableSplice
+      }
+
+      protected override async loadCommandConfig(): Promise<CantonctlConfig> {
+        throw new Error('config should not load when explicit endpoints are supplied')
+      }
+    }
+
+    const result = await captureOutput(() => TestScanCurrentState.run([
+      '--json',
+      '--scan-proxy-url',
+      'https://scan-proxy.example.com',
+    ], {root: CLI_ROOT}))
+    expect(result.error).toBeUndefined()
+    expect(getScanCurrentState).toHaveBeenCalledWith({
+      profile: undefined,
+      scanBaseUrl: undefined,
+      scanProxyBaseUrl: 'https://scan-proxy.example.com',
+    })
+  })
+
+  it('renders a fallback dso party label when scan current-state omits it', async () => {
+    class TestScanCurrentState extends ScanCurrentState {
+      protected override createStableSplice(): StableSplice {
+        return {
+          getScanCurrentState: async () => ({
+            dsoInfo: {dso_party_id: null},
+            endpoint: 'https://scan.example.com',
+            issuingMiningRounds: [],
+            openMiningRounds: [],
+            source: 'scan',
+            warnings: [],
+          }),
+        } as unknown as StableSplice
+      }
+
+      protected override async loadCommandConfig(): Promise<CantonctlConfig> {
+        throw new Error('config should not load when explicit endpoints are supplied')
+      }
+    }
+
+    const result = await captureOutput(() => TestScanCurrentState.run([
+      '--scan-url',
+      'https://scan.example.com',
+    ], {root: CLI_ROOT}))
+    expect(result.error).toBeUndefined()
+    expect(result.stdout).toContain('DSO party: -')
+  })
+
+  it('serializes invalid scan acs record-time-match values through the shared handler', async () => {
+    const command = new ScanAcs([], {} as never)
+    vi.spyOn(command as unknown as {parse: () => Promise<unknown>}, 'parse').mockResolvedValue({
+      flags: {
+        after: undefined,
+        before: undefined,
+        json: true,
+        'migration-id': 7,
+        'page-size': 25,
+        'party-id': undefined,
+        profile: undefined,
+        'record-time': undefined,
+        'record-time-match': 'invalid',
+        'scan-url': undefined,
+        template: undefined,
+      },
+    } as never)
+
+    const result = await captureOutput(() => command.run())
+    expect(result.error).toBeDefined()
+
+    const json = parseJson(result.stdout)
+    expect(json.success).toBe(false)
+    expect(json.error).toEqual(expect.objectContaining({
+      code: ErrorCode.CONFIG_SCHEMA_VIOLATION,
+      suggestion: 'Use --record-time-match exact or --record-time-match at_or_before.',
+    }))
+  })
+
   it('emits scan acs snapshots in json mode', async () => {
     class TestScanAcs extends ScanAcs {
       protected override createStableSplice(): StableSplice {
@@ -720,6 +871,36 @@ describe('stable splice command surface', () => {
     expect(result.stdout).toContain('contract-1')
     expect(result.stdout).toContain('Next page token: 26')
     expect(result.stderr).toContain('public-snapshot')
+  })
+
+  it('renders scan acs fallback fields when explicit scan endpoints bypass profile resolution', async () => {
+    class TestScanAcs extends ScanAcs {
+      protected override createStableSplice(): StableSplice {
+        return {
+          getScanAcs: async () => ({
+            createdEvents: [{}],
+            endpoint: 'https://scan.example.com',
+            snapshot: {},
+            source: 'scan',
+            warnings: [],
+          }),
+        } as unknown as StableSplice
+      }
+
+      protected override async loadCommandConfig(): Promise<CantonctlConfig> {
+        throw new Error('config should not load when explicit endpoints are supplied')
+      }
+    }
+
+    const result = await captureOutput(() => TestScanAcs.run([
+      '--migration-id',
+      '7',
+      '--scan-url',
+      'https://scan.example.com',
+    ], {root: CLI_ROOT}))
+    expect(result.error).toBeUndefined()
+    expect(result.stdout).toContain('Snapshot: migration - @ -')
+    expect(result.stdout).toContain('-')
   })
 
   it('renders token transfer results in human mode', async () => {
@@ -897,6 +1078,67 @@ describe('stable splice command surface', () => {
     expect(result.stderr).toContain('ledger-read-through')
   })
 
+  it('renders token holding fallbacks when explicit ledger endpoints bypass profile resolution', async () => {
+    class TestTokenHoldings extends TokenHoldings {
+      protected override createStableSplice(): StableSplice {
+        return {
+          listTokenHoldings: async () => ({
+            endpoint: 'https://ledger.example.com',
+            holdings: [{}],
+            interfaceId: '#splice-api-token-holding-v1:Splice.Api.Token.HoldingV1:Holding',
+            warnings: [],
+          }),
+        } as unknown as StableSplice
+      }
+
+      protected override async loadCommandConfig(): Promise<CantonctlConfig> {
+        throw new Error('config should not load when explicit endpoints are supplied')
+      }
+    }
+
+    const result = await captureOutput(() => TestTokenHoldings.run([
+      '--ledger-url',
+      'https://ledger.example.com',
+      '--party',
+      'Alice',
+    ], {root: CLI_ROOT}))
+    expect(result.error).toBeUndefined()
+    expect(result.stdout).toContain('?:?')
+    expect(result.stdout).toContain('-')
+  })
+
+  it('serializes token holding failures through the shared error handler', async () => {
+    class TestTokenHoldings extends TokenHoldings {
+      protected override createStableSplice(): StableSplice {
+        return {
+          listTokenHoldings: async () => {
+            throw new CantonctlError(ErrorCode.CONFIG_NOT_FOUND, {
+              suggestion: 'Select a ledger profile or supply --ledger-url.',
+            })
+          },
+        } as unknown as StableSplice
+      }
+
+      protected override async loadCommandConfig(): Promise<CantonctlConfig> {
+        return createConfig()
+      }
+    }
+
+    const result = await captureOutput(() => TestTokenHoldings.run([
+      '--json',
+      '--party',
+      'Alice',
+    ], {root: CLI_ROOT}))
+    expect(result.error).toBeDefined()
+    expect(parseJson(result.stdout)).toEqual(expect.objectContaining({
+      error: expect.objectContaining({
+        code: ErrorCode.CONFIG_NOT_FOUND,
+        suggestion: 'Select a ledger profile or supply --ledger-url.',
+      }),
+      success: false,
+    }))
+  })
+
   it('emits validator traffic purchase results in json mode', async () => {
     class TestValidatorTrafficBuy extends ValidatorTrafficBuy {
       protected override createStableSplice(): StableSplice {
@@ -971,6 +1213,46 @@ describe('stable splice command surface', () => {
     expect(result.stderr).toContain('operator-only')
   })
 
+  it('emits validator traffic purchases in json mode when explicit urls bypass profile resolution', async () => {
+    const createTrafficBuy = vi.fn(async () => ({
+      endpoint: 'https://validator.example.com/api/validator',
+      requestContractId: 'request-1',
+      source: 'validator-user',
+      status: {status: 'created'},
+      trackingId: 'traffic-1',
+      warnings: [],
+    }))
+
+    class TestValidatorTrafficBuy extends ValidatorTrafficBuy {
+      protected override createStableSplice(): StableSplice {
+        return {
+          createTrafficBuy,
+        } as unknown as StableSplice
+      }
+
+      protected override async loadCommandConfig(): Promise<CantonctlConfig> {
+        throw new Error('config should not load when explicit endpoints are supplied')
+      }
+    }
+
+    const result = await captureOutput(() => TestValidatorTrafficBuy.run([
+      '--json',
+      '--domain-id',
+      'domain::1',
+      '--receiving-validator-party-id',
+      'AliceValidator',
+      '--traffic-amount',
+      '4096',
+      '--validator-url',
+      'https://validator.example.com/api/validator',
+    ], {root: CLI_ROOT}))
+    expect(result.error).toBeUndefined()
+    expect(createTrafficBuy).toHaveBeenCalledWith(expect.objectContaining({
+      profile: undefined,
+      validatorBaseUrl: 'https://validator.example.com/api/validator',
+    }))
+  })
+
   it('renders validator traffic status in human mode', async () => {
     class TestValidatorTrafficStatus extends ValidatorTrafficStatus {
       protected override createStableSplice(): StableSplice {
@@ -998,6 +1280,174 @@ describe('stable splice command surface', () => {
     expect(result.stdout).toContain('Tracking id: traffic-1')
     expect(result.stdout).toContain('"transaction_id": "tx-traffic-1"')
     expect(result.stderr).toContain('follow-up-check')
+  })
+
+  it('renders unknown validator traffic status when upstream omits the status field', async () => {
+    class TestValidatorTrafficStatus extends ValidatorTrafficStatus {
+      protected override createStableSplice(): StableSplice {
+        return {
+          getTrafficRequestStatus: async () => ({
+            endpoint: 'https://validator.example.com/api/validator',
+            source: 'validator-user',
+            status: {},
+            trackingId: 'traffic-1',
+            warnings: [],
+          }),
+        } as unknown as StableSplice
+      }
+
+      protected override async loadCommandConfig(): Promise<CantonctlConfig> {
+        return createConfig()
+      }
+    }
+
+    const result = await captureOutput(() => TestValidatorTrafficStatus.run([
+      '--tracking-id',
+      'traffic-1',
+    ], {root: CLI_ROOT}))
+    expect(result.error).toBeUndefined()
+    expect(result.stdout).toContain('Status: unknown')
+  })
+
+  it('emits validator traffic status in json mode when explicit urls bypass profile resolution', async () => {
+    const getTrafficRequestStatus = vi.fn(async () => ({
+      endpoint: 'https://validator.example.com/api/validator',
+      source: 'validator-user',
+      status: {status: 'completed'},
+      trackingId: 'traffic-1',
+      warnings: [],
+    }))
+
+    class TestValidatorTrafficStatus extends ValidatorTrafficStatus {
+      protected override createStableSplice(): StableSplice {
+        return {
+          getTrafficRequestStatus,
+        } as unknown as StableSplice
+      }
+
+      protected override async loadCommandConfig(): Promise<CantonctlConfig> {
+        throw new Error('config should not load when explicit endpoints are supplied')
+      }
+    }
+
+    const result = await captureOutput(() => TestValidatorTrafficStatus.run([
+      '--json',
+      '--tracking-id',
+      'traffic-1',
+      '--validator-url',
+      'https://validator.example.com/api/validator',
+    ], {root: CLI_ROOT}))
+    expect(result.error).toBeUndefined()
+    expect(getTrafficRequestStatus).toHaveBeenCalledWith(expect.objectContaining({
+      profile: undefined,
+      validatorBaseUrl: 'https://validator.example.com/api/validator',
+    }))
+  })
+
+  it('routes validator traffic errors through the shared command handler', async () => {
+    class TestValidatorTrafficBuy extends ValidatorTrafficBuy {
+      protected override createStableSplice(): StableSplice {
+        return {
+          createTrafficBuy: async () => {
+            throw new CantonctlError(ErrorCode.CONFIG_NOT_FOUND, {
+              suggestion: 'Select a validator profile or supply --validator-url.',
+            })
+          },
+        } as unknown as StableSplice
+      }
+
+      protected override async loadCommandConfig(): Promise<CantonctlConfig> {
+        return createConfig()
+      }
+    }
+
+    class TestValidatorTrafficStatus extends ValidatorTrafficStatus {
+      protected override createStableSplice(): StableSplice {
+        return {
+          getTrafficRequestStatus: async () => {
+            throw new CantonctlError(ErrorCode.CONFIG_NOT_FOUND, {
+              suggestion: 'Select a validator profile or supply --validator-url.',
+            })
+          },
+        } as unknown as StableSplice
+      }
+
+      protected override async loadCommandConfig(): Promise<CantonctlConfig> {
+        return createConfig()
+      }
+    }
+
+    const buyResult = await captureOutput(() => TestValidatorTrafficBuy.run([
+      '--json',
+      '--domain-id',
+      'domain::1',
+      '--receiving-validator-party-id',
+      'AliceValidator',
+      '--traffic-amount',
+      '4096',
+    ], {root: CLI_ROOT}))
+    expect(buyResult.error).toBeDefined()
+    expect(parseJson(buyResult.stdout)).toEqual(expect.objectContaining({
+      error: expect.objectContaining({
+        code: ErrorCode.CONFIG_NOT_FOUND,
+      }),
+      success: false,
+    }))
+
+    const statusResult = await captureOutput(() => TestValidatorTrafficStatus.run([
+      '--json',
+      '--tracking-id',
+      'traffic-1',
+    ], {root: CLI_ROOT}))
+    expect(statusResult.error).toBeDefined()
+    expect(parseJson(statusResult.stdout)).toEqual(expect.objectContaining({
+      error: expect.objectContaining({
+        code: ErrorCode.CONFIG_NOT_FOUND,
+      }),
+      success: false,
+    }))
+  })
+
+  it('renders scan update fallbacks and passes cursor tuples when explicit scan endpoints bypass profile resolution', async () => {
+    const listScanUpdates = vi.fn(async () => ({
+      endpoint: 'https://scan.example.com',
+      source: 'scan',
+      updates: [{rootEventCount: 4}, {}],
+      warnings: [],
+    }))
+
+    class TestScanUpdates extends ScanUpdates {
+      protected override createStableSplice(): StableSplice {
+        return {
+          listScanUpdates,
+        } as unknown as StableSplice
+      }
+
+      protected override async loadCommandConfig(): Promise<CantonctlConfig> {
+        throw new Error('config should not load when explicit endpoints are supplied')
+      }
+    }
+
+    const result = await captureOutput(() => TestScanUpdates.run([
+      '--scan-url',
+      'https://scan.example.com',
+      '--after-migration-id',
+      '7',
+      '--after-record-time',
+      '2026-04-02T20:00:00Z',
+    ], {root: CLI_ROOT}))
+    expect(result.error).toBeUndefined()
+    expect(listScanUpdates).toHaveBeenCalledWith(expect.objectContaining({
+      after: {
+        migrationId: 7,
+        recordTime: '2026-04-02T20:00:00Z',
+      },
+      profile: undefined,
+      scanBaseUrl: 'https://scan.example.com',
+    }))
+    expect(result.stdout).toContain('unknown')
+    expect(result.stdout).toContain('4')
+    expect(result.stdout).toContain('-')
   })
 
   it('serializes stable-surface errors through the shared handler', async () => {

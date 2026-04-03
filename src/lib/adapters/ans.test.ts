@@ -1,6 +1,6 @@
 import {describe, expect, it, vi} from 'vitest'
 
-import {createAnsAdapter} from './ans.js'
+import {createAnsAdapter, normalizeAnsEntriesResponse, normalizeAnsEntry} from './ans.js'
 
 function createJsonResponse(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
@@ -78,5 +78,10 @@ describe('createAnsAdapter', () => {
       name: 'alice.unverified.ans',
       url: 'https://example.com',
     })
+  })
+
+  it('normalizes invalid ANS entry payloads conservatively', () => {
+    expect(normalizeAnsEntriesResponse(null)).toEqual([])
+    expect(normalizeAnsEntry(null)).toEqual({})
   })
 })

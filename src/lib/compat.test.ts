@@ -66,6 +66,41 @@ describe('compat', () => {
     ])
   })
 
+  it('sorts equally-defaulted profiles alphabetically by name', () => {
+    const profiles = listProfiles(createConfig({
+      'default-profile': undefined,
+      profiles: {
+        zebra: {
+          experimental: false,
+          kind: 'remote-validator',
+          name: 'zebra',
+          services: {
+            ledger: {url: 'https://zebra-ledger.example.com'},
+            validator: {url: 'https://zebra-validator.example.com'},
+          },
+        },
+        alpha: {
+          experimental: false,
+          kind: 'remote-validator',
+          name: 'alpha',
+          services: {
+            ledger: {url: 'https://alpha-ledger.example.com'},
+            validator: {url: 'https://alpha-validator.example.com'},
+          },
+        },
+      },
+    }))
+
+    expect(profiles.map(profile => profile.name)).toEqual(['alpha', 'zebra'])
+  })
+
+  it('returns an empty profile list when canonical profiles are absent', () => {
+    expect(listProfiles(createConfig({
+      'default-profile': undefined,
+      profiles: undefined,
+    }))).toEqual([])
+  })
+
   it('resolves the default profile when no name is provided', () => {
     const resolved = resolveProfile(createConfig())
 
@@ -102,12 +137,32 @@ describe('compat', () => {
     )
   })
 
+  it('reports none when an explicit profile is missing and no profiles are defined', () => {
+    expect(() => resolveProfile(createConfig({
+      'default-profile': undefined,
+      profiles: undefined,
+    }), 'missing-profile')).toThrowError(expect.objectContaining({
+      code: ErrorCode.CONFIG_SCHEMA_VIOLATION,
+      suggestion: expect.stringContaining('Available: none'),
+    }))
+  })
+
   it('fails when the configured default profile is missing', () => {
     expect(() => resolveProfile(createConfig({
       'default-profile': 'missing-profile',
     }))).toThrowError(expect.objectContaining({
       code: ErrorCode.CONFIG_SCHEMA_VIOLATION,
       suggestion: expect.stringContaining('Default profile "missing-profile" is not defined'),
+    }))
+  })
+
+  it('reports none when the configured default profile is missing without any profiles', () => {
+    expect(() => resolveProfile(createConfig({
+      'default-profile': 'missing-profile',
+      profiles: undefined,
+    }))).toThrowError(expect.objectContaining({
+      code: ErrorCode.CONFIG_SCHEMA_VIOLATION,
+      suggestion: expect.stringContaining('Available: none'),
     }))
   })
 
@@ -209,6 +264,19 @@ describe('compat', () => {
     )
   })
 
+  it('treats same-major same-minor sdk drifts as warnings', () => {
+    const report = createCompatibilityReport(createConfig({
+      project: {name: 'demo', 'sdk-version': '3.4.99'},
+    }), 'sandbox')
+
+    expect(report.checks.find(check => check.name === 'Project SDK')).toEqual(
+      expect.objectContaining({
+        actual: '3.4.99',
+        status: 'warn',
+      }),
+    )
+  })
+
   it('summarizes auth and localnet services with config-specific detail', () => {
     const services = summarizeProfileServices({
       experimental: true,
@@ -298,6 +366,44 @@ describe('compat', () => {
         detail: 'Token Standard endpoint',
         endpoint: 'https://tokens.example.com',
         name: 'tokenStandard',
+      }),
+    ])
+  })
+
+  it('summarizes ledger auth details and falls back to the default local json api port', () => {
+    const services = summarizeProfileServices({
+      experimental: false,
+      kind: 'sandbox',
+      name: 'sandbox',
+      services: {
+        ledger: {auth: 'jwt', port: 5001},
+      },
+    })
+
+    expect(services).toEqual([
+      expect.objectContaining({
+        detail: 'port 5001, auth jwt',
+        endpoint: 'http://localhost:7575',
+        name: 'ledger',
+      }),
+    ])
+  })
+
+  it('falls back to a generic localnet detail string when optional fields are omitted', () => {
+    const services = summarizeProfileServices({
+      experimental: false,
+      kind: 'splice-localnet',
+      name: 'localnet',
+      services: {
+        localnet: {},
+      },
+    })
+
+    expect(services).toEqual([
+      expect.objectContaining({
+        detail: 'Localnet configuration',
+        endpoint: undefined,
+        name: 'localnet',
       }),
     ])
   })

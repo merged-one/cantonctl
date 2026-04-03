@@ -94,6 +94,22 @@ describe('normalizeConfigProfiles', () => {
     })
   })
 
+  it('infers the default profile when exactly one profile exists without local aliases', () => {
+    const result = normalizeConfigProfiles({
+      profiles: {
+        remote: {
+          kind: 'remote-validator',
+          ledger: {url: 'https://ledger.example.com'},
+          validator: {url: 'https://validator.example.com'},
+        },
+      },
+      project: {name: 'my-app', 'sdk-version': '3.4.11'},
+      version: 1,
+    })
+
+    expect(result.defaultProfile).toBe('remote')
+  })
+
   it('maps splice-localnet profiles back to legacy docker networks when referenced explicitly', () => {
     const result = normalizeConfigProfiles({
       networks: {
@@ -115,6 +131,86 @@ describe('normalizeConfigProfiles', () => {
       port: 5001,
       'json-api-port': 7575,
       type: 'docker',
+    })
+  })
+
+  it('maps remote-sv profiles and legacy auth kinds back to compatible network targets', () => {
+    const result = normalizeConfigProfiles({
+      networks: {
+        devnet: {profile: 'sv'},
+        ops: {profile: 'token-auth'},
+      },
+      profiles: {
+        sv: {
+          kind: 'remote-sv-network',
+          ledger: {url: 'https://ledger.example.com'},
+          scan: {url: 'https://scan.example.com'},
+        },
+        'token-auth': {
+          auth: {kind: 'shared-secret'},
+          kind: 'remote-validator',
+          ledger: {auth: 'shared-secret', url: 'https://ops-ledger.example.com'},
+          validator: {url: 'https://validator.example.com'},
+        },
+      },
+      project: {name: 'my-app', 'sdk-version': '3.4.11'},
+      version: 1,
+    })
+
+    expect(result.networks.devnet).toEqual({
+      type: 'remote',
+      url: 'https://ledger.example.com',
+    })
+    expect(result.networks.ops).toEqual({
+      auth: 'shared-secret',
+      type: 'remote',
+      url: 'https://ops-ledger.example.com',
+    })
+  })
+
+  it('normalizes optional services and leaves the default profile unset when multiple non-local profiles exist', () => {
+    const result = normalizeConfigProfiles({
+      networks: {
+        canton: {profile: 'canton'},
+        qa: {profile: 'none-auth'},
+      },
+      profiles: {
+        canton: {
+          kind: 'canton-multi',
+          ledger: {url: 'https://canton-ledger.example.com'},
+        },
+        'none-auth': {
+          ans: {url: 'https://ans.example.com'},
+          auth: {kind: 'none'},
+          kind: 'remote-validator',
+          ledger: {url: 'https://qa-ledger.example.com'},
+          scanProxy: {url: 'https://scan-proxy.example.com'},
+          tokenStandard: {url: 'https://token.example.com'},
+          validator: {url: 'https://validator.example.com'},
+        },
+      },
+      project: {name: 'my-app', 'sdk-version': '3.4.11'},
+      version: 1,
+    })
+
+    expect(result.defaultProfile).toBeUndefined()
+    expect(result.profiles['none-auth'].services.ans).toEqual({
+      url: 'https://ans.example.com',
+    })
+    expect(result.profiles['none-auth'].services.scanProxy).toEqual({
+      url: 'https://scan-proxy.example.com',
+    })
+    expect(result.profiles['none-auth'].services.tokenStandard).toEqual({
+      url: 'https://token.example.com',
+    })
+    expect(result.networks.canton).toEqual({
+      type: 'docker',
+      url: 'https://canton-ledger.example.com',
+    })
+    expect(result.networks.qa).toEqual({
+      auth: 'none',
+      type: 'remote',
+      url: 'https://qa-ledger.example.com',
     })
   })
 
@@ -245,6 +341,47 @@ describe('normalizeConfigProfiles', () => {
       expect(e.context.issues).toContainEqual({
         message: 'scan or scanProxy service is required for profile kind "remote-sv-network"',
         path: 'profiles.sv',
+      })
+    }
+  })
+
+  it('fails when sandbox and canton-multi profiles omit the required ledger service', () => {
+    expect(() => normalizeConfigProfiles({
+      profiles: {
+        canton: {
+          kind: 'canton-multi',
+        },
+        sandbox: {
+          kind: 'sandbox',
+        },
+      },
+      project: {name: 'my-app', 'sdk-version': '3.4.11'},
+      version: 1,
+    })).toThrow(CantonctlError)
+
+    try {
+      normalizeConfigProfiles({
+        profiles: {
+          canton: {
+            kind: 'canton-multi',
+          },
+          sandbox: {
+            kind: 'sandbox',
+          },
+        },
+        project: {name: 'my-app', 'sdk-version': '3.4.11'},
+        version: 1,
+      })
+    } catch (err) {
+      const e = err as CantonctlError
+      expect(e.code).toBe(ErrorCode.CONFIG_SCHEMA_VIOLATION)
+      expect(e.context.issues).toContainEqual({
+        message: 'ledger service is required for profile kind "sandbox"',
+        path: 'profiles.sandbox.ledger',
+      })
+      expect(e.context.issues).toContainEqual({
+        message: 'ledger service is required for profile kind "canton-multi"',
+        path: 'profiles.canton.ledger',
       })
     }
   })

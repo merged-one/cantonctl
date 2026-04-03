@@ -292,6 +292,84 @@ describe('createLedgerAdapter', () => {
       },
     })
   })
+
+  it('uses wildcard active-contract filters and tolerates sparse party and dar payloads', async () => {
+    const fetch = vi.fn()
+      .mockResolvedValueOnce(createJsonResponse({partyDetails: {identifier: 'Alice::1224'}}))
+      .mockResolvedValueOnce(createJsonResponse({partyDetails: 'invalid'}))
+      .mockResolvedValueOnce(createJsonResponse({partyDetails: 'invalid'}))
+      .mockResolvedValueOnce(createJsonResponse({
+        partyDetails: [{displayName: 'Alice'}, null, 'bad'],
+      }))
+      .mockResolvedValueOnce(createJsonResponse({offset: 42}))
+      .mockResolvedValueOnce(createJsonResponse({transaction: 'invalid'}))
+      .mockResolvedValueOnce(createJsonResponse({}))
+      .mockResolvedValueOnce(createJsonResponse([
+        {},
+        null,
+        {contractEntry: {}},
+        {contractEntry: {JsActiveContract: {}}},
+      ]))
+      .mockResolvedValueOnce(createJsonResponse({}))
+
+    const adapter = createLedgerAdapter({
+      baseUrl: 'https://ledger.example.com',
+      fetch,
+      token: 'jwt-token',
+    })
+
+    await expect(adapter.allocateParty({displayName: 'Alice'})).resolves.toEqual({
+      partyDetails: {identifier: 'Alice::1224'},
+    })
+    await expect(adapter.allocateParty({displayName: 'Alice'})).resolves.toEqual({
+      partyDetails: {},
+    })
+    await expect(adapter.getParties()).resolves.toEqual({
+      partyDetails: [],
+    })
+    await expect(adapter.getParties()).resolves.toEqual({
+      partyDetails: [{displayName: 'Alice'}],
+    })
+    await expect(adapter.getLedgerEnd()).resolves.toEqual({offset: 42})
+    await expect(adapter.submitAndWait({
+      actAs: ['Alice'],
+      commandId: 'cmd-1',
+      commands: [],
+      userId: 'alice-user',
+    })).resolves.toEqual({
+      transaction: {},
+    })
+
+    const contracts = await adapter.getActiveContracts({filter: {party: 'Alice'}})
+    expect(contracts.activeContracts).toEqual([])
+
+    const [, init] = fetch.mock.calls[7]
+    expect(JSON.parse(String(init.body))).toEqual({
+      activeAtOffset: 0,
+      filter: {
+        filtersByParty: {
+          Alice: {
+            cumulative: [{
+              identifierFilter: {
+                WildcardFilter: {
+                  value: {
+                    includeCreatedEventBlob: false,
+                  },
+                },
+              },
+            }],
+          },
+        },
+      },
+      verbose: true,
+    })
+
+    await expect(adapter.uploadDar(new Uint8Array([1, 2, 3]))).resolves.toEqual({
+      mainPackageId: undefined,
+    })
+
+    expect(normalizeLedgerActiveContractsResponse(null)).toEqual([])
+  })
 })
 
 describe('normalizeLedgerActiveContractsResponse', () => {

@@ -626,6 +626,32 @@ describe('profile command surface', () => {
     expect(result.stdout).toContain('Service')
   })
 
+  it('renders a singular compatibility failure summary in human mode', async () => {
+    class TestCompatCheck extends CompatCheck {
+      protected override async loadProjectConfig(): Promise<CantonctlConfig> {
+        return {
+          ...createConfig(),
+          'default-profile': 'validator-only',
+          profiles: {
+            'validator-only': {
+              experimental: false,
+              kind: 'remote-validator',
+              name: 'validator-only',
+              services: {
+                validator: {url: 'https://validator.example.com'},
+              },
+            },
+          },
+          project: {name: 'demo', 'sdk-version': '4.0.0'},
+        }
+      }
+    }
+
+    const result = await captureOutput(() => TestCompatCheck.run([], {root: CLI_ROOT}))
+    expect(result.error).toBeDefined()
+    expect(result.stderr).toContain('1 compatibility check failed')
+  })
+
   it('fails compatibility checks in json mode when the SDK drifts outside the pinned baseline', async () => {
     class TestCompatCheck extends CompatCheck {
       protected override async loadProjectConfig(): Promise<CantonctlConfig> {
@@ -680,6 +706,24 @@ describe('profile command surface', () => {
     expect(result.error).toBeUndefined()
     expect(result.stdout).toContain('Profile: splice-devnet')
     expect(result.stdout).toContain('Kind: remote-validator')
+  })
+
+  it('delegates compat check config loading to loadConfig', async () => {
+    const config = createConfig()
+    const loadConfigSpy = vi.spyOn(configModule, 'loadConfig').mockResolvedValue(config)
+
+    class CompatHarness extends CompatCheck {
+      public async callLoadProjectConfig(): Promise<CantonctlConfig> {
+        return this.loadProjectConfig()
+      }
+    }
+
+    try {
+      await expect(new CompatHarness([], {} as never).callLoadProjectConfig()).resolves.toBe(config)
+      expect(loadConfigSpy).toHaveBeenCalledTimes(1)
+    } finally {
+      loadConfigSpy.mockRestore()
+    }
   })
 
   it('rethrows unexpected compatibility check failures', async () => {

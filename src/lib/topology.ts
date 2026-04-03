@@ -120,15 +120,6 @@ export function generateTopology(opts: TopologyOptions): GeneratedTopology {
 
   // Determine participants from party roles
   const participantMap = assignPartiesToParticipants(parties)
-  const participantNames = [...participantMap.keys()]
-
-  // Ensure at least 2 participants for a meaningful multi-node setup
-  if (participantNames.length < 2) {
-    // Add a second empty participant if needed
-    if (!participantMap.has('participant2')) {
-      participantMap.set('participant2', [])
-    }
-  }
 
   // Synchronizer gets port range 0 (basePort + 0..9)
   const synchronizer: SynchronizerPorts = {

@@ -59,6 +59,29 @@ describe('createProcessRunner', () => {
     )
   })
 
+  it('builds a PATH from tool extras when the base environment omits PATH', async () => {
+    const execa = vi.fn().mockResolvedValue({exitCode: 0, stderr: '', stdout: ''})
+
+    const runner = createProcessRunner({
+      env: {},
+      execa,
+      homedir: () => '/home/tester',
+      platform: () => 'linux',
+    })
+
+    await runner.which('daml')
+
+    expect(execa).toHaveBeenCalledWith(
+      'which',
+      ['daml'],
+      expect.objectContaining({
+        env: expect.objectContaining({
+          PATH: '/home/tester/.daml/bin',
+        }),
+      }),
+    )
+  })
+
   it('falls back to macOS java_home discovery when JAVA_HOME is unset', async () => {
     const execa = vi.fn().mockResolvedValue({exitCode: 0, stderr: '', stdout: '/usr/bin/java'})
     const execSync = vi.fn().mockReturnValue(Buffer.from('/Library/Java/JavaVirtualMachines/jdk-21/Contents/Home\n'))

@@ -1,6 +1,10 @@
 import {describe, expect, it, vi} from 'vitest'
 
-import {createScanAdapter} from './scan.js'
+import {
+  createScanAdapter,
+  normalizeScanUpdateHistoryItem,
+  normalizeScanUpdateHistoryResponse,
+} from './scan.js'
 
 function createJsonResponse(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
@@ -157,5 +161,46 @@ describe('createScanAdapter', () => {
       record_time_match: 'exact',
     })
     expect(acs.created_events[0].contract_id).toBe('cid-1')
+  })
+
+  it('lists scan resources and normalizes invalid update payloads conservatively', async () => {
+    const fetch = vi.fn()
+      .mockResolvedValueOnce(createJsonResponse({entries: []}))
+      .mockResolvedValueOnce(createJsonResponse({scans: [{name: 'sv'}]}))
+      .mockResolvedValueOnce(createJsonResponse({rounds: []}))
+      .mockResolvedValueOnce(createJsonResponse({sv_party_id: 'sv::1224'}))
+      .mockResolvedValueOnce(createJsonResponse({open_mining_rounds: [], issuing_mining_rounds: []}))
+      .mockResolvedValueOnce(new Response('', {status: 404}))
+
+    const adapter = createScanAdapter({
+      baseUrl: 'https://scan.example.com',
+      fetch,
+    })
+
+    await adapter.listAnsEntries({pageSize: 10})
+    await adapter.listDsoScans()
+    await adapter.getClosedRounds()
+    await adapter.getDsoInfo()
+    await adapter.getOpenAndIssuingMiningRounds({
+      cached_issuing_round_contract_ids: [],
+      cached_open_mining_round_contract_ids: [],
+    })
+    await expect(adapter.lookupAnsEntryByParty('Alice/Operator')).resolves.toBeNull()
+
+    expect(fetch.mock.calls[0][0]).toBe('https://scan.example.com/v0/ans-entries?page_size=10')
+    expect(fetch.mock.calls[1][0]).toBe('https://scan.example.com/v0/scans')
+    expect(fetch.mock.calls[2][0]).toBe('https://scan.example.com/v0/closed-rounds')
+    expect(fetch.mock.calls[3][0]).toBe('https://scan.example.com/v0/dso')
+    expect(fetch.mock.calls[4][0]).toBe('https://scan.example.com/v0/open-and-issuing-mining-rounds')
+    expect(JSON.parse(String(fetch.mock.calls[4][1].body))).toEqual({
+      cached_issuing_round_contract_ids: [],
+      cached_open_mining_round_contract_ids: [],
+    })
+    expect(fetch.mock.calls[5][0]).toBe(
+      'https://scan.example.com/v0/ans-entries/by-party/Alice%2FOperator',
+    )
+
+    expect(normalizeScanUpdateHistoryResponse(null)).toEqual([])
+    expect(normalizeScanUpdateHistoryItem(null)).toEqual({kind: 'unknown'})
   })
 })
