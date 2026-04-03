@@ -6,13 +6,19 @@ import {captureOutput} from '@oclif/test'
 import {afterEach, describe, expect, it, vi} from 'vitest'
 
 import * as builderModule from '../lib/builder.js'
+import * as completerModule from '../lib/repl/completer.js'
 import * as configModule from '../lib/config.js'
 import * as damlModule from '../lib/daml.js'
+import * as deployerModule from '../lib/deployer.js'
 import * as devServerFullModule from '../lib/dev-server-full.js'
 import * as devServerModule from '../lib/dev-server.js'
 import * as dockerModule from '../lib/docker.js'
+import * as executorModule from '../lib/repl/executor.js'
+import * as jwtModule from '../lib/jwt.js'
+import * as ledgerClientModule from '../lib/ledger-client.js'
 import * as processRunnerModule from '../lib/process-runner.js'
 import * as runtimeSupportModule from '../lib/runtime-support.js'
+import * as topologyModule from '../lib/topology.js'
 import * as serveModule from '../lib/serve.js'
 import * as testRunnerModule from '../lib/test-runner.js'
 import type {ResolvedCredential} from '../lib/credential-store.js'
@@ -23,8 +29,11 @@ import type {StableSplice} from '../lib/splice-public.js'
 import AuthLogin from './auth/login.js'
 import AuthLogout from './auth/logout.js'
 import AuthStatus from './auth/status.js'
+import Build from './build.js'
 import Clean from './clean.js'
 import CodegenSync from './codegen/sync.js'
+import Console from './console.js'
+import Deploy from './deploy.js'
 import Dev from './dev.js'
 import Init from './init.js'
 import LocalnetDown from './localnet/down.js'
@@ -33,6 +42,7 @@ import LocalnetUp from './localnet/up.js'
 import Playground from './playground.js'
 import Serve from './serve.js'
 import {StableSurfaceCommand} from './stable-surface-command.js'
+import Test from './test.js'
 
 const CLI_ROOT = process.cwd()
 
@@ -434,6 +444,104 @@ describe('command helper coverage', () => {
     stdin.setRawMode = originalSetRawMode
   })
 
+  it('covers dev helper shutdown on ctrl-c input', async () => {
+    class Harness extends Dev {
+      public callWaitForShutdown(
+        json: boolean,
+        shutdown: () => Promise<void>,
+        shutdownPromise: Promise<void>,
+      ) {
+        return this.waitForShutdown(json, shutdown, shutdownPromise)
+      }
+    }
+
+    const stdin = process.stdin as NodeJS.ReadStream & {
+      isTTY?: boolean
+      on: typeof process.stdin.on
+      setRawMode: (value: boolean) => void
+    }
+    const originalIsTTY = stdin.isTTY
+    const originalOn = stdin.on
+    const originalSetRawMode = stdin.setRawMode
+    let dataHandler: ((data: Buffer) => Promise<void>) | undefined
+
+    Object.defineProperty(stdin, 'isTTY', {configurable: true, value: true})
+    stdin.on = vi.fn((event: string, handler: (...args: any[]) => void) => {
+      if (event === 'data') {
+        dataHandler = handler as (data: Buffer) => Promise<void>
+      }
+      return stdin
+    }) as never
+    stdin.setRawMode = vi.fn()
+
+    try {
+      let resolveShutdown: (() => void) | undefined
+      const shutdownPromise = new Promise<void>((resolve) => { resolveShutdown = resolve })
+      const shutdown = vi.fn(async () => {
+        resolveShutdown?.()
+      })
+
+      const waitPromise = new Harness([], {} as never).callWaitForShutdown(false, shutdown, shutdownPromise)
+      await dataHandler?.(Buffer.from('\u0003'))
+      await waitPromise
+
+      expect(shutdown).toHaveBeenCalledOnce()
+    } finally {
+      Object.defineProperty(stdin, 'isTTY', {configurable: true, value: originalIsTTY})
+      stdin.on = originalOn
+      stdin.setRawMode = originalSetRawMode
+    }
+  })
+
+  it('covers dev helper non-quit input without triggering shutdown', async () => {
+    class Harness extends Dev {
+      public callWaitForShutdown(
+        json: boolean,
+        shutdown: () => Promise<void>,
+        shutdownPromise: Promise<void>,
+      ) {
+        return this.waitForShutdown(json, shutdown, shutdownPromise)
+      }
+    }
+
+    const stdin = process.stdin as NodeJS.ReadStream & {
+      isTTY?: boolean
+      on: typeof process.stdin.on
+      setRawMode: (value: boolean) => void
+    }
+    const originalIsTTY = stdin.isTTY
+    const originalOn = stdin.on
+    const originalSetRawMode = stdin.setRawMode
+    let dataHandler: ((data: Buffer) => Promise<void>) | undefined
+
+    Object.defineProperty(stdin, 'isTTY', {configurable: true, value: true})
+    stdin.on = vi.fn((event: string, handler: (...args: any[]) => void) => {
+      if (event === 'data') {
+        dataHandler = handler as (data: Buffer) => Promise<void>
+      }
+      return stdin
+    }) as never
+    stdin.setRawMode = vi.fn()
+
+    try {
+      let resolveShutdown: (() => void) | undefined
+      const shutdownPromise = new Promise<void>((resolve) => { resolveShutdown = resolve })
+      const shutdown = vi.fn(async () => {
+        resolveShutdown?.()
+      })
+
+      const waitPromise = new Harness([], {} as never).callWaitForShutdown(false, shutdown, shutdownPromise)
+      await dataHandler?.(Buffer.from('x'))
+      expect(shutdown).not.toHaveBeenCalled()
+      resolveShutdown?.()
+      await waitPromise
+    } finally {
+      Object.defineProperty(stdin, 'isTTY', {configurable: true, value: originalIsTTY})
+      stdin.on = originalOn
+      stdin.setRawMode = originalSetRawMode
+    }
+  })
+
   it('covers serve and playground helper methods for project detection and signal shutdown', async () => {
     const projectDir = await fs.mkdtemp(path.join(os.tmpdir(), 'runtime-command-'))
     tempDirs.push(projectDir)
@@ -504,6 +612,7 @@ describe('command helper coverage', () => {
     const sandboxServer = {start: vi.fn(), stop: vi.fn()} as never
     const fullServer = {start: vi.fn(), stop: vi.fn()} as never
     const builder = {build: vi.fn(), buildWithCodegen: vi.fn(), watch: vi.fn()} as never
+    const mockDeployer = {deploy: vi.fn()} as never
     const testRunner = {run: vi.fn()} as never
     const serveServer = {broadcast: vi.fn(), start: vi.fn(), stop: vi.fn()} as never
 
@@ -892,5 +1001,311 @@ describe('command helper coverage', () => {
       status: expect.any(Function),
       up: expect.any(Function),
     }))
+  })
+
+  it('covers build, clean, console, init, and test default helper delegates', async () => {
+    const config = createConfig()
+    const output = {
+      error: vi.fn(),
+      info: vi.fn(),
+      log: vi.fn(),
+      result: vi.fn(),
+      spinner: vi.fn(),
+      success: vi.fn(),
+      table: vi.fn(),
+      warn: vi.fn(),
+    } as unknown as OutputWriter
+    const runner = {run: vi.fn(), spawn: vi.fn(), which: vi.fn()} as never
+    const sdk = {build: vi.fn(), codegen: vi.fn(), detectCommand: vi.fn(), getVersion: vi.fn(), startSandbox: vi.fn(), test: vi.fn()} as never
+    const builder = {build: vi.fn(), buildWithCodegen: vi.fn(), watch: vi.fn()} as never
+    const mockDeployer = {deploy: vi.fn()} as never
+    const testRunner = {run: vi.fn()} as never
+    const completer = {complete: vi.fn().mockReturnValue([[], ''])} as never
+    const executor = {execute: vi.fn()} as never
+    const client = {
+      allocateParty: vi.fn(),
+      getActiveContracts: vi.fn(),
+      getLedgerEnd: vi.fn(),
+      getParties: vi.fn(),
+      getVersion: vi.fn(),
+      submitAndWait: vi.fn(),
+      uploadDar: vi.fn(),
+    } as never
+    const topology = {
+      bootstrapScript: '',
+      cantonConf: '',
+      dockerCompose: '',
+      participants: [{
+        name: 'participant1',
+        parties: ['Alice'],
+        ports: {admin: 2001, jsonApi: 7575, ledgerApi: 6865},
+      }],
+      synchronizer: {admin: 10001, publicApi: 10002},
+    }
+    const createBuilderSpy = vi.spyOn(builderModule, 'createBuilder').mockReturnValue(builder)
+    const createRunnerSpy = vi.spyOn(processRunnerModule, 'createProcessRunner').mockReturnValue(runner)
+    const createSdkSpy = vi.spyOn(damlModule, 'createDamlSdk').mockReturnValue(sdk)
+    const createDeployerSpy = vi.spyOn(deployerModule, 'createDeployer').mockReturnValue(mockDeployer)
+    const createTestRunnerSpy = vi.spyOn(testRunnerModule, 'createTestRunner').mockReturnValue(testRunner)
+    const createCompleterSpy = vi.spyOn(completerModule, 'createCompleter').mockReturnValue(completer)
+    const createExecutorSpy = vi.spyOn(executorModule, 'createExecutor').mockReturnValue(executor)
+    const createLedgerClientSpy = vi.spyOn(ledgerClientModule, 'createLedgerClient').mockReturnValue(client)
+    const createSandboxTokenSpy = vi.spyOn(jwtModule, 'createSandboxToken').mockResolvedValue('sandbox-token')
+    const detectTopologySpy = vi.spyOn(topologyModule, 'detectTopology').mockResolvedValue(topology)
+    const loadConfigSpy = vi.spyOn(configModule, 'loadConfig').mockResolvedValue(config)
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'init-helper-'))
+    tempDirs.push(tempDir)
+
+    class BuildHarness extends Build {
+      public callCreateBuilder() {
+        return this.createBuilder({hooks: {emit: vi.fn()} as never, sdk})
+      }
+
+      public callCreateHooks() {
+        return this.createHooks()
+      }
+
+      public callCreateRunner() {
+        return this.createRunner()
+      }
+
+      public callCreateSdk(commandRunner: ReturnType<typeof processRunnerModule.createProcessRunner>) {
+        return this.createSdk(commandRunner)
+      }
+
+      public callCreateWatcher() {
+        return this.createWatcher()
+      }
+
+      public callGetProjectDir() {
+        return this.getProjectDir()
+      }
+    }
+
+    class CleanHarness extends Clean {
+      public callCreateCleaner() {
+        return this.createCleaner(true, output)
+      }
+
+      public callCreateReadlineInterface() {
+        return this.createReadlineInterface({
+          input: new PassThrough(),
+          output: new PassThrough(),
+        })
+      }
+    }
+
+    class ConsoleHarness extends Console {
+      public callCreateCompleter() {
+        return this.createCompleter({partyNames: ['Alice']})
+      }
+
+      public callCreateExecutor() {
+        return this.createExecutor({client, defaultParty: 'Alice', output})
+      }
+
+      public callCreateLedgerClient() {
+        return this.createLedgerClient({baseUrl: 'https://ledger.example.com', token: 'jwt'})
+      }
+
+      public callCreateReadlineInterface() {
+        return this.createReadlineInterface({
+          input: new PassThrough(),
+          output: new PassThrough(),
+        })
+      }
+
+      public callCreateSandboxToken() {
+        return this.createSandboxToken({
+          actAs: ['Alice'],
+          admin: true,
+          applicationId: 'cantonctl',
+          readAs: ['Alice'],
+        })
+      }
+
+      public callDetectProjectTopology() {
+        return this.detectProjectTopology('/repo')
+      }
+
+      public callGetProjectDir() {
+        return this.getProjectDir()
+      }
+
+      public callLoadProjectConfig() {
+        return this.loadProjectConfig()
+      }
+    }
+
+    class DeployHarness extends Deploy {
+      public callCreateBuilder() {
+        return this.createBuilder({hooks: {emit: vi.fn()} as never, sdk})
+      }
+
+      public callCreateDeployer() {
+        return this.createDeployer({
+          builder,
+          config,
+          hooks: {emit: vi.fn()} as never,
+          output,
+        })
+      }
+
+      public callCreateHooks() {
+        return this.createHooks()
+      }
+
+      public callCreateRunner() {
+        return this.createRunner()
+      }
+
+      public callCreateSdk(commandRunner: ReturnType<typeof processRunnerModule.createProcessRunner>) {
+        return this.createSdk(commandRunner)
+      }
+
+      public callDetectProjectTopology() {
+        return this.detectProjectTopology('/repo')
+      }
+
+      public callGetProjectDir() {
+        return this.getProjectDir()
+      }
+
+      public callLoadProjectConfig() {
+        return this.loadProjectConfig()
+      }
+    }
+
+    class InitHarness extends Init {
+      public callLoadInteractivePrompts() {
+        return this.loadInteractivePrompts()
+      }
+
+      public async callScaffoldFromUrl() {
+        const projectDir = path.join(tempDir, 'community-app')
+        return this.scaffoldFromUrl({
+          dir: projectDir,
+          runner: {
+            run: vi.fn().mockImplementation(async (_cmd: string, _args: string[], options: {timeout?: number}) => {
+              await fs.mkdir(projectDir, {recursive: true})
+              await fs.writeFile(path.join(projectDir, 'cantonctl-template.yaml'), 'name: community\n', 'utf8')
+              return {exitCode: 0, stderr: '', stdout: '', ...options}
+            }),
+            spawn: vi.fn(),
+            which: vi.fn(),
+          } as never,
+          url: 'https://github.com/example/community-template',
+        })
+      }
+    }
+
+    class TestHarness extends Test {
+      public callCreateHooks() {
+        return this.createHooks()
+      }
+
+      public callCreateRunner() {
+        return this.createRunner()
+      }
+
+      public callCreateSdk(commandRunner: ReturnType<typeof processRunnerModule.createProcessRunner>) {
+        return this.createSdk(commandRunner)
+      }
+
+      public callCreateTestRunner() {
+        return this.createTestRunner({hooks: {emit: vi.fn()} as never, sdk})
+      }
+
+      public callGetProjectDir() {
+        return this.getProjectDir()
+      }
+    }
+
+    const buildHarness = new BuildHarness([], {} as never)
+    const buildWatcher = buildHarness.callCreateWatcher()
+    const damlDir = path.join(tempDir, 'daml')
+    await fs.mkdir(damlDir, {recursive: true})
+    expect(buildHarness.callCreateBuilder()).toBe(builder)
+    expect(buildHarness.callCreateHooks()).toEqual(expect.objectContaining({emit: expect.any(Function)}))
+    expect(buildHarness.callCreateRunner()).toBe(runner)
+    expect(buildHarness.callCreateSdk(runner)).toBe(sdk)
+    expect(buildHarness.callGetProjectDir()).toBe(process.cwd())
+    const fileWatcher = buildWatcher(damlDir, {ignoreInitial: true})
+    expect(fileWatcher).toEqual(expect.objectContaining({close: expect.any(Function)}))
+    await fileWatcher.close()
+
+    const cleanHarness = new CleanHarness([], {} as never)
+    const cleaner = cleanHarness.callCreateCleaner()
+    const cleanProjectDir = path.join(tempDir, 'clean-json')
+    await fs.mkdir(path.join(cleanProjectDir, '.daml'), {recursive: true})
+    await fs.writeFile(path.join(cleanProjectDir, '.daml', 'artifact.txt'), 'artifact', 'utf8')
+    const cleanResult = await cleaner.clean({all: false, force: false, projectDir: cleanProjectDir})
+    expect(cleanResult.removed).toContain('.daml')
+    const cleanRl = cleanHarness.callCreateReadlineInterface()
+    cleanRl.close()
+
+    const consoleHarness = new ConsoleHarness([], {} as never)
+    expect(consoleHarness.callCreateCompleter()).toBe(completer)
+    expect(consoleHarness.callCreateExecutor()).toBe(executor)
+    expect(consoleHarness.callCreateLedgerClient()).toBe(client)
+    expect(await consoleHarness.callCreateSandboxToken()).toBe('sandbox-token')
+    expect(await consoleHarness.callDetectProjectTopology()).toEqual(topology)
+    expect(await consoleHarness.callLoadProjectConfig()).toBe(config)
+    expect(consoleHarness.callGetProjectDir()).toBe(process.cwd())
+    const consoleRl = consoleHarness.callCreateReadlineInterface()
+    consoleRl.close()
+
+    const deployHarness = new DeployHarness([], {} as never)
+    expect(deployHarness.callCreateBuilder()).toBe(builder)
+    expect(deployHarness.callCreateDeployer()).toBe(mockDeployer)
+    expect(deployHarness.callCreateHooks()).toEqual(expect.objectContaining({emit: expect.any(Function)}))
+    expect(deployHarness.callCreateRunner()).toBe(runner)
+    expect(deployHarness.callCreateSdk(runner)).toBe(sdk)
+    expect(await deployHarness.callDetectProjectTopology()).toEqual(topology)
+    expect(deployHarness.callGetProjectDir()).toBe(process.cwd())
+    expect(await deployHarness.callLoadProjectConfig()).toBe(config)
+
+    const initHarness = new InitHarness([], {} as never)
+    const prompts = await initHarness.callLoadInteractivePrompts()
+    expect(prompts).toEqual(expect.objectContaining({
+      input: expect.any(Function),
+      select: expect.any(Function),
+    }))
+    await expect(initHarness.callScaffoldFromUrl()).resolves.toBeUndefined()
+
+    const testHarness = new TestHarness([], {} as never)
+    expect(testHarness.callCreateHooks()).toEqual(expect.objectContaining({emit: expect.any(Function)}))
+    expect(testHarness.callCreateRunner()).toBe(runner)
+    expect(testHarness.callCreateSdk(runner)).toBe(sdk)
+    expect(testHarness.callCreateTestRunner()).toBe(testRunner)
+    expect(testHarness.callGetProjectDir()).toBe(process.cwd())
+
+    expect(createBuilderSpy).toHaveBeenCalled()
+    expect(createRunnerSpy).toHaveBeenCalled()
+    expect(createSdkSpy).toHaveBeenCalled()
+    expect(createDeployerSpy).toHaveBeenCalled()
+    expect(createTestRunnerSpy).toHaveBeenCalled()
+    expect(createCompleterSpy).toHaveBeenCalled()
+    expect(createExecutorSpy).toHaveBeenCalled()
+    expect(createLedgerClientSpy).toHaveBeenCalledWith({
+      baseUrl: 'https://ledger.example.com',
+      token: 'jwt',
+    })
+    expect(createSandboxTokenSpy).toHaveBeenCalled()
+    expect(detectTopologySpy).toHaveBeenCalledWith('/repo')
+    expect(loadConfigSpy).toHaveBeenCalled()
+
+    const deployerDeps = createDeployerSpy.mock.calls[0]?.[0]
+    expect(deployerDeps).toEqual(expect.objectContaining({
+      builder,
+      config,
+      createLedgerClient: expect.any(Function),
+      createToken: expect.any(Function),
+      fs: expect.objectContaining({readFile: expect.any(Function)}),
+      output,
+    }))
+    const deployerFile = path.join(tempDir, 'deploy-artifact.bin')
+    await fs.writeFile(deployerFile, 'artifact', 'utf8')
+    await expect(deployerDeps?.fs.readFile(deployerFile)).resolves.toBeInstanceOf(Uint8Array)
   })
 })

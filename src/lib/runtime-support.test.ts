@@ -1,4 +1,5 @@
 import * as fs from 'node:fs/promises'
+import {createRequire, syncBuiltinESMExports} from 'node:module'
 import * as net from 'node:net'
 import * as os from 'node:os'
 import * as path from 'node:path'
@@ -11,6 +12,8 @@ import {
   isTcpPortInUse,
   openBrowserUrl,
 } from './runtime-support.js'
+
+const require = createRequire(import.meta.url)
 
 afterEach(() => {
   vi.restoreAllMocks()
@@ -216,5 +219,46 @@ describe('runtime-support', () => {
     })
 
     await expect(getNewestDamlSourceMtime('/repo/daml', {readdir, stat})).resolves.toBe(50)
+  })
+
+  it('ignores non-daml files while scanning nested source trees', async () => {
+    const readdir = vi.fn().mockResolvedValue([
+      {isDirectory: () => false, name: 'notes.txt'},
+      {isDirectory: () => false, name: 'Main.daml'},
+    ])
+    const stat = vi.fn().mockResolvedValue({mtimeMs: 42})
+
+    await expect(getNewestDamlSourceMtime('/repo/daml', {readdir, stat})).resolves.toBe(42)
+    expect(stat).toHaveBeenCalledTimes(1)
+  })
+
+  it('covers openBrowserUrl defaults through the live child_process binding', () => {
+    const childProcess = require('node:child_process') as typeof import('node:child_process')
+    const originalExec = childProcess.exec
+    const execMock = Object.assign(
+      vi.fn((
+        _command: string,
+        maybeOptionsOrCallback?: unknown,
+        maybeCallback?: ((error: Error | null, stdout: string | Buffer, stderr: string | Buffer) => void),
+      ) => {
+        const callback = typeof maybeOptionsOrCallback === 'function'
+          ? maybeOptionsOrCallback as (error: Error | null, stdout: string | Buffer, stderr: string | Buffer) => void
+          : maybeCallback
+        callback?.(null, '', '')
+        return {} as never
+      }),
+      {__promisify__: originalExec.__promisify__},
+    ) as unknown as typeof childProcess.exec
+
+    childProcess.exec = execMock
+    syncBuiltinESMExports()
+
+    try {
+      openBrowserUrl('http://localhost:4001')
+      expect(execMock).toHaveBeenCalledWith(expect.stringMatching(/http:\/\/localhost:4001$/))
+    } finally {
+      childProcess.exec = originalExec
+      syncBuiltinESMExports()
+    }
   })
 })

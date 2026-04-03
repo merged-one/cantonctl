@@ -252,6 +252,268 @@ describe('core command surface', () => {
     expect(json.data).toEqual({status: 'stopped'})
   })
 
+  it('handles interactive watch shutdown and cached rebuilds in human mode', async () => {
+    const stop = vi.fn().mockResolvedValue(undefined)
+    const stdin = process.stdin as NodeJS.ReadStream & {
+      isTTY?: boolean
+      on: typeof process.stdin.on
+      pause: () => void
+      resume: () => void
+      setRawMode: (value: boolean) => void
+    }
+    const originalIsTTY = stdin.isTTY
+    const originalOn = stdin.on
+    const originalPause = stdin.pause
+    const originalResume = stdin.resume
+    const originalSetRawMode = stdin.setRawMode
+    let dataHandler: ((data: Buffer) => Promise<void>) | undefined
+    let resolveDataHandler: ((handler: (data: Buffer) => Promise<void>) => void) | undefined
+    const dataHandlerReady = new Promise<(data: Buffer) => Promise<void>>(resolve => {
+      resolveDataHandler = resolve
+    })
+    const pause = vi.fn()
+    const resume = vi.fn()
+    const setRawMode = vi.fn()
+    const onSpy = vi.spyOn(process, 'on').mockImplementation(((..._args: Parameters<typeof process.on>) => process) as never)
+
+    Object.defineProperty(stdin, 'isTTY', {configurable: true, value: true})
+    stdin.on = vi.fn((event: string, handler: (...args: any[]) => void) => {
+      if (event === 'data') {
+        dataHandler = handler as (data: Buffer) => Promise<void>
+        resolveDataHandler?.(dataHandler)
+      }
+
+      return stdin
+    }) as never
+    stdin.pause = pause
+    stdin.resume = resume
+    stdin.setRawMode = setRawMode
+
+    try {
+      const builder: Builder = {
+        build: vi.fn().mockResolvedValue({
+          cached: true,
+          durationMs: 20,
+          success: true,
+        }),
+        buildWithCodegen: vi.fn(),
+        watch: vi.fn().mockResolvedValue({stop}),
+      }
+      const command = new Build([], {} as never)
+      vi.spyOn(command as unknown as {parse: () => Promise<unknown>}, 'parse').mockResolvedValue({
+        flags: {codegen: false, force: false, json: false, watch: true},
+      } as never)
+      vi.spyOn(command as unknown as {createBuilder: () => Builder}, 'createBuilder').mockReturnValue(builder)
+      vi.spyOn(command as unknown as {createHooks: () => unknown}, 'createHooks').mockReturnValue({emit: vi.fn()} as never)
+      vi.spyOn(command as unknown as {createRunner: () => ProcessRunner}, 'createRunner').mockReturnValue(createRunner())
+      vi.spyOn(command as unknown as {createSdk: () => DamlSdk}, 'createSdk').mockReturnValue(createSdk())
+      vi.spyOn(command as unknown as {getProjectDir: () => string}, 'getProjectDir').mockReturnValue('/repo')
+
+      const resultPromise = captureOutput(() => command.run())
+      await (await dataHandlerReady)(Buffer.from('q'))
+
+      const result = await resultPromise
+      expect(result.error).toBeUndefined()
+      expect(stop).toHaveBeenCalled()
+      expect(onSpy).toHaveBeenCalledWith('SIGINT', expect.any(Function))
+      expect(onSpy).toHaveBeenCalledWith('SIGTERM', expect.any(Function))
+      expect(setRawMode).toHaveBeenCalledWith(true)
+      expect(setRawMode).toHaveBeenCalledWith(false)
+      expect(resume).toHaveBeenCalled()
+      expect(pause).toHaveBeenCalled()
+      expect(result.stdout).toContain('Build up to date (cached)')
+      expect(result.stdout).toContain('Watch mode stopped')
+    } finally {
+      Object.defineProperty(stdin, 'isTTY', {configurable: true, value: originalIsTTY})
+      stdin.on = originalOn
+      stdin.pause = originalPause
+      stdin.resume = originalResume
+      stdin.setRawMode = originalSetRawMode
+    }
+  })
+
+  it('ignores non-quit watch input until a signal shuts the build down', async () => {
+    const stop = vi.fn().mockResolvedValue(undefined)
+    const stdin = process.stdin as NodeJS.ReadStream & {
+      isTTY?: boolean
+      on: typeof process.stdin.on
+      pause: () => void
+      resume: () => void
+      setRawMode: (value: boolean) => void
+    }
+    const originalIsTTY = stdin.isTTY
+    const originalOn = stdin.on
+    const originalPause = stdin.pause
+    const originalResume = stdin.resume
+    const originalSetRawMode = stdin.setRawMode
+    let dataHandler: ((data: Buffer) => Promise<void>) | undefined
+    let sigintHandler: (() => Promise<void>) | undefined
+    let resolveDataHandler: ((handler: (data: Buffer) => Promise<void>) => void) | undefined
+    const dataHandlerReady = new Promise<(data: Buffer) => Promise<void>>(resolve => {
+      resolveDataHandler = resolve
+    })
+
+    Object.defineProperty(stdin, 'isTTY', {configurable: true, value: true})
+    stdin.on = vi.fn((event: string, handler: (...args: any[]) => void) => {
+      if (event === 'data') {
+        dataHandler = handler as (data: Buffer) => Promise<void>
+        resolveDataHandler?.(dataHandler)
+      }
+      return stdin
+    }) as never
+    stdin.pause = vi.fn()
+    stdin.resume = vi.fn()
+    stdin.setRawMode = vi.fn()
+
+    const onSpy = vi.spyOn(process, 'on').mockImplementation(((event: string, handler: () => Promise<void>) => {
+      if (event === 'SIGINT') {
+        sigintHandler = handler
+      }
+      return process
+    }) as never)
+
+    try {
+      const builder: Builder = {
+        build: vi.fn().mockResolvedValue({
+          cached: false,
+          durationMs: 20,
+          success: true,
+        }),
+        buildWithCodegen: vi.fn(),
+        watch: vi.fn().mockResolvedValue({stop}),
+      }
+      const command = new Build([], {} as never)
+      vi.spyOn(command as unknown as {parse: () => Promise<unknown>}, 'parse').mockResolvedValue({
+        flags: {codegen: false, force: false, json: false, watch: true},
+      } as never)
+      vi.spyOn(command as unknown as {createBuilder: () => Builder}, 'createBuilder').mockReturnValue(builder)
+      vi.spyOn(command as unknown as {createHooks: () => unknown}, 'createHooks').mockReturnValue({emit: vi.fn()} as never)
+      vi.spyOn(command as unknown as {createRunner: () => ProcessRunner}, 'createRunner').mockReturnValue(createRunner())
+      vi.spyOn(command as unknown as {createSdk: () => DamlSdk}, 'createSdk').mockReturnValue(createSdk())
+      vi.spyOn(command as unknown as {getProjectDir: () => string}, 'getProjectDir').mockReturnValue('/repo')
+
+      const resultPromise = captureOutput(() => command.run())
+      await (await dataHandlerReady)(Buffer.from('x'))
+      expect(stop).not.toHaveBeenCalled()
+      await sigintHandler?.()
+
+      const result = await resultPromise
+      expect(result.error).toBeUndefined()
+      expect(onSpy).toHaveBeenCalledWith('SIGINT', expect.any(Function))
+      expect(stop).toHaveBeenCalledOnce()
+    } finally {
+      Object.defineProperty(stdin, 'isTTY', {configurable: true, value: originalIsTTY})
+      stdin.on = originalOn
+      stdin.pause = originalPause
+      stdin.resume = originalResume
+      stdin.setRawMode = originalSetRawMode
+    }
+  })
+
+  it('rethrows unexpected build failures', async () => {
+    class TestBuild extends Build {
+      protected override createBuilder(): Builder {
+        return {
+          build: vi.fn().mockRejectedValue(new Error('boom')),
+          buildWithCodegen: vi.fn(),
+          watch: vi.fn(),
+        }
+      }
+
+      protected override createHooks() {
+        return {emit: vi.fn()} as never
+      }
+
+      protected override createRunner(): ProcessRunner {
+        return createRunner()
+      }
+
+      protected override createSdk(): DamlSdk {
+        return createSdk()
+      }
+    }
+
+    await expect(TestBuild.run(['--json'], {root: CLI_ROOT})).rejects.toThrow('boom')
+  })
+
+  it('reports cached single-build results without a DAR path', async () => {
+    class TestBuild extends Build {
+      protected override createBuilder(): Builder {
+        return {
+          build: vi.fn().mockResolvedValue({
+            cached: true,
+            durationMs: 12,
+            success: true,
+          }),
+          buildWithCodegen: vi.fn(),
+          watch: vi.fn(),
+        }
+      }
+
+      protected override createHooks() {
+        return {emit: vi.fn()} as never
+      }
+
+      protected override createRunner(): ProcessRunner {
+        return createRunner()
+      }
+
+      protected override createSdk(): DamlSdk {
+        return createSdk()
+      }
+    }
+
+    const result = await captureOutput(() => TestBuild.run(['--json'], {root: CLI_ROOT}))
+    expect(result.error).toBeUndefined()
+
+    const json = parseJson(result.stdout)
+    expect(json.success).toBe(true)
+    expect(json.data).toEqual({
+      cached: true,
+      darPath: undefined,
+      durationMs: 12,
+    })
+  })
+
+  it('defaults missing cached values to false for successful single builds', async () => {
+    class TestBuild extends Build {
+      protected override createBuilder(): Builder {
+        return {
+          build: vi.fn().mockResolvedValue({
+            darPath: undefined,
+            durationMs: 18,
+            success: true,
+          }),
+          buildWithCodegen: vi.fn(),
+          watch: vi.fn(),
+        }
+      }
+
+      protected override createHooks() {
+        return {emit: vi.fn()} as never
+      }
+
+      protected override createRunner(): ProcessRunner {
+        return createRunner()
+      }
+
+      protected override createSdk(): DamlSdk {
+        return createSdk()
+      }
+    }
+
+    const result = await captureOutput(() => TestBuild.run(['--json'], {root: CLI_ROOT}))
+    expect(result.error).toBeUndefined()
+
+    const json = parseJson(result.stdout)
+    expect(json.success).toBe(true)
+    expect(json.data).toEqual({
+      cached: false,
+      darPath: undefined,
+      durationMs: 18,
+    })
+  })
+
   it('emits clean results in json mode', async () => {
     class TestClean extends Clean {
       protected override createCleaner(): Cleaner {
@@ -459,6 +721,40 @@ describe('core command surface', () => {
     expect(result.stdout).toContain('Running Daml Script tests...')
     expect(result.stdout).toContain('testTransfer failed')
     expect(result.stderr).toContain('Some tests failed')
+  })
+
+  it('serializes test runner failures through CantonctlError', async () => {
+    class TestCommand extends Test {
+      protected override createHooks() {
+        return {emit: vi.fn()} as never
+      }
+
+      protected override createRunner(): ProcessRunner {
+        return createRunner()
+      }
+
+      protected override createSdk(): DamlSdk {
+        return createSdk()
+      }
+
+      protected override createTestRunner(): TestRunner {
+        return {
+          run: vi.fn().mockRejectedValue(new CantonctlError(ErrorCode.TEST_EXECUTION_FAILED, {
+            suggestion: 'Inspect the daml script output.',
+          })),
+        }
+      }
+    }
+
+    const result = await captureOutput(() => TestCommand.run(['--json'], {root: CLI_ROOT}))
+    expect(result.error).toBeDefined()
+
+    const json = parseJson(result.stdout)
+    expect(json.success).toBe(false)
+    expect(json.error).toEqual(expect.objectContaining({
+      code: ErrorCode.TEST_EXECUTION_FAILED,
+      suggestion: 'Inspect the daml script output.',
+    }))
   })
 
   it('scaffolds built-in templates in json mode', async () => {
@@ -674,6 +970,16 @@ describe('core command surface', () => {
     expect(result.stdout).toContain('Scaffolding from community template: https://github.com/example/template')
     expect(result.stdout).toContain('Project created from https://github.com/example/template')
     expect(result.stdout).toContain('"from": "https://github.com/example/template"')
+  })
+
+  it('rethrows unexpected init failures', async () => {
+    class TestInit extends Init {
+      protected override scaffoldProject(): never {
+        throw new Error('boom')
+      }
+    }
+
+    await expect(TestInit.run(['demo-app', '--json'], {root: CLI_ROOT})).rejects.toThrow('boom')
   })
 
   it('stores auth tokens and reports non-keychain persistence warnings', async () => {
