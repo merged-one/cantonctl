@@ -3,14 +3,14 @@
 **Author:** Merged One
 **Status:** Submitted
 **Created:** 2026-03-31
-**Updated:** 2026-04-02
+**Updated:** 2026-04-04
 
 **Repositories:**
 - [merged-one/cantonctl](https://github.com/merged-one/cantonctl) -CLI toolchain (Hardhat for Canton)
 - [merged-one/cantonjs](https://github.com/merged-one/cantonjs) -TypeScript SDK (viem for Canton)
 
 **npm packages:**
-- [`cantonctl@0.3.3`](https://www.npmjs.com/package/cantonctl) -`npm install -g cantonctl`
+- [`cantonctl@0.3.4`](https://www.npmjs.com/package/cantonctl) -`npm install -g cantonctl`
 - [`cantonjs@0.2.0`](https://www.npmjs.com/package/cantonjs) -`npm install cantonjs`
 
 ---
@@ -21,7 +21,7 @@ This proposal delivers four developer tools that give Canton the same developer 
 
 | Tool | Ethereum Equivalent | Status |
 |------|-------------------|--------|
-| **cantonctl** | Hardhat | Published v0.3.3 -14 commands, 496 tests |
+| **cantonctl** | Hardhat | Published v0.3.4 on npm |
 | **cantonjs** | viem | Published v0.2.0 -TypeScript SDK |
 | **Canton Playground** | Remix | Built into cantonctl -browser IDE |
 | **VS Code Extension** | Hardhat VS Code | Planned |
@@ -95,19 +95,19 @@ The Q1 2026 Canton Developer Experience Survey found that **41% of developers** 
 
 - **Estimated Delivery:** COMPLETE -delivered prior to submission
 - **Focus:** Full CLI toolchain for Canton development
-- **Deliverables / Value Metrics:** 14 commands, 24 libraries, 5 templates, 496 tests, 14 ADRs
+- **Deliverables / Value Metrics:** 14 commands, 24 libraries, 5 templates, CI suite inventory in `scripts/ci/manifest.js`, 14 ADRs
 
 **Status: Delivered. Payment upon committee acceptance.**
 
-The complete cantonctl CLI is published on npm (v0.3.3) with automated CI/CD. Repository: [merged-one/cantonctl](https://github.com/merged-one/cantonctl).
+The complete cantonctl CLI is published on npm (v0.3.4) with automated CI/CD. Repository: [merged-one/cantonctl](https://github.com/merged-one/cantonctl).
 
 | Deliverable | Evidence |
 |-------------|----------|
 | 14 commands (init, dev, build, test, deploy, console, status, auth, clean, doctor, serve, playground) | All implemented, E2E tested |
-| 24 foundation libraries with dependency injection | 399 unit tests |
-| 5 project templates (basic, token, defi-amm, api-service, zenith-evm) | 66 SDK E2E tests |
-| Multi-node Docker topology (`dev --full`) | 2 Docker E2E tests |
-| Canton IDE Protocol server (`serve`) | 20 playground E2E tests |
+| 24 foundation libraries with dependency injection | Unit coverage and thresholds tracked in `scripts/ci/manifest.js` |
+| 5 project templates (basic, token, defi-amm, api-service, zenith-evm) | SDK and stable/public E2E coverage tracked in `scripts/ci/manifest.js` |
+| Multi-node Docker topology (`dev --full`) | Docker parity coverage tracked in `scripts/ci/manifest.js` |
+| Canton IDE Protocol server (`serve`) | Playground and sandbox coverage tracked in `scripts/ci/manifest.js` |
 | Browser playground with dynamic forms, split view, topology visualization | Browser-verified |
 | 24 error codes with suggestions and docs | `docs/troubleshooting/errors.md` |
 | 14 Architecture Decision Records | `docs/adr/` |
