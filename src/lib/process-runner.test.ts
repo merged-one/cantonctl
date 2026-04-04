@@ -231,6 +231,7 @@ describe('createProcessRunner', () => {
     await expect(proc.waitForExit()).resolves.toBe(0)
     expect(onExit).toHaveBeenCalledWith(0)
     expect(processKill).toHaveBeenCalledWith(-4242, 'SIGINT')
+    expect((execa.mock.results[0]?.value as {kill: ReturnType<typeof vi.fn>}).kill).toHaveBeenCalledWith('SIGINT')
     expect(proc.pid).toBe(4242)
     expect(proc.stdout).toEqual({label: 'stdout'})
     expect(proc.stderr).toEqual({label: 'stderr'})
@@ -265,6 +266,7 @@ describe('createProcessRunner', () => {
 
     await expect(proc.waitForExit()).resolves.toBeNull()
     expect(processKill).toHaveBeenCalledWith(-4242, 'SIGTERM')
+    expect((execa.mock.results[0]?.value as {kill: ReturnType<typeof vi.fn>}).kill).toHaveBeenCalledWith('SIGTERM')
   })
 
   it('falls back to direct child kill when process-group signaling fails', async () => {

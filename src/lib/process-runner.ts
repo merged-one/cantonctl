@@ -250,7 +250,6 @@ export function createProcessRunner(deps: ProcessRunnerDeps = {}): ProcessRunner
           if (supportsProcessGroups && typeof proc.pid === 'number') {
             try {
               processKill(-proc.pid, signal)
-              return
             } catch {
               // Fall through to direct child kill when process-group signaling fails.
             }
