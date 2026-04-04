@@ -1,8 +1,8 @@
 /**
  * @module commands/status
  *
- * Shows ledger health plus profile-aware service information for Cantonctl
- * networks and runtime profiles.
+ * Shows ledger health plus profile-aware service information for networks and
+ * runtime profiles.
  */
 
 import {Command, Flags} from '@oclif/core'
@@ -30,7 +30,7 @@ interface StatusFlags {
 }
 
 export default class Status extends Command {
-  static override description = 'Show node health, version, active parties, and profile services'
+  static override description = 'Show profile-aware service health and ledger status'
 
   static override examples = [
     '<%= config.bin %> status',

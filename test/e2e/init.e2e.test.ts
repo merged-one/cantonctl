@@ -20,14 +20,14 @@ import {getUpstreamSource} from '../../src/lib/upstream/manifest.js'
 import {ENV_PATH, hasSdk, SDK_COMMAND, SDK_VERSION} from './helpers.js'
 
 const BUILTIN_TEMPLATES: Template[] = [
+  'splice-dapp-sdk',
+  'splice-scan-reader',
+  'splice-token-app',
   'basic',
   'token',
   'defi-amm',
   'api-service',
   'zenith-evm',
-  'splice-token-app',
-  'splice-scan-reader',
-  'splice-dapp-sdk',
 ]
 
 const PINNED_SDK_VERSION = (() => {

@@ -1,6 +1,6 @@
 {
   "name": "cantonctl",
-  "description": "Institutional-grade CLI toolchain for building on Canton Network",
+  "description": "Splice-aware orchestration companion for the official Canton stack",
   "version": "0.3.4",
   "license": "Apache-2.0",
   "author": "Merged One",

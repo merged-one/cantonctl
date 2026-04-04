@@ -17,14 +17,14 @@ import {
 import {getUpstreamSource} from './upstream/manifest.js'
 
 const BUILTIN_TEMPLATES: Template[] = [
+  'splice-dapp-sdk',
+  'splice-scan-reader',
+  'splice-token-app',
   'basic',
   'token',
   'defi-amm',
   'api-service',
   'zenith-evm',
-  'splice-token-app',
-  'splice-scan-reader',
-  'splice-dapp-sdk',
 ]
 
 const PINNED_SDK_VERSION = (() => {
@@ -92,6 +92,15 @@ function getWrittenFile(
 }
 
 describe('scaffoldProject', () => {
+  it('surfaces stable/public Splice templates before generic templates', async () => {
+    const {TEMPLATES: orderedTemplates} = await import('./scaffold.js')
+    expect(orderedTemplates.slice(0, 3)).toEqual([
+      'splice-dapp-sdk',
+      'splice-scan-reader',
+      'splice-token-app',
+    ])
+  })
+
   it('creates project directory structure for basic template', () => {
     const fs = createMockScaffoldFs()
     scaffoldProject({dir: '/projects/my-app', fs, name: 'my-app', template: 'basic'})

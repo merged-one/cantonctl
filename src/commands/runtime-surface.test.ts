@@ -1589,7 +1589,7 @@ describe('runtime command surface', () => {
     try {
       const result = await captureOutput(() => TestDoctor.run([], {root: CLI_ROOT}))
       expect(result.error).toBeDefined()
-      expect(result.stdout).toContain('Institutional-grade CLI toolchain for Canton Network')
+      expect(result.stdout).toContain('Splice-aware orchestration companion for the official Canton stack')
       expect(result.stdout).toContain('Checking your development environment...')
       expect(question).toHaveBeenCalledWith('DPM is missing. Install it now? (y/N) ', expect.any(Function))
       expect(result.stderr).toContain('required check failed')

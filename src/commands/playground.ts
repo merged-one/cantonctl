@@ -1,9 +1,8 @@
 /**
  * @module commands/playground
  *
- * Starts a Remix-like browser IDE for Canton development.
- * This is a convenience wrapper: it starts `cantonctl serve` and serves
- * the browser UI on top of the same server.
+ * Starts the local browser workbench on top of `cantonctl serve`.
+ * This is an adjunct demo and inspection surface, not the canonical Daml IDE.
  *
  * For headless mode (VS Code, Neovim, other IDEs), use `cantonctl serve`.
  *
@@ -42,7 +41,7 @@ const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
 
 export default class Playground extends Command {
-  static override description = 'Open a Remix-like browser IDE for Canton development'
+  static override description = 'Open the local browser workbench on top of the Canton IDE Protocol backend'
 
   static override examples = [
     '<%= config.bin %> playground',

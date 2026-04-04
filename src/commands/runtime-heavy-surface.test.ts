@@ -1337,7 +1337,7 @@ describe('runtime-heavy command surface', () => {
       projectDir: '/repo',
     }))
     expect(result.stdout).toContain('API:         http://localhost:4000/api')
-    expect(result.stdout).toContain('Connect any IDE client to this server.')
+    expect(result.stdout).toContain('Connect local workbenches or editor integrations to this backend.')
   })
 
   it('serve starts a sandbox profile on the resolved ledger ports', async () => {

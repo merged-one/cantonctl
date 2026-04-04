@@ -1,7 +1,7 @@
 /**
  * @module commands/deploy
  *
- * Deploys .dar packages to a Canton network. Thin oclif wrapper over
+ * Deploys .dar packages to ledger-capable targets. Thin oclif wrapper over
  * {@link createDeployer}.
  */
 
@@ -43,7 +43,7 @@ export default class Deploy extends Command {
     }),
   }
 
-  static override description = 'Deploy .dar packages to a Canton network'
+  static override description = 'Run the advisory DAR deploy wrapper for ledger-capable targets'
 
   static override examples = [
     '<%= config.bin %> deploy',

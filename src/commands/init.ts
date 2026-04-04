@@ -1,7 +1,8 @@
 /**
  * @module commands/init
  *
- * Scaffolds a new Canton project from a built-in or community template.
+ * Scaffolds a new companion-ready Canton project from a built-in or community
+ * template.
  * Thin oclif wrapper over {@link scaffoldProject} and {@link scaffoldFromUrl}.
  *
  * When called without arguments, launches an interactive wizard using inquirer.
@@ -89,7 +90,7 @@ export default class Init extends Command {
     }),
   }
 
-  static override description = 'Scaffold a new Canton project from a template'
+  static override description = 'Scaffold a companion-ready Canton project from a template'
 
   static override examples = [
     '<%= config.bin %> init my-app',
@@ -216,7 +217,7 @@ async function runInitCommand(
 
     const projectDir = command.resolveProjectDir(projectName)
 
-    command.out.info(`Creating new Canton project: ${projectName}`)
+    command.out.info(`Creating companion-ready project: ${projectName}`)
     command.out.info(`Template: ${template}`)
 
     const result = command.scaffoldProject({dir: projectDir, name: projectName, template})
@@ -225,9 +226,12 @@ async function runInitCommand(
     command.out.log('')
     command.out.log('Next steps:')
     command.out.log(`  cd ${projectName}`)
-    command.out.log('  cantonctl dev        # Start local Canton node')
-    command.out.log('  cantonctl build      # Compile Daml contracts')
-    command.out.log('  cantonctl test       # Run tests')
+    command.out.log('  cantonctl dev        # Start the local sandbox wrapper')
+    command.out.log('  cantonctl build      # Delegate build to DPM or daml')
+    command.out.log('  cantonctl test       # Delegate tests to DPM or daml')
+    if (template.startsWith('splice-')) {
+      command.out.log('  cantonctl compat check splice-devnet  # Check remote stable/public compatibility')
+    }
 
     command.out.result({
       data: {

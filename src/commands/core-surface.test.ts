@@ -886,7 +886,7 @@ describe('core command surface', () => {
 
     const result = await captureOutput(() => TestInit.run(['demo-app'], {root: CLI_ROOT}))
     expect(result.error).toBeUndefined()
-    expect(result.stdout).toContain('Creating new Canton project: demo-app')
+    expect(result.stdout).toContain('Creating companion-ready project: demo-app')
     expect(result.stdout).toContain('Next steps:')
     expect(result.stdout).toContain('cantonctl dev')
   })

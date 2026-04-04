@@ -18,14 +18,14 @@ import {
 } from './upstream/manifest.js'
 
 export const TEMPLATES = [
+  'splice-dapp-sdk',
+  'splice-scan-reader',
+  'splice-token-app',
   'basic',
   'token',
   'defi-amm',
   'api-service',
   'zenith-evm',
-  'splice-token-app',
-  'splice-scan-reader',
-  'splice-dapp-sdk',
 ] as const
 
 export type Template = typeof TEMPLATES[number]
