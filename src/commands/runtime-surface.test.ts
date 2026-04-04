@@ -1160,6 +1160,9 @@ describe('runtime command surface', () => {
       protected override async loadProjectConfig(): Promise<CantonctlConfig> {
         return {
           'default-profile': 'missing',
+          networkProfiles: {
+            devnet: 'missing-profile',
+          },
           networks: {
             devnet: {type: 'remote', url: 'https://ledger.example.com'},
           },
