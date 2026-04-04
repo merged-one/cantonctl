@@ -863,6 +863,9 @@ describe('createServeServer', () => {
     const context = await startServer()
     activeServer = context.server
     activeProjectDir = context.projectDir
+    const siblingDir = `${context.projectDir}-sibling`
+    await fs.mkdir(siblingDir, {recursive: true})
+    await fs.writeFile(path.join(siblingDir, 'secret.txt'), 'secret', 'utf8')
 
     const badProfile = await request(context.port, '/api/profile', {
       body: JSON.stringify({name: ''}),
@@ -890,6 +893,23 @@ describe('createServeServer', () => {
 
     const traversal = await request(context.port, '/api/files/%2E%2E%2Fsecret.txt')
     expect(traversal.status).toBe(403)
+
+    const siblingTraversal = await request(
+      context.port,
+      `/api/files/${encodeURIComponent(`../${path.basename(siblingDir)}/secret.txt`)}`,
+    )
+    expect(siblingTraversal.status).toBe(403)
+
+    const siblingOverwrite = await request(
+      context.port,
+      `/api/files/${encodeURIComponent(`../${path.basename(siblingDir)}/secret.txt`)}`,
+      {
+        body: JSON.stringify({content: 'pwned'}),
+        headers: {'content-type': 'application/json'},
+        method: 'PUT',
+      },
+    )
+    expect(siblingOverwrite.status).toBe(403)
   })
 
   it('falls back on empty profile payloads and invalid scan page sizes', async () => {

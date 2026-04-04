@@ -162,6 +162,11 @@ export async function buildFileTree(dir: string, relativeTo: string): Promise<Fi
   return nodes
 }
 
+function isPathInsideRoot(root: string, target: string): boolean {
+  const relative = path.relative(root, target)
+  return relative === '' || (!relative.startsWith('..') && !path.isAbsolute(relative))
+}
+
 // ---------------------------------------------------------------------------
 // Template discovery — scans .daml files and parses templates
 // ---------------------------------------------------------------------------
@@ -789,9 +794,10 @@ export function createServeServer(deps: ServeServerDeps): ServeServer {
           return
         }
 
+        const projectRoot = path.resolve(projectDir)
         const reqPath = decodeURIComponent(req.path.slice(1))
-        const filePath = path.join(projectDir, reqPath)
-        if (!filePath.startsWith(projectDir)) {
+        const filePath = path.resolve(projectRoot, reqPath)
+        if (!isPathInsideRoot(projectRoot, filePath)) {
           res.status(403).json({error: 'Path traversal not allowed'})
           return
         }
