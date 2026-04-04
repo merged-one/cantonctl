@@ -213,12 +213,14 @@ describe('createProcessRunner', () => {
 
   it('spawns long-running processes and relays exit callbacks', async () => {
     const execa = vi.fn().mockReturnValue(createSpawnProcess({exitCode: 0}))
+    const processKill = vi.fn()
 
     const runner = createProcessRunner({
       env: {PATH: '/usr/bin'},
       execa,
       homedir: () => '/home/tester',
       platform: () => 'linux',
+      processKill,
     })
 
     const proc = runner.spawn('dpm', ['sandbox'], {cwd: '/repo'})
@@ -228,6 +230,7 @@ describe('createProcessRunner', () => {
 
     await expect(proc.waitForExit()).resolves.toBe(0)
     expect(onExit).toHaveBeenCalledWith(0)
+    expect(processKill).toHaveBeenCalledWith(-4242, 'SIGINT')
     expect(proc.pid).toBe(4242)
     expect(proc.stdout).toEqual({label: 'stdout'})
     expect(proc.stderr).toEqual({label: 'stderr'})
@@ -237,6 +240,7 @@ describe('createProcessRunner', () => {
       expect.objectContaining({
         cleanup: true,
         cwd: '/repo',
+        detached: true,
         forceKillAfterDelay: 5000,
         reject: false,
         stdio: ['ignore', 'pipe', 'pipe'],
@@ -246,19 +250,70 @@ describe('createProcessRunner', () => {
 
   it('uses the default SIGTERM signal when spawn.kill is called without arguments', async () => {
     const execa = vi.fn().mockReturnValue(createSpawnProcess({}))
+    const processKill = vi.fn()
 
     const runner = createProcessRunner({
       env: {PATH: '/usr/bin'},
       execa,
       homedir: () => '/home/tester',
       platform: () => 'linux',
+      processKill,
     })
 
     const proc = runner.spawn('dpm', ['sandbox'])
     proc.kill()
 
     await expect(proc.waitForExit()).resolves.toBeNull()
-    expect((execa.mock.results[0]?.value as {kill: ReturnType<typeof vi.fn>}).kill).toHaveBeenCalledWith('SIGTERM')
+    expect(processKill).toHaveBeenCalledWith(-4242, 'SIGTERM')
+  })
+
+  it('falls back to direct child kill when process-group signaling fails', async () => {
+    const spawned = createSpawnProcess({})
+    const execa = vi.fn().mockReturnValue(spawned)
+    const processKill = vi.fn(() => {
+      throw new Error('no such process group')
+    })
+
+    const runner = createProcessRunner({
+      env: {PATH: '/usr/bin'},
+      execa,
+      homedir: () => '/home/tester',
+      platform: () => 'linux',
+      processKill,
+    })
+
+    const proc = runner.spawn('dpm', ['sandbox'])
+    proc.kill('SIGINT')
+
+    expect(processKill).toHaveBeenCalledWith(-4242, 'SIGINT')
+    expect(spawned.kill).toHaveBeenCalledWith('SIGINT')
+  })
+
+  it('uses direct child kill on platforms without process groups', async () => {
+    const spawned = createSpawnProcess({})
+    const execa = vi.fn().mockReturnValue(spawned)
+    const processKill = vi.fn()
+
+    const runner = createProcessRunner({
+      env: {PATH: '/usr/bin'},
+      execa,
+      homedir: () => '/home/tester',
+      platform: () => 'win32',
+      processKill,
+    })
+
+    const proc = runner.spawn('dpm', ['sandbox'])
+    proc.kill('SIGINT')
+
+    expect(processKill).not.toHaveBeenCalled()
+    expect(spawned.kill).toHaveBeenCalledWith('SIGINT')
+    expect(execa).toHaveBeenCalledWith(
+      'dpm',
+      ['sandbox'],
+      expect.objectContaining({
+        detached: false,
+      }),
+    )
   })
 
   it('normalizes spawn failures to exit code 1', async () => {

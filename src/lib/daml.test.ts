@@ -212,7 +212,7 @@ describe('DamlSdk', () => {
   })
 
   describe('startSandbox()', () => {
-    it('spawns sandbox process with correct arguments', async () => {
+    it('spawns dpm sandbox with ledger-api and json-api arguments', async () => {
       const runner = createMockRunner()
       runner.which.mockImplementation(async (cmd: string) =>
         cmd === 'dpm' ? '/usr/local/bin/dpm' : null,
@@ -232,7 +232,7 @@ describe('DamlSdk', () => {
       expect(proc.pid).toBe(9999)
       expect(runner.spawn).toHaveBeenCalledWith(
         'dpm',
-        expect.arrayContaining(['sandbox', '--port', '5001', '--json-api-port', '7575']),
+        expect.arrayContaining(['sandbox', '--ledger-api-port', '5001', '--json-api-port', '7575']),
         expect.anything(),
       )
     })
@@ -257,7 +257,7 @@ describe('DamlSdk', () => {
       expect(proc.pid).toBe(8888)
       expect(runner.spawn).toHaveBeenCalledWith(
         'daml',
-        expect.arrayContaining(['sandbox']),
+        expect.arrayContaining(['sandbox', '--port', '5001', '--json-api-port', '7575']),
         expect.anything(),
       )
     })
@@ -306,7 +306,7 @@ describe('DamlSdk', () => {
 
       expect(runner.spawn).toHaveBeenCalledWith(
         'dpm',
-        expect.arrayContaining(['sandbox', '--port', '5001', '--json-api-port', '7575']),
+        expect.arrayContaining(['sandbox', '--ledger-api-port', '5001', '--json-api-port', '7575']),
         expect.anything(),
       )
     })

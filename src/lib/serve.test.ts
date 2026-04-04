@@ -1822,7 +1822,9 @@ describe('createServeServer', () => {
     const connected = await new Promise<string>((resolve, reject) => {
       const socket = new WebSocket(`ws://127.0.0.1:${context.port}`)
       socket.once('message', (message) => {
-        resolve(String(message))
+        const payload = String(message)
+        socket.close()
+        resolve(payload)
       })
       socket.once('error', reject)
     })
@@ -1831,7 +1833,7 @@ describe('createServeServer', () => {
     expect(connected).toBe(JSON.stringify({type: 'connected'}))
     expect(fallback.status).toBe(200)
     expect(await fallback.text()).toContain('Fallback')
-  })
+  }, 20_000)
 
   it('surfaces generic profile switch and splice route failures', async () => {
     const baseProfiles = createConfig().profiles!

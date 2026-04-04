@@ -67,6 +67,7 @@ export interface ProcessRunnerDeps {
   existsSync?: typeof existsSync
   homedir?: typeof os.homedir
   platform?: typeof os.platform
+  processKill?: typeof process.kill
 }
 
 // ---------------------------------------------------------------------------
@@ -146,6 +147,8 @@ export function createProcessRunner(deps: ProcessRunnerDeps = {}): ProcessRunner
   const execaImpl = deps.execa ?? execa
   const homedir = deps.homedir ?? os.homedir
   const javaBinDir = resolveJavaBinDir(deps)
+  const processKill = deps.processKill ?? process.kill
+  const platform = deps.platform ?? os.platform
 
   const defaultToolPaths = [
     path.join(homedir(), '.daml', 'bin'),
@@ -221,9 +224,11 @@ export function createProcessRunner(deps: ProcessRunnerDeps = {}): ProcessRunner
     },
 
     spawn(cmd: string, args: string[], opts?: RunOptions): SpawnedProcess {
+      const supportsProcessGroups = platform() !== 'win32'
       const proc: ResultPromise = execaImpl(cmd, args, {
         cleanup: true,
         cwd: opts?.cwd,
+        detached: supportsProcessGroups,
         env: resolveEnv(opts?.env),
         forceKillAfterDelay: 5000,
         reject: false,
@@ -242,6 +247,15 @@ export function createProcessRunner(deps: ProcessRunnerDeps = {}): ProcessRunner
 
       return {
         kill(signal: NodeJS.Signals = 'SIGTERM') {
+          if (supportsProcessGroups && typeof proc.pid === 'number') {
+            try {
+              processKill(-proc.pid, signal)
+              return
+            } catch {
+              // Fall through to direct child kill when process-group signaling fails.
+            }
+          }
+
           proc.kill(signal)
         },
         onExit(callback: (code: number | null) => void) {

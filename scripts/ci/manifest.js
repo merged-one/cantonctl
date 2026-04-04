@@ -83,6 +83,7 @@ export const VITEST_PROJECTS = Object.freeze({
     ...PROJECT_DEFAULTS,
     include: [
       'test/e2e/dev-full.e2e.test.ts',
+      'test/e2e/topology-net.e2e.test.ts',
     ],
     name: 'e2e-docker',
     pool: 'forks',

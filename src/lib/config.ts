@@ -50,6 +50,8 @@ const PartySchema = z.object({
   role: z.enum(['operator', 'participant', 'observer']).optional(),
 })
 
+const TOPOLOGY_PARTICIPANT_IDENTIFIER_PATTERN = /^[A-Za-z_][A-Za-z0-9_]*$/
+
 const NamedTopologyParticipantSchema = z.object({
   name: z.string(),
   parties: z.array(z.string()),
@@ -70,6 +72,14 @@ const NamedTopologySchema = z.object({
   const partyNames = new Set<string>()
 
   for (const [participantIndex, participant] of topology.participants.entries()) {
+    if (!TOPOLOGY_PARTICIPANT_IDENTIFIER_PATTERN.test(participant.name)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: `Participant name "${participant.name}" must start with a letter or underscore and contain only letters, digits, or underscores so generated Canton config and bootstrap identifiers stay valid`,
+        path: ['participants', participantIndex, 'name'],
+      })
+    }
+
     if (participantNames.has(participant.name)) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
