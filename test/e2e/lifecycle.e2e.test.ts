@@ -1,0 +1,232 @@
+import * as fs from 'node:fs'
+import * as http from 'node:http'
+import * as os from 'node:os'
+import * as path from 'node:path'
+import type {AddressInfo} from 'node:net'
+
+import {captureOutput} from '@oclif/test'
+import {afterAll, beforeAll, describe, expect, it} from 'vitest'
+
+import PromoteDiff from '../../src/commands/promote/diff.js'
+import ResetChecklist from '../../src/commands/reset/checklist.js'
+import UpgradeCheck from '../../src/commands/upgrade/check.js'
+import {createInMemoryBackend} from '../../src/lib/credential-store.js'
+import {createProfileRuntimeResolver} from '../../src/lib/profile-runtime.js'
+import {createLifecycleDiff} from '../../src/lib/lifecycle/diff.js'
+import {createUpgradeChecker} from '../../src/lib/lifecycle/upgrade.js'
+
+const CLI_ROOT = process.cwd()
+
+interface MockServer {
+  close(): Promise<void>
+  url: string
+}
+
+function parseJson(stdout: string): Record<string, unknown> {
+  return JSON.parse(stdout.trim()) as Record<string, unknown>
+}
+
+function writeConfig(projectDir: string, contents: string): void {
+  fs.writeFileSync(path.join(projectDir, 'cantonctl.yaml'), contents)
+}
+
+async function startServer(
+  handler: (pathname: string) => {body: unknown; status?: number},
+): Promise<MockServer> {
+  const server = http.createServer((request, response) => {
+    const url = new URL(request.url ?? '/', 'http://127.0.0.1')
+    const result = handler(url.pathname)
+    response.statusCode = result.status ?? 200
+    response.setHeader('Content-Type', 'application/json')
+    response.end(JSON.stringify(result.body))
+  })
+
+  await new Promise<void>((resolve, reject) => {
+    server.once('error', reject)
+    server.listen(0, '127.0.0.1', () => resolve())
+  })
+
+  const address = server.address() as AddressInfo
+  return {
+    async close() {
+      await new Promise<void>((resolve, reject) => server.close(error => error ? reject(error) : resolve()))
+    },
+    url: `http://127.0.0.1:${address.port}`,
+  }
+}
+
+async function runInProject(
+  projectDir: string,
+  command: typeof PromoteDiff | typeof UpgradeCheck | typeof ResetChecklist,
+  args: string[],
+): Promise<{error?: Error; stderr: string; stdout: string}> {
+  const cwd = process.cwd
+  Object.defineProperty(process, 'cwd', {
+    configurable: true,
+    value: () => projectDir,
+  })
+
+  try {
+    return await captureOutput(() => command.run(args, {root: CLI_ROOT}))
+  } finally {
+    Object.defineProperty(process, 'cwd', {
+      configurable: true,
+      value: cwd.bind(process),
+    })
+  }
+}
+
+function createPromoteHarness(env: Record<string, string | undefined>): typeof PromoteDiff {
+  return class TestPromoteDiff extends PromoteDiff {
+    protected override createLifecycleDiff() {
+      return createLifecycleDiff({
+        createProfileRuntimeResolver: () => createProfileRuntimeResolver({
+          createBackendWithFallback: async () => ({backend: createInMemoryBackend(), isKeychain: false}),
+          env,
+        }),
+      })
+    }
+  }
+}
+
+function createUpgradeHarness(env: Record<string, string | undefined>): typeof UpgradeCheck {
+  return class TestUpgradeCheck extends UpgradeCheck {
+    protected override createUpgradeChecker() {
+      return createUpgradeChecker({
+        createProfileRuntimeResolver: () => createProfileRuntimeResolver({
+          createBackendWithFallback: async () => ({backend: createInMemoryBackend(), isKeychain: false}),
+          env,
+        }),
+      })
+    }
+  }
+}
+
+describe('lifecycle E2E', () => {
+  let projectDir: string
+  let scanServer: MockServer
+  let workDir: string
+
+  beforeAll(async () => {
+    scanServer = await startServer((pathname) => {
+      if (pathname === '/v0/dso') {
+        return {body: {migration_id: 7, previous_migration_id: 6, sv_party_id: 'sv::1'}}
+      }
+
+      return {body: {error: 'not found'}, status: 404}
+    })
+
+    workDir = fs.mkdtempSync(path.join(os.tmpdir(), 'cantonctl-e2e-lifecycle-'))
+    projectDir = path.join(workDir, 'project')
+    fs.mkdirSync(projectDir, {recursive: true})
+    writeConfig(
+      projectDir,
+      `version: 1
+
+project:
+  name: lifecycle-e2e
+  sdk-version: "3.4.11"
+
+profiles:
+  splice-devnet:
+    kind: remote-validator
+    auth:
+      kind: jwt
+      url: ${scanServer.url}
+    ledger:
+      url: https://ledger.devnet.example.com
+    scan:
+      url: ${scanServer.url}
+  splice-testnet:
+    kind: remote-validator
+    auth:
+      kind: jwt
+      url: ${scanServer.url}
+    ledger:
+      url: https://ledger.testnet.example.com
+    scan:
+      url: ${scanServer.url}
+  splice-mainnet:
+    kind: remote-validator
+    auth:
+      kind: jwt
+      url: ${scanServer.url}
+    ledger:
+      url: https://ledger.mainnet.example.com
+    scan:
+      url: ${scanServer.url}
+  incomplete-mainnet:
+    kind: remote-validator
+    ledger:
+      url: https://ledger.mainnet.example.com
+`,
+    )
+  })
+
+  afterAll(async () => {
+    await scanServer?.close()
+    fs.rmSync(workDir, {force: true, recursive: true})
+  })
+
+  it('diffs DevNet to TestNet promotions', async () => {
+    const CommandHarness = createPromoteHarness({
+      CANTONCTL_JWT_SPLICE_DEVNET: 'devnet-token',
+      CANTONCTL_JWT_SPLICE_TESTNET: 'testnet-token',
+    })
+    const result = await runInProject(projectDir, CommandHarness, ['--from', 'splice-devnet', '--to', 'splice-testnet', '--json'])
+    expect(result.error).toBeUndefined()
+
+    const json = parseJson(result.stdout)
+    expect(json.success).toBe(true)
+    expect(json.data).toEqual(expect.objectContaining({
+      from: expect.objectContaining({tier: 'devnet'}),
+      to: expect.objectContaining({tier: 'testnet'}),
+      advisories: expect.arrayContaining([
+        expect.objectContaining({code: 'reset-sensitive', severity: 'warn'}),
+      ]),
+    }))
+  })
+
+  it('diffs TestNet to MainNet promotions with mainnet continuity guidance', async () => {
+    const CommandHarness = createPromoteHarness({
+      CANTONCTL_JWT_SPLICE_TESTNET: 'testnet-token',
+      CANTONCTL_JWT_SPLICE_MAINNET: 'mainnet-token',
+    })
+    const result = await runInProject(projectDir, CommandHarness, ['--from', 'splice-testnet', '--to', 'splice-mainnet', '--json'])
+    expect(result.error).toBeUndefined()
+
+    const json = parseJson(result.stdout)
+    expect(json.success).toBe(true)
+    expect(json.data).toEqual(expect.objectContaining({
+      from: expect.objectContaining({tier: 'testnet'}),
+      to: expect.objectContaining({tier: 'mainnet'}),
+      advisories: expect.arrayContaining([
+        expect.objectContaining({code: 'migration-policy', severity: 'info'}),
+      ]),
+    }))
+  })
+
+  it('returns reset checklists with different behavior for resettable and non-resettable networks', async () => {
+    const devnet = parseJson((await runInProject(projectDir, ResetChecklist, ['--network', 'devnet', '--json'])).stdout)
+    const testnet = parseJson((await runInProject(projectDir, ResetChecklist, ['--network', 'testnet', '--json'])).stdout)
+    const mainnet = parseJson((await runInProject(projectDir, ResetChecklist, ['--network', 'mainnet', '--json'])).stdout)
+
+    expect(devnet.data).toEqual(expect.objectContaining({resetExpectation: 'resets-expected'}))
+    expect(testnet.data).toEqual(expect.objectContaining({resetExpectation: 'resets-expected'}))
+    expect(mainnet.data).toEqual(expect.objectContaining({resetExpectation: 'no-resets-expected'}))
+  })
+
+  it('warns and fails upgrade checks when profile inputs are incomplete', async () => {
+    const CommandHarness = createUpgradeHarness({})
+    const result = await runInProject(projectDir, CommandHarness, ['--profile', 'incomplete-mainnet', '--json'])
+    const json = parseJson(result.stdout)
+
+    expect(json.success).toBe(false)
+    expect(json.data).toEqual(expect.objectContaining({
+      advisories: expect.arrayContaining([
+        expect.objectContaining({code: 'auth-material', severity: 'fail'}),
+        expect.objectContaining({code: 'scan-missing', severity: 'fail'}),
+      ]),
+    }))
+  })
+})

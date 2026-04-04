@@ -1,8 +1,8 @@
 /**
  * @module commands/serve
  *
- * Starts the Canton IDE Protocol server — a headless REST + WebSocket API
- * that any IDE client can connect to (VS Code, Neovim, browser playground).
+ * Starts the Canton IDE Protocol backend — a profile-aware REST + WebSocket
+ * server for local workbenches, demos, and editor integrations.
  *
  * This is the generic interface. `cantonctl playground` adds the browser UI
  * on top of this same server.
@@ -35,7 +35,7 @@ import {createServeServer, type ServeServer} from '../lib/serve.js'
 import {createTestRunner, type TestRunner} from '../lib/test-runner.js'
 
 export default class Serve extends Command {
-  static override description = 'Start the Canton IDE Protocol server (REST + WebSocket)'
+  static override description = 'Start the profile-aware Canton IDE Protocol backend'
 
   static override examples = [
     '<%= config.bin %> serve',
@@ -162,7 +162,7 @@ export default class Serve extends Command {
       if (resolvedProfile) out.log(`  Profile:     ${resolvedProfile.profile.name} (${resolvedProfile.profile.kind})`)
       out.log(`  Project:     ${projectDir}`)
       out.log('')
-      out.log('Connect any IDE client to this server.')
+      out.log('Connect local workbenches or editor integrations to this backend.')
       out.log('Press Ctrl+C to stop')
     }
 

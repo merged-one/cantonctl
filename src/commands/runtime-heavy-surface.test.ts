@@ -839,7 +839,7 @@ describe('runtime-heavy command surface', () => {
     expect(result.stdout).not.toContain('"success"')
   })
 
-  it('dev emits full-topology status in json mode', async () => {
+  it('dev emits net-topology status in json mode', async () => {
     const start = vi.fn().mockResolvedValue(undefined)
 
     class TestDev extends Dev {
@@ -875,23 +875,24 @@ describe('runtime-heavy command surface', () => {
       protected override async waitForShutdown(): Promise<void> {}
     }
 
-    const result = await captureOutput(() => TestDev.run(['--json', '--full'], {root: CLI_ROOT}))
+    const result = await captureOutput(() => TestDev.run(['--json', '--net'], {root: CLI_ROOT}))
     expect(result.error).toBeUndefined()
     expect(start).toHaveBeenCalledWith(expect.objectContaining({
-      basePort: 10000,
       projectDir: process.cwd(),
+      topologyName: undefined,
     }))
 
     const json = parseJson(result.stdout)
     expect(json.success).toBe(true)
     expect(json.data).toEqual(expect.objectContaining({
-      mode: 'full',
+      mode: 'net',
       parties: ['Alice'],
       status: 'running',
+      topology: 'default',
     }))
   })
 
-  it('dev renders full-topology startup in human mode', async () => {
+  it('dev renders net-topology startup in human mode', async () => {
     const start = vi.fn().mockResolvedValue(undefined)
 
     class TestDev extends Dev {
@@ -927,16 +928,16 @@ describe('runtime-heavy command surface', () => {
       protected override async waitForShutdown(): Promise<void> {}
     }
 
-    const result = await captureOutput(() => TestDev.run(['--full'], {root: CLI_ROOT}))
+    const result = await captureOutput(() => TestDev.run(['--net'], {root: CLI_ROOT}))
     expect(result.error).toBeUndefined()
     expect(start).toHaveBeenCalledWith(expect.objectContaining({
-      basePort: 10000,
       projectDir: process.cwd(),
+      topologyName: undefined,
     }))
     expect(result.stdout).not.toContain('"success"')
   })
 
-  it('dev falls back to empty party lists in sandbox and full json mode', async () => {
+  it('dev falls back to empty party lists in sandbox and net json mode', async () => {
     const configWithoutParties = {...createConfig(), parties: undefined}
     const sandboxStart = vi.fn().mockResolvedValue(undefined)
     const fullStart = vi.fn().mockResolvedValue(undefined)
@@ -998,7 +999,7 @@ describe('runtime-heavy command surface', () => {
     }
 
     const sandboxResult = await captureOutput(() => SandboxDev.run(['--json'], {root: CLI_ROOT}))
-    const fullResult = await captureOutput(() => FullDev.run(['--json', '--full'], {root: CLI_ROOT}))
+    const fullResult = await captureOutput(() => FullDev.run(['--json', '--net'], {root: CLI_ROOT}))
 
     expect(sandboxResult.error).toBeUndefined()
     expect(fullResult.error).toBeUndefined()
@@ -1094,7 +1095,7 @@ describe('runtime-heavy command surface', () => {
     expect(parseJsonLines(result.stdout)).toHaveLength(3)
   })
 
-  it('dev emits full-topology stop events when shutdown is requested', async () => {
+  it('dev emits net-topology stop events when shutdown is requested', async () => {
     const start = vi.fn().mockResolvedValue(undefined)
     const stop = vi.fn().mockResolvedValue(undefined)
 
@@ -1137,7 +1138,7 @@ describe('runtime-heavy command surface', () => {
       }
     }
 
-    const result = await captureOutput(() => TestDev.run(['--json', '--full'], {root: CLI_ROOT}))
+    const result = await captureOutput(() => TestDev.run(['--json', '--net'], {root: CLI_ROOT}))
     expect(result.error).toBeUndefined()
     expect(start).toHaveBeenCalled()
     expect(stop).toHaveBeenCalled()
@@ -1145,7 +1146,7 @@ describe('runtime-heavy command surface', () => {
     const lines = parseJsonLines(result.stdout)
     expect(lines).toHaveLength(2)
     expect(lines[0]).toEqual(expect.objectContaining({
-      data: expect.objectContaining({mode: 'full', status: 'running'}),
+      data: expect.objectContaining({mode: 'net', status: 'running', topology: 'default'}),
       success: true,
     }))
     expect(lines[1]).toEqual({
@@ -1337,7 +1338,7 @@ describe('runtime-heavy command surface', () => {
       projectDir: '/repo',
     }))
     expect(result.stdout).toContain('API:         http://localhost:4000/api')
-    expect(result.stdout).toContain('Connect any IDE client to this server.')
+    expect(result.stdout).toContain('Connect local workbenches or editor integrations to this backend.')
   })
 
   it('serve starts a sandbox profile on the resolved ledger ports', async () => {
@@ -1749,7 +1750,7 @@ describe('runtime-heavy command surface', () => {
     expect(openBrowser).toHaveBeenCalledWith('http://localhost:4000')
   })
 
-  it('playground starts the full runtime and warns when the UI bundle is missing', async () => {
+  it('playground starts the net runtime and warns when the UI bundle is missing', async () => {
     const fullStart = vi.fn().mockResolvedValue(undefined)
     const openBrowser = vi.fn()
 
@@ -1818,11 +1819,11 @@ describe('runtime-heavy command surface', () => {
       protected override async waitForShutdown(): Promise<void> {}
     }
 
-    const result = await captureOutput(() => TestPlayground.run(['--full', '--no-open'], {root: CLI_ROOT}))
+    const result = await captureOutput(() => TestPlayground.run(['--net', '--no-open'], {root: CLI_ROOT}))
     expect(result.error).toBeUndefined()
     expect(fullStart).toHaveBeenCalledWith(expect.objectContaining({
-      basePort: 10000,
       projectDir: process.cwd(),
+      topologyName: undefined,
     }))
     expect(openBrowser).not.toHaveBeenCalled()
     expect(result.stderr).toContain('Playground UI not found')
@@ -2289,7 +2290,7 @@ describe('runtime-heavy command surface', () => {
     expect(sandboxStop).toHaveBeenCalledOnce()
   })
 
-  it('playground stops the full runtime on shutdown in full mode', async () => {
+  it('playground stops the net runtime on shutdown in net mode', async () => {
     const fullStop = vi.fn().mockResolvedValue(undefined)
     const serverStop = vi.fn().mockResolvedValue(undefined)
 
@@ -2360,7 +2361,7 @@ describe('runtime-heavy command surface', () => {
       }
     }
 
-    const result = await captureOutput(() => TestPlayground.run(['--full', '--no-open'], {root: CLI_ROOT}))
+    const result = await captureOutput(() => TestPlayground.run(['--net', '--no-open'], {root: CLI_ROOT}))
     expect(result.error).toBeUndefined()
     expect(serverStop).toHaveBeenCalledOnce()
     expect(fullStop).toHaveBeenCalledOnce()

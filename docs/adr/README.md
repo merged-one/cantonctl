@@ -32,6 +32,7 @@ Links to evidence, research, related ADRs.
 2. **One decision per ADR.** Keep them focused.
 3. **Number sequentially.** Never reuse numbers.
 4. **Include evidence.** Link to research, survey data, or benchmarks.
+5. **Do not use ADRs as status tracking.** Active work lives in GitHub issues and PR checklists, not in roadmap docs.
 
 ## Index
 
@@ -51,3 +52,5 @@ Links to evidence, research, related ADRs.
 | [0012](0012-test-output-parsing.md) | Test output parsing strategy | Accepted | 2026-03-31 |
 | [0013](0013-dar-caching-strategy.md) | DAR caching via mtime comparison | Accepted | 2026-03-31 |
 | [0014](0014-dev-full-multi-node-topology.md) | Multi-node dev topology via Docker | Accepted | 2026-03-31 |
+| [0016](0016-splice-aware-companion-positioning.md) | Position `cantonctl` as a Splice-aware orchestration companion | Accepted | 2026-04-04 |
+| [0017](0017-local-topology-builder-and-net-mode.md) | Local topology builder with `dev --net` and manifest-first workbench integration | Accepted | 2026-04-04 |

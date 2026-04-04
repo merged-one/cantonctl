@@ -1,6 +1,8 @@
 #!/usr/bin/env node
 
+import {mkdirSync} from 'node:fs'
 import {spawnSync} from 'node:child_process'
+import path from 'node:path'
 import process from 'node:process'
 
 import {
@@ -164,8 +166,12 @@ function runDockerTarget(target) {
     fail('Docker Compose v2 is required for Docker CI.')
   }
 
+  const hostE2eTmpDir = path.join(process.cwd(), '.ci-tmp-host')
+  mkdirSync(hostE2eTmpDir, {recursive: true})
+
   const envForNode = (nodeVersion) => ({
     ...process.env,
+    HOST_E2E_TMPDIR: hostE2eTmpDir,
     NODE_VERSION: String(nodeVersion),
   })
 

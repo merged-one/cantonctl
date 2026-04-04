@@ -17,14 +17,14 @@ import {
 import {getUpstreamSource} from './upstream/manifest.js'
 
 const BUILTIN_TEMPLATES: Template[] = [
+  'splice-dapp-sdk',
+  'splice-scan-reader',
+  'splice-token-app',
   'basic',
   'token',
   'defi-amm',
   'api-service',
   'zenith-evm',
-  'splice-token-app',
-  'splice-scan-reader',
-  'splice-dapp-sdk',
 ]
 
 const PINNED_SDK_VERSION = (() => {
@@ -92,6 +92,15 @@ function getWrittenFile(
 }
 
 describe('scaffoldProject', () => {
+  it('surfaces stable/public Splice templates before generic templates', async () => {
+    const {TEMPLATES: orderedTemplates} = await import('./scaffold.js')
+    expect(orderedTemplates.slice(0, 3)).toEqual([
+      'splice-dapp-sdk',
+      'splice-scan-reader',
+      'splice-token-app',
+    ])
+  })
+
   it('creates project directory structure for basic template', () => {
     const fs = createMockScaffoldFs()
     scaffoldProject({dir: '/projects/my-app', fs, name: 'my-app', template: 'basic'})
@@ -209,7 +218,8 @@ describe('scaffoldProject', () => {
   it('throws when bundled template files are missing', () => {
     const filesPath = path.join(TEMPLATE_ROOT, 'basic', 'files')
     const backupPath = `${filesPath}.tmp-test`
-    nodeFs.renameSync(filesPath, backupPath)
+    nodeFs.cpSync(filesPath, backupPath, {recursive: true})
+    nodeFs.rmSync(filesPath, {force: true, recursive: true})
 
     try {
       expect(() => scaffoldProject({
@@ -219,7 +229,8 @@ describe('scaffoldProject', () => {
         template: 'basic',
       })).toThrow(CantonctlError)
     } finally {
-      nodeFs.renameSync(backupPath, filesPath)
+      nodeFs.cpSync(backupPath, filesPath, {recursive: true})
+      nodeFs.rmSync(backupPath, {force: true, recursive: true})
     }
   })
 
@@ -348,13 +359,13 @@ describe('generateDamlSource', () => {
 
   it('throws when a bundled template file is missing', () => {
     const filePath = path.join(TEMPLATE_ROOT, 'basic', 'files', 'daml', 'Main.daml')
-    const backupPath = `${filePath}.tmp-test`
-    nodeFs.renameSync(filePath, backupPath)
+    const original = nodeFs.readFileSync(filePath, 'utf8')
+    nodeFs.rmSync(filePath, {force: true})
 
     try {
       expect(() => generateDamlSource('basic')).toThrow(CantonctlError)
     } finally {
-      nodeFs.renameSync(backupPath, filePath)
+      nodeFs.writeFileSync(filePath, original)
     }
   })
 })
@@ -477,14 +488,14 @@ describe('scaffoldFromUrl', () => {
 describe('module initialization', () => {
   it('throws when a bundled template manifest is missing', async () => {
     const manifestPath = path.join(TEMPLATE_ROOT, 'basic', 'template.json')
-    const backupPath = `${manifestPath}.tmp-test`
-    nodeFs.renameSync(manifestPath, backupPath)
+    const original = nodeFs.readFileSync(manifestPath, 'utf8')
+    nodeFs.rmSync(manifestPath, {force: true})
 
     try {
       vi.resetModules()
       await expect(import('./scaffold.js')).rejects.toMatchObject({code: ErrorCode.CONFIG_SCHEMA_VIOLATION})
     } finally {
-      nodeFs.renameSync(backupPath, manifestPath)
+      nodeFs.writeFileSync(manifestPath, original)
     }
   })
 

@@ -1,6 +1,8 @@
-# cantonctl test
+# `cantonctl test`
 
-Run Daml Script tests with structured output.
+Run Daml Script tests by delegating to the official SDK tooling.
+
+DPM is canonical. `cantonctl test` adds JSON output and companion-friendly ergonomics around the same underlying test command.
 
 ## Usage
 
@@ -8,66 +10,20 @@ Run Daml Script tests with structured output.
 cantonctl test [flags]
 ```
 
-## Flags
-
-| Flag | Short | Default | Description |
-|------|-------|---------|-------------|
-| `--filter` | `-f` | — | Filter tests by name pattern |
-| `--json` | — | `false` | Output results as JSON (for CI) |
-
 ## Behavior
 
-Delegates to `dpm test` for the current Canton 3.4 toolchain. If only the legacy `daml` CLI is installed, cantonctl falls back to `daml test` for older projects. The command captures the exit code to determine pass/fail and forwards the SDK's output with ANSI codes stripped (per ADR-0012).
+- Uses `dpm test` on current toolchains
+- Falls back to `daml test` for older projects when required
+- Preserves structured output and ANSI stripping in the `cantonctl` layer
 
-- **Exit code 0** → all tests passed
-- **Exit code 1** → one or more tests failed (command exits with code 1)
-- **SDK errors** (E2001, etc.) → propagated as CantonctlError
+## Flags
 
-The `--filter` flag passes `--test-pattern <pattern>` to the underlying SDK command.
-
-## Examples
-
-```bash
-cantonctl test                        # Run all tests
-cantonctl test --filter testTransfer  # Run matching tests only
-cantonctl test --json                 # JSON output for CI
-```
-
-## JSON Output
-
-```json
-{
-  "success": true,
-  "data": {
-    "passed": true,
-    "output": "Test Summary\n...",
-    "durationMs": 1795
-  },
-  "timing": { "durationMs": 1795 }
-}
-```
-
-On failure:
-```json
-{
-  "success": false,
-  "data": {
-    "passed": false,
-    "output": "test failed: Main:testTransfer...",
-    "durationMs": 2100
-  }
-}
-```
-
-## Error Codes
-
-| Code | Error | Resolution |
-|------|-------|------------|
-| E2001 | SDK not installed | Install DPM: `curl https://get.digitalasset.com/install/install.sh | sh` |
-| E5001 | Test execution failed | Review failing test output |
+| Flag | Description |
+|---|---|
+| `--filter`, `-f` | Filter tests by name |
+| `--json` | Output structured JSON |
 
 ## Source
 
 - Command: [`src/commands/test.ts`](../../src/commands/test.ts)
 - Logic: [`src/lib/test-runner.ts`](../../src/lib/test-runner.ts)
-- ADR: [ADR-0012](../adr/0012-test-output-parsing.md)

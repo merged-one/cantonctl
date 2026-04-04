@@ -1,9 +1,8 @@
 /**
  * @module commands/playground
  *
- * Starts a Remix-like browser IDE for Canton development.
- * This is a convenience wrapper: it starts `cantonctl serve` and serves
- * the browser UI on top of the same server.
+ * Starts the local browser workbench on top of `cantonctl serve`.
+ * This is an adjunct demo and inspection surface, not the canonical Daml IDE.
  *
  * For headless mode (VS Code, Neovim, other IDEs), use `cantonctl serve`.
  *
@@ -37,16 +36,18 @@ import {createProcessRunner, type ProcessRunner} from '../lib/process-runner.js'
 import {findDarFile, isTcpPortInUse, openBrowserUrl} from '../lib/runtime-support.js'
 import {createServeServer, type ServeServer} from '../lib/serve.js'
 import {createTestRunner, type TestRunner} from '../lib/test-runner.js'
+import {detectTopology} from '../lib/topology.js'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
 
 export default class Playground extends Command {
-  static override description = 'Open a Remix-like browser IDE for Canton development'
+  static override description = 'Open the local browser workbench on top of the Canton IDE Protocol backend'
 
   static override examples = [
     '<%= config.bin %> playground',
-    '<%= config.bin %> playground --full',
+    '<%= config.bin %> playground --net',
+    '<%= config.bin %> playground --net --topology demo',
     '<%= config.bin %> playground --profile splice-devnet --no-open',
     '<%= config.bin %> playground --port 8080',
     '<%= config.bin %> playground --no-open',
@@ -54,20 +55,18 @@ export default class Playground extends Command {
 
   static override flags = {
     'base-port': Flags.integer({
-      default: 10_000,
-      description: 'Base port for multi-node topology (--full mode only)',
+      description: 'Base port for local Canton net topology (--net mode only)',
     }),
     'canton-image': Flags.string({
-      default: 'ghcr.io/digital-asset/decentralized-canton-sync/docker/canton:0.5.3',
-      description: 'Canton Docker image (--full mode only)',
-    }),
-    full: Flags.boolean({
-      default: false,
-      description: 'Start multi-node Docker topology instead of single sandbox',
+      description: 'Canton Docker image (--net mode only)',
     }),
     'json-api-port': Flags.integer({
       default: 7575,
       description: 'Canton JSON Ledger API port (single sandbox mode)',
+    }),
+    net: Flags.boolean({
+      default: false,
+      description: 'Start the local Canton-only net topology instead of the single sandbox',
     }),
     'no-open': Flags.boolean({
       default: false,
@@ -89,12 +88,21 @@ export default class Playground extends Command {
       default: 5001,
       description: 'Canton sandbox port (single sandbox mode)',
     }),
+    topology: Flags.string({
+      description: 'Named local topology from topologies: in cantonctl.yaml (--net mode only)',
+    }),
   }
 
   async run(): Promise<void> {
     const {flags} = await this.parse(Playground)
     const out = createOutput({json: false})
     const projectDir = this.getProjectDir()
+
+    if (flags.topology && !flags.net) {
+      throw new CantonctlError(ErrorCode.CONFIG_SCHEMA_VIOLATION, {
+        suggestion: 'Use "--topology" together with "--net", or remove the topology selection.',
+      })
+    }
 
     if (!this.projectExists(projectDir)) {
       throw new CantonctlError(ErrorCode.CONFIG_NOT_FOUND, {
@@ -115,28 +123,35 @@ export default class Playground extends Command {
     const resolvedProfile = config.profiles && Object.keys(config.profiles).length > 0
       ? resolveProfile(config, flags.profile)
       : null
-    const profileLedger = resolvedProfile?.profile.services.ledger
+    if (flags.net && flags.profile && resolvedProfile && resolvedProfile.profile.kind !== 'canton-multi') {
+      throw new CantonctlError(ErrorCode.CONFIG_SCHEMA_VIOLATION, {
+        suggestion: `Profile "${resolvedProfile.profile.name}" is "${resolvedProfile.profile.kind}". Use "--net" without a remote/localnet profile, or use "--no-sandbox --profile ${resolvedProfile.profile.name}" to attach to that profile.`,
+      })
+    }
+
+    const activeProfile = flags.net && !flags.profile ? null : resolvedProfile
+    const profileLedger = activeProfile?.profile.services.ledger
     const sandboxJsonApiPort = profileLedger?.['json-api-port'] ?? flags['json-api-port']
     const sandboxPort = profileLedger?.port ?? flags['sandbox-port']
-    const ledgerUrl = profileLedger?.url
+    let ledgerUrl = profileLedger?.url
       ?? `http://localhost:${sandboxJsonApiPort}`
-    const shouldStartFullRuntime = !flags['no-sandbox'] && flags.full
+    const shouldStartNetRuntime = !flags['no-sandbox'] && flags.net
     const shouldStartSandbox =
       !flags['no-sandbox']
-      && !flags.full
+      && !flags.net
       && (resolvedProfile?.profile.kind ?? 'sandbox') === 'sandbox'
 
     // Start sandbox or multi-node topology
     let devServer: DevServer | null = null
     let fullDevServer: FullDevServer | null = null
 
-    if (shouldStartFullRuntime) {
+    if (shouldStartNetRuntime) {
       out.log('')
-      out.info('Starting multi-node Canton topology via Docker...')
+      out.info('Starting local Canton net topology via Docker...')
 
       const docker = this.createDockerManager(out, runner)
       fullDevServer = this.createFullServer({
-        cantonImage: flags['canton-image'],
+        cantonImage: 'ghcr.io/digital-asset/decentralized-canton-sync/docker/canton:0.5.3',
         config,
         docker,
         output: out,
@@ -145,10 +160,18 @@ export default class Playground extends Command {
 
       await fullDevServer.start({
         basePort: flags['base-port'],
+        cantonImage: flags['canton-image'],
         projectDir,
+        topologyName: flags.topology,
       })
 
-      out.success('Multi-node topology ready')
+      const topology = await detectTopology(projectDir)
+      const firstParticipant = topology?.participants[0]
+      if (firstParticipant) {
+        ledgerUrl = `http://localhost:${firstParticipant.ports.jsonApi}`
+      }
+
+      out.success(`Local Canton net topology ready${flags.topology ? ` (${flags.topology})` : ''}`)
     } else if (shouldStartSandbox) {
       out.log('')
       out.info('Starting Canton sandbox...')
@@ -177,13 +200,13 @@ export default class Playground extends Command {
 
     await server.start({
       ledgerUrl,
-      multiNode: flags.full
+      multiNode: flags.net
         ? true
-        : resolvedProfile?.profile.kind === 'canton-multi'
+        : activeProfile?.profile.kind === 'canton-multi'
           ? undefined
           : false,
       port: flags.port,
-      profileName: resolvedProfile?.profile.name,
+      profileName: activeProfile?.profile.name,
       projectDir,
       staticDir,
     })
@@ -202,7 +225,7 @@ export default class Playground extends Command {
     out.log(`  API:         http://localhost:${flags.port}/api`)
     out.log(`  WebSocket:   ws://localhost:${flags.port}`)
     out.log(`  Ledger API:  ${ledgerUrl}`)
-    if (resolvedProfile) out.log(`  Profile:     ${resolvedProfile.profile.name} (${resolvedProfile.profile.kind})`)
+    if (activeProfile) out.log(`  Profile:     ${activeProfile.profile.name} (${activeProfile.profile.kind})`)
     out.log(`  Project:     ${projectDir}`)
     out.log('')
     out.log('Press Ctrl+C to stop')

@@ -167,6 +167,7 @@ describe('createScanAdapter', () => {
     const fetch = vi.fn()
       .mockResolvedValueOnce(createJsonResponse({entries: []}))
       .mockResolvedValueOnce(createJsonResponse({scans: [{name: 'sv'}]}))
+      .mockResolvedValueOnce(createJsonResponse({synchronizers: []}))
       .mockResolvedValueOnce(createJsonResponse({rounds: []}))
       .mockResolvedValueOnce(createJsonResponse({sv_party_id: 'sv::1224'}))
       .mockResolvedValueOnce(createJsonResponse({open_mining_rounds: [], issuing_mining_rounds: []}))
@@ -179,6 +180,7 @@ describe('createScanAdapter', () => {
 
     await adapter.listAnsEntries({pageSize: 10})
     await adapter.listDsoScans()
+    await adapter.listDsoSequencers()
     await adapter.getClosedRounds()
     await adapter.getDsoInfo()
     await adapter.getOpenAndIssuingMiningRounds({
@@ -189,14 +191,15 @@ describe('createScanAdapter', () => {
 
     expect(fetch.mock.calls[0][0]).toBe('https://scan.example.com/v0/ans-entries?page_size=10')
     expect(fetch.mock.calls[1][0]).toBe('https://scan.example.com/v0/scans')
-    expect(fetch.mock.calls[2][0]).toBe('https://scan.example.com/v0/closed-rounds')
-    expect(fetch.mock.calls[3][0]).toBe('https://scan.example.com/v0/dso')
-    expect(fetch.mock.calls[4][0]).toBe('https://scan.example.com/v0/open-and-issuing-mining-rounds')
-    expect(JSON.parse(String(fetch.mock.calls[4][1].body))).toEqual({
+    expect(fetch.mock.calls[2][0]).toBe('https://scan.example.com/v0/dso-sequencers')
+    expect(fetch.mock.calls[3][0]).toBe('https://scan.example.com/v0/closed-rounds')
+    expect(fetch.mock.calls[4][0]).toBe('https://scan.example.com/v0/dso')
+    expect(fetch.mock.calls[5][0]).toBe('https://scan.example.com/v0/open-and-issuing-mining-rounds')
+    expect(JSON.parse(String(fetch.mock.calls[5][1].body))).toEqual({
       cached_issuing_round_contract_ids: [],
       cached_open_mining_round_contract_ids: [],
     })
-    expect(fetch.mock.calls[5][0]).toBe(
+    expect(fetch.mock.calls[6][0]).toBe(
       'https://scan.example.com/v0/ans-entries/by-party/Alice%2FOperator',
     )
 

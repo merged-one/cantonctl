@@ -1,8 +1,9 @@
 /**
  * @module commands/doctor
  *
- * Environment diagnostics — checks all prerequisites and reports status.
- * Offers to install missing required dependencies (DPM for current toolchains).
+ * Environment diagnostics for the official Canton stack plus profile-aware
+ * readiness checks. Offers to install missing required dependencies (DPM for
+ * current toolchains).
  * Thin oclif wrapper over {@link createDoctor}.
  */
 
@@ -27,7 +28,7 @@ const BANNER = `
 `
 
 export default class Doctor extends Command {
-  static override description = 'Check your development environment for prerequisites'
+  static override description = 'Check prerequisites and profile-aware environment readiness'
 
   static override examples = [
     '<%= config.bin %> doctor',
@@ -80,7 +81,7 @@ export default class Doctor extends Command {
 
     if (!flags.json && process.stdout.isTTY) {
       process.stdout.write(pc.cyan(BANNER))
-      process.stdout.write(pc.dim('  Institutional-grade CLI toolchain for Canton Network\n'))
+      process.stdout.write(pc.dim('  Splice-aware orchestration companion for the official Canton stack\n'))
     }
 
     if (!flags.json) {

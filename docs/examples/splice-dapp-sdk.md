@@ -19,6 +19,10 @@ Stable-surface policy:
 - Keeps validator-internal and wallet-internal flows out of the default starter
 - Leaves room to add provider-specific wallet UI after the public SDKs are installed
 
+Config export:
+
+- `cantonctl export sdk-config --profile splice-devnet --target dapp-sdk --format json` emits resolved profile wiring for the official SDK without replacing it
+
 Suggested next steps:
 
 ```bash

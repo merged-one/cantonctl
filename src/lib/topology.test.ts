@@ -11,7 +11,8 @@ import * as path from 'node:path'
 
 import {describe, expect, it} from 'vitest'
 import type {CantonctlConfig} from './config.js'
-import {detectTopology, generateTopology, type TopologyOptions} from './topology.js'
+import {CantonctlError} from './errors.js'
+import {detectTopology, generateTopology, serializeTopologyManifest, topologyManifestPath, type TopologyOptions} from './topology.js'
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -106,6 +107,84 @@ describe('generateTopology', () => {
         expect.objectContaining({name: 'participant1', parties: []}),
         expect.objectContaining({name: 'participant2', parties: []}),
       ])
+    })
+
+    it('uses a named topology when topologyName is selected', () => {
+      const config = createConfig({
+        parties: [{name: 'Ignored', role: 'operator'}],
+        topologies: {
+          demo: {
+            'base-port': 20_000,
+            'canton-image': 'ghcr.io/example/canton:test',
+            kind: 'canton-multi',
+            participants: [
+              {name: 'alpha', parties: ['Alice']},
+              {name: 'beta', parties: ['Bob']},
+              {name: 'gamma', parties: []},
+            ],
+          },
+        },
+      })
+
+      const topology = generateTopology(createOpts({config, topologyName: 'demo'}))
+
+      expect(topology.participants.map(participant => participant.name)).toEqual(['alpha', 'beta', 'gamma'])
+      expect(topology.participants[0].parties).toEqual(['Alice'])
+      expect(topology.participants[1].parties).toEqual(['Bob'])
+      expect(topology.manifest?.metadata).toEqual({
+        'base-port': 20_000,
+        'canton-image': 'ghcr.io/example/canton:test',
+        mode: 'net',
+        selectedBy: 'named',
+        topologyName: 'demo',
+      })
+    })
+
+    it('throws when a named topology is missing', () => {
+      expect(() => generateTopology(createOpts({topologyName: 'missing'}))).toThrow(CantonctlError)
+    })
+
+    it('lets the CLI image override win over the named topology image', () => {
+      const config = createConfig({
+        topologies: {
+          demo: {
+            'canton-image': 'ghcr.io/example/canton:named',
+            kind: 'canton-multi',
+            participants: [{name: 'alpha', parties: []}],
+          },
+        },
+      })
+
+      const topology = generateTopology(createOpts({
+        cantonImageOverride: 'ghcr.io/example/canton:override',
+        config,
+        projectName: 'custom-project',
+        topologyName: 'demo',
+      }))
+
+      expect(topology.manifest?.metadata['canton-image']).toBe('ghcr.io/example/canton:override')
+      expect(topology.dockerCompose).toContain('name: custom-project')
+      expect(topology.dockerCompose).toContain('image: ghcr.io/example/canton:override')
+    })
+
+    it('falls back to the command default image when a named topology omits canton-image', () => {
+      const config = createConfig({
+        topologies: {
+          demo: {
+            kind: 'canton-multi',
+            participants: [{name: 'alpha', parties: []}],
+          },
+        },
+      })
+
+      const topology = generateTopology(createOpts({
+        cantonImage: 'ghcr.io/example/canton:default',
+        config,
+        topologyName: 'demo',
+      }))
+
+      expect(topology.manifest?.metadata['canton-image']).toBe('ghcr.io/example/canton:default')
+      expect(topology.dockerCompose).toContain('image: ghcr.io/example/canton:default')
     })
   })
 
@@ -340,6 +419,35 @@ describe('generateTopology', () => {
       const {dockerCompose} = generateTopology(createOpts())
       expect(dockerCompose).not.toContain('\t')
     })
+
+    it('includes manifest metadata for the default topology', () => {
+      const topology = generateTopology(createOpts())
+
+      expect(topology.manifest?.metadata).toEqual({
+        'base-port': 10_000,
+        'canton-image': 'ghcr.io/digital-asset/decentralized-canton-sync/docker/canton:0.5.3',
+        mode: 'net',
+        selectedBy: 'default',
+        topologyName: 'default',
+      })
+    })
+
+    it('serializes a fallback manifest when a topology object does not already include one', () => {
+      const serialized = serializeTopologyManifest({
+        bootstrapScript: '',
+        cantonConf: '',
+        dockerCompose: '',
+        participants: [],
+        synchronizer: {admin: 1, publicApi: 2},
+      })
+
+      expect(serialized).toContain('"selectedBy": "legacy"')
+      expect(serialized).toContain('"base-port": 10000')
+    })
+
+    it('builds the manifest path under .cantonctl', () => {
+      expect(topologyManifestPath('/tmp/project')).toBe('/tmp/project/.cantonctl/topology.json')
+    })
   })
 })
 
@@ -365,8 +473,30 @@ describe('detectTopology', () => {
     await expect(detectTopology(projectDir)).resolves.toBeNull()
   })
 
-  it('reconstructs participants and synchronizer ports from generated compose output', async () => {
+  it('reads the manifest first when topology.json is present', async () => {
     const projectDir = await fs.mkdtemp(path.join(os.tmpdir(), 'topology-detect-'))
+    const configDir = path.join(projectDir, '.cantonctl')
+    await fs.mkdir(configDir, {recursive: true})
+
+    const generated = generateTopology(createOpts())
+    await fs.writeFile(path.join(configDir, 'canton.conf'), generated.cantonConf)
+    await fs.writeFile(path.join(configDir, 'docker-compose.yml'), generated.dockerCompose)
+    await fs.writeFile(path.join(configDir, 'bootstrap.canton'), generated.bootstrapScript)
+    await fs.writeFile(path.join(configDir, 'topology.json'), serializeTopologyManifest(generated))
+
+    const detected = await detectTopology(projectDir)
+    expect(detected).toEqual({
+      bootstrapScript: generated.bootstrapScript,
+      cantonConf: generated.cantonConf,
+      dockerCompose: generated.dockerCompose,
+      manifest: generated.manifest,
+      participants: generated.participants,
+      synchronizer: generated.synchronizer,
+    })
+  })
+
+  it('reconstructs a legacy topology from compose output when no manifest exists', async () => {
+    const projectDir = await fs.mkdtemp(path.join(os.tmpdir(), 'topology-legacy-'))
     const configDir = path.join(projectDir, '.cantonctl')
     await fs.mkdir(configDir, {recursive: true})
 
@@ -379,6 +509,28 @@ describe('detectTopology', () => {
       bootstrapScript: '',
       cantonConf: '',
       dockerCompose: generated.dockerCompose,
+      manifest: {
+        metadata: {
+          'base-port': 10_000,
+          'canton-image': '',
+          mode: 'net',
+          selectedBy: 'legacy',
+          topologyName: 'default',
+        },
+        participants: [
+          {
+            name: 'participant1',
+            parties: [],
+            ports: {admin: 0, jsonApi: 10013, ledgerApi: 0},
+          },
+          {
+            name: 'participant2',
+            parties: [],
+            ports: {admin: 0, jsonApi: 10023, ledgerApi: 0},
+          },
+        ],
+        synchronizer: {admin: 10001, publicApi: 10002},
+      },
       participants: [
         {
           name: 'participant1',
@@ -413,6 +565,21 @@ describe('detectTopology', () => {
       bootstrapScript: '',
       cantonConf: '',
       dockerCompose: expect.stringContaining('10013/v2/version'),
+      manifest: {
+        metadata: {
+          'base-port': 10000,
+          'canton-image': '',
+          mode: 'net',
+          selectedBy: 'legacy',
+          topologyName: 'default',
+        },
+        participants: [{
+          name: 'participant1',
+          parties: [],
+          ports: {admin: 0, jsonApi: 10013, ledgerApi: 0},
+        }],
+        synchronizer: {admin: 0, publicApi: 0},
+      },
       participants: [{
         name: 'participant1',
         parties: [],
@@ -438,6 +605,21 @@ describe('detectTopology', () => {
       bootstrapScript: '',
       cantonConf: '',
       dockerCompose: expect.stringContaining('10013/v2/version'),
+      manifest: {
+        metadata: {
+          'base-port': 10000,
+          'canton-image': '',
+          mode: 'net',
+          selectedBy: 'legacy',
+          topologyName: 'default',
+        },
+        participants: [{
+          name: 'participant1',
+          parties: [],
+          ports: {admin: 0, jsonApi: 10013, ledgerApi: 0},
+        }],
+        synchronizer: {admin: 0, publicApi: 0},
+      },
       participants: [{
         name: 'participant1',
         parties: [],
@@ -452,6 +634,113 @@ describe('detectTopology', () => {
     const configDir = path.join(projectDir, '.cantonctl')
     await fs.mkdir(path.join(configDir, 'docker-compose.yml'), {recursive: true})
     await fs.writeFile(path.join(configDir, 'canton.conf'), 'canton {}')
+
+    await expect(detectTopology(projectDir)).resolves.toBeNull()
+  })
+
+  it('returns null when topology.json contains malformed json', async () => {
+    const projectDir = await fs.mkdtemp(path.join(os.tmpdir(), 'topology-bad-json-'))
+    const configDir = path.join(projectDir, '.cantonctl')
+    await fs.mkdir(configDir, {recursive: true})
+    await fs.writeFile(path.join(configDir, 'topology.json'), '{not json', 'utf8')
+
+    await expect(detectTopology(projectDir)).resolves.toBeNull()
+  })
+
+  it('returns null when topology.json parses to a null value', async () => {
+    const projectDir = await fs.mkdtemp(path.join(os.tmpdir(), 'topology-null-json-'))
+    const configDir = path.join(projectDir, '.cantonctl')
+    await fs.mkdir(configDir, {recursive: true})
+    await fs.writeFile(path.join(configDir, 'topology.json'), 'null', 'utf8')
+
+    await expect(detectTopology(projectDir)).resolves.toBeNull()
+  })
+
+  it('returns null when topology.json omits required manifest sections', async () => {
+    const projectDir = await fs.mkdtemp(path.join(os.tmpdir(), 'topology-missing-metadata-'))
+    const configDir = path.join(projectDir, '.cantonctl')
+    await fs.mkdir(configDir, {recursive: true})
+    await fs.writeFile(path.join(configDir, 'topology.json'), JSON.stringify({
+      participants: [{
+        name: 'participant1',
+        parties: [],
+        ports: {admin: 10_011, jsonApi: 10_013, ledgerApi: 10_012},
+      }],
+      synchronizer: {admin: 10_001, publicApi: 10_002},
+    }), 'utf8')
+
+    await expect(detectTopology(projectDir)).resolves.toBeNull()
+  })
+
+  it('returns null when topology.json omits participant port data', async () => {
+    const projectDir = await fs.mkdtemp(path.join(os.tmpdir(), 'topology-bad-participant-'))
+    const configDir = path.join(projectDir, '.cantonctl')
+    await fs.mkdir(configDir, {recursive: true})
+    await fs.writeFile(path.join(configDir, 'topology.json'), JSON.stringify({
+      metadata: {
+        'base-port': 10_000,
+        'canton-image': 'ghcr.io/example/canton:test',
+        mode: 'net',
+        selectedBy: 'default',
+        topologyName: 'default',
+      },
+      participants: [{name: 'participant1', parties: []}],
+      synchronizer: {admin: 10_001, publicApi: 10_002},
+    }), 'utf8')
+
+    await expect(detectTopology(projectDir)).resolves.toBeNull()
+  })
+
+  it('returns null when topology.json contains invalid metadata', async () => {
+    const projectDir = await fs.mkdtemp(path.join(os.tmpdir(), 'topology-bad-metadata-'))
+    const configDir = path.join(projectDir, '.cantonctl')
+    await fs.mkdir(configDir, {recursive: true})
+    await fs.writeFile(path.join(configDir, 'topology.json'), JSON.stringify({
+      metadata: {
+        'base-port': 'not-a-number',
+        'canton-image': 'ghcr.io/example/canton:test',
+        mode: 'net',
+        selectedBy: 'default',
+        topologyName: 'default',
+      },
+      participants: [{
+        name: 'participant1',
+        parties: [],
+        ports: {admin: 10_011, jsonApi: 10_013, ledgerApi: 10_012},
+      }],
+      synchronizer: {admin: 10_001, publicApi: 10_002},
+    }), 'utf8')
+
+    await expect(detectTopology(projectDir)).resolves.toBeNull()
+  })
+
+  it('returns null when topology.json contains an unsupported selectedBy value', async () => {
+    const projectDir = await fs.mkdtemp(path.join(os.tmpdir(), 'topology-bad-selected-by-'))
+    const configDir = path.join(projectDir, '.cantonctl')
+    await fs.mkdir(configDir, {recursive: true})
+    await fs.writeFile(path.join(configDir, 'topology.json'), JSON.stringify({
+      metadata: {
+        'base-port': 10_000,
+        'canton-image': 'ghcr.io/example/canton:test',
+        mode: 'net',
+        selectedBy: 'custom',
+        topologyName: 'default',
+      },
+      participants: [{
+        name: 'participant1',
+        parties: [],
+        ports: {admin: 10_011, jsonApi: 10_013, ledgerApi: 10_012},
+      }],
+      synchronizer: {admin: 10_001, publicApi: 10_002},
+    }), 'utf8')
+
+    await expect(detectTopology(projectDir)).resolves.toBeNull()
+  })
+
+  it('returns null when topology.json exists as a directory instead of a file', async () => {
+    const projectDir = await fs.mkdtemp(path.join(os.tmpdir(), 'topology-manifest-dir-'))
+    const configDir = path.join(projectDir, '.cantonctl')
+    await fs.mkdir(path.join(configDir, 'topology.json'), {recursive: true})
 
     await expect(detectTopology(projectDir)).resolves.toBeNull()
   })
