@@ -166,7 +166,7 @@ Every cantonctl error includes a code, human-readable message, actionable sugges
 **Message:** Docker is not installed or not running.
 
 **Symptoms:**
-- Running `cantonctl dev --full` fails immediately
+- Running `cantonctl dev --net` fails immediately
 - `docker` command not found on PATH
 
 **Resolution:**
@@ -181,7 +181,7 @@ Every cantonctl error includes a code, human-readable message, actionable sugges
 **Message:** Docker Compose operation failed.
 
 **Symptoms:**
-- `cantonctl dev --full` fails during topology startup
+- `cantonctl dev --net` fails during topology startup
 - Docker Compose up/down commands return errors
 
 **Resolution:**

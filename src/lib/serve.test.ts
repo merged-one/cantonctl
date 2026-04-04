@@ -27,6 +27,7 @@ import {
 } from './serve.js'
 import type {StableSplice} from './splice-public.js'
 import {CantonctlError, ErrorCode} from './errors.js'
+import {generateTopology, serializeTopologyManifest} from './topology.js'
 
 function createConfig(): CantonctlConfig {
   return {
@@ -169,22 +170,15 @@ async function createProjectDir(options: {multiNode?: boolean} = {}): Promise<st
   await fs.writeFile(path.join(projectDir, '.daml', 'dist', 'serve-test.dar'), 'fake-dar', 'utf8')
 
   if (options.multiNode) {
+    const topology = generateTopology({
+      cantonImage: 'ghcr.io/digital-asset/decentralized-canton-sync/docker/canton:0.5.3',
+      config: createConfig(),
+      projectName: 'serve-test',
+    })
     await fs.mkdir(path.join(projectDir, '.cantonctl'), {recursive: true})
-    await fs.writeFile(path.join(projectDir, '.cantonctl', 'canton.conf'), 'participants = []\n', 'utf8')
-    await fs.writeFile(
-      path.join(projectDir, '.cantonctl', 'docker-compose.yml'),
-      [
-        'services:',
-        '  canton:',
-        '    ports:',
-        '      - "10001:10001"',
-        '      - "10002:10002"',
-        '    healthcheck:',
-        '      test: ["CMD-SHELL", "curl -sf http://localhost:7575/v2/version && curl -sf http://localhost:7576/v2/version"]',
-        '',
-      ].join('\n'),
-      'utf8',
-    )
+    await fs.writeFile(path.join(projectDir, '.cantonctl', 'canton.conf'), topology.cantonConf, 'utf8')
+    await fs.writeFile(path.join(projectDir, '.cantonctl', 'docker-compose.yml'), topology.dockerCompose, 'utf8')
+    await fs.writeFile(path.join(projectDir, '.cantonctl', 'topology.json'), serializeTopologyManifest(topology), 'utf8')
   }
 
   return projectDir
@@ -717,6 +711,7 @@ describe('createServeServer', () => {
     const topology = await requestJson<{
       mode: string
       participants: Array<{name: string; port: number}>
+      selection: null
       synchronizer: null
       topology: null
     }>(context.port, '/api/topology')
@@ -733,6 +728,7 @@ describe('createServeServer', () => {
     expect(topology).toEqual({
       mode: 'single',
       participants: [{name: 'sandbox', port: 7575}],
+      selection: null,
       synchronizer: null,
       topology: null,
     })
@@ -793,13 +789,25 @@ describe('createServeServer', () => {
     const topology = await requestJson<{
       mode: string
       participants: Array<{name: string; port: number}>
+      selection: {
+        'base-port': number
+        'canton-image': string
+        selectedBy: string
+        topologyName: string
+      } | null
       synchronizer: {admin: number; publicApi: number} | null
     }>(context.port, '/api/topology')
-    expect(topology.mode).toBe('multi')
+    expect(topology.mode).toBe('net')
     expect(topology.participants).toEqual([
-      {name: 'participant1', port: 7575},
-      {name: 'participant2', port: 7576},
+      {name: 'participant1', port: 10013},
+      {name: 'participant2', port: 10023},
     ])
+    expect(topology.selection).toEqual({
+      'base-port': 10000,
+      'canton-image': 'ghcr.io/digital-asset/decentralized-canton-sync/docker/canton:0.5.3',
+      selectedBy: 'default',
+      topologyName: 'default',
+    })
     expect(topology.synchronizer).toEqual({admin: 10001, publicApi: 10002})
 
     const status = await requestJson<{

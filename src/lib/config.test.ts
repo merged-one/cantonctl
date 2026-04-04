@@ -265,6 +265,110 @@ networks:
     })
   })
 
+  it('loads named local topologies from the top-level topologies section', async () => {
+    const yaml = `
+version: 1
+project:
+  name: my-app
+  sdk-version: "3.4.11"
+topologies:
+  demo:
+    kind: canton-multi
+    base-port: 20000
+    canton-image: ghcr.io/example/canton:test
+    participants:
+      - name: participant-a
+        parties: [Alice]
+      - name: participant-b
+        parties: [Bob]
+`
+    const fs = createMockFs({'/project/cantonctl.yaml': yaml})
+    const config = await loadConfig({dir: '/project', fs})
+
+    expect(config.topologies).toEqual({
+      demo: {
+        'base-port': 20_000,
+        'canton-image': 'ghcr.io/example/canton:test',
+        kind: 'canton-multi',
+        participants: [
+          {name: 'participant-a', parties: ['Alice']},
+          {name: 'participant-b', parties: ['Bob']},
+        ],
+      },
+    })
+  })
+
+  it('rejects duplicate participant names inside a named topology', async () => {
+    const yaml = `
+version: 1
+project:
+  name: my-app
+  sdk-version: "3.4.11"
+topologies:
+  broken:
+    kind: canton-multi
+    participants:
+      - name: participant1
+        parties: [Alice]
+      - name: participant1
+        parties: [Bob]
+`
+    const fs = createMockFs({'/project/cantonctl.yaml': yaml})
+
+    await expect(loadConfig({dir: '/project', fs})).rejects.toMatchObject({
+      code: ErrorCode.CONFIG_SCHEMA_VIOLATION,
+      suggestion: expect.stringContaining('Duplicate participant name "participant1"'),
+    })
+  })
+
+  it('rejects duplicate party names inside a named topology', async () => {
+    const yaml = `
+version: 1
+project:
+  name: my-app
+  sdk-version: "3.4.11"
+topologies:
+  broken:
+    kind: canton-multi
+    participants:
+      - name: participant1
+        parties: [Alice]
+      - name: participant2
+        parties: [Alice]
+`
+    const fs = createMockFs({'/project/cantonctl.yaml': yaml})
+
+    await expect(loadConfig({dir: '/project', fs})).rejects.toMatchObject({
+      code: ErrorCode.CONFIG_SCHEMA_VIOLATION,
+      suggestion: expect.stringContaining('Duplicate party name "Alice"'),
+    })
+  })
+
+  it('rejects generated topology port collisions during schema validation', async () => {
+    const participantsYaml = Array.from({length: 100}, (_, index) => [
+      '      - name: participant' + (index + 1),
+      `        parties: [Party${index + 1}]`,
+    ].join('\n')).join('\n')
+
+    const yaml = `
+version: 1
+project:
+  name: my-app
+  sdk-version: "3.4.11"
+topologies:
+  crowded:
+    kind: canton-multi
+    participants:
+${participantsYaml}
+`
+    const fs = createMockFs({'/project/cantonctl.yaml': yaml})
+
+    await expect(loadConfig({dir: '/project', fs})).rejects.toMatchObject({
+      code: ErrorCode.CONFIG_SCHEMA_VIOLATION,
+      suggestion: expect.stringContaining('Generated port collision'),
+    })
+  })
+
   it('uses process defaults when loading config without explicit options', async () => {
     const projectDir = fs.mkdtempSync(path.join(os.tmpdir(), 'cantonctl-load-defaults-'))
     fs.writeFileSync(path.join(projectDir, 'cantonctl.yaml'), [
@@ -470,6 +574,12 @@ describe('mergeConfigs', () => {
           },
         },
       },
+      topologies: {
+        demo: {
+          kind: 'canton-multi',
+          participants: [{name: 'participant1', parties: ['Alice']}],
+        },
+      },
     })
 
     expect(merged.networks).toEqual({
@@ -478,6 +588,12 @@ describe('mergeConfigs', () => {
     expect(merged.parties).toEqual([{name: 'Alice', role: 'operator'}])
     expect(merged.plugins).toEqual(['@cantonctl/plugin-a'])
     expect(merged.profiles?.remote.services.validator).toEqual({url: 'https://validator.example.com'})
+    expect(merged.topologies).toEqual({
+      demo: {
+        kind: 'canton-multi',
+        participants: [{name: 'participant1', parties: ['Alice']}],
+      },
+    })
   })
 
   it('preserves base collection roots when the override only changes scalar fields', () => {
@@ -557,6 +673,100 @@ describe('mergeConfigs', () => {
 
     expect(withPartialOverride.profiles?.sandbox.services.ledger).toEqual({port: 5001, 'json-api-port': 7575})
     expect(withPartialOverride.profiles?.sandbox.experimental).toBe(true)
+  })
+
+  it('merges named topologies by key and replaces participant arrays when overridden', () => {
+    const withTopologies: CantonctlConfig = {
+      ...base,
+      topologies: {
+        defaultish: {
+          'base-port': 10_000,
+          'canton-image': 'ghcr.io/example/canton:base',
+          kind: 'canton-multi',
+          participants: [
+            {name: 'participant1', parties: ['Alice']},
+          ],
+        },
+      },
+    }
+
+    const merged = mergeConfigs(withTopologies, {
+      topologies: {
+        defaultish: {
+          'canton-image': 'ghcr.io/example/canton:override',
+          participants: [
+            {name: 'participant2', parties: ['Bob']},
+          ],
+        },
+        demo: {
+          kind: 'canton-multi',
+          participants: [
+            {name: 'participant3', parties: []},
+          ],
+        },
+      },
+    })
+
+    expect(merged.topologies).toEqual({
+      defaultish: {
+        'base-port': 10_000,
+        'canton-image': 'ghcr.io/example/canton:override',
+        kind: 'canton-multi',
+        participants: [{name: 'participant2', parties: ['Bob']}],
+      },
+      demo: {
+        kind: 'canton-multi',
+        participants: [{name: 'participant3', parties: []}],
+      },
+    })
+  })
+
+  it('preserves base-only named topologies when overrides omit them', () => {
+    const merged = mergeConfigs({
+      ...base,
+      topologies: {
+        existing: {
+          kind: 'canton-multi',
+          participants: [{name: 'participant1', parties: ['Alice']}],
+        },
+      },
+    }, {})
+
+    expect(merged.topologies).toEqual({
+      existing: {
+        kind: 'canton-multi',
+        participants: [{name: 'participant1', parties: ['Alice']}],
+      },
+    })
+  })
+
+  it('preserves base topology participants when an override only changes scalar topology fields', () => {
+    const merged = mergeConfigs({
+      ...base,
+      topologies: {
+        existing: {
+          'base-port': 10_000,
+          'canton-image': 'ghcr.io/example/canton:base',
+          kind: 'canton-multi',
+          participants: [{name: 'participant1', parties: ['Alice']}],
+        },
+      },
+    }, {
+      topologies: {
+        existing: {
+          'canton-image': 'ghcr.io/example/canton:override',
+        },
+      },
+    })
+
+    expect(merged.topologies).toEqual({
+      existing: {
+        'base-port': 10_000,
+        'canton-image': 'ghcr.io/example/canton:override',
+        kind: 'canton-multi',
+        participants: [{name: 'participant1', parties: ['Alice']}],
+      },
+    })
   })
 })
 

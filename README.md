@@ -28,6 +28,8 @@ It complements DPM, Daml Studio, Quickstart, and the official wallet and dApp SD
 | Stable/public Splice APIs | Supported remote automation surfaces | Profile synthesis, discovery, validation, and CI-friendly wrappers |
 
 See [docs/README.md](docs/README.md) for the full ecosystem-fit guide.
+See [docs/CURRENT_STATE.md](docs/CURRENT_STATE.md) for the canonical live feature snapshot.
+See [docs/BEST_PRACTICES.md](docs/BEST_PRACTICES.md) for the repo docs policy.
 
 ## Prerequisites
 
@@ -43,7 +45,7 @@ See [docs/README.md](docs/README.md) for the full ecosystem-fit guide.
 
 | Dependency | Purpose |
 |---|---|
-| Docker | `dev --full` and `localnet` workflows |
+| Docker | `dev --net` and `localnet` workflows |
 | Official Splice LocalNet workspace | `localnet up/down/status` wrapper |
 
 Verify the environment with:
@@ -100,7 +102,7 @@ The profile model is the product backbone. It is what lets `cantonctl` stay focu
 |---|---|---|
 | `cantonctl init [name]` | Scaffold a companion-ready project or starter template | Supports official-stack workflows |
 | `cantonctl dev` | Start the local sandbox wrapper with hot reload | Delegates to DPM/daml |
-| `cantonctl dev --full` | Start the Canton-only multi-node Docker topology | Canton-only local realism |
+| `cantonctl dev --net` | Start the Canton-only multi-node Docker topology | Canton-only local realism |
 | `cantonctl localnet up/down/status` | Wrap the official Splice LocalNet workspace | Quickstart-aware wrapper |
 | `cantonctl build` | Compile Daml and optionally codegen bindings | Delegates to DPM/daml |
 | `cantonctl test` | Run Daml Script tests with structured output | Delegates to DPM/daml |
@@ -126,6 +128,7 @@ The profile model is the product backbone. It is what lets `cantonctl` stay focu
 | `cantonctl doctor` | Check prerequisites and profile-aware environment readiness | Support and diagnostics surface |
 | `cantonctl serve` | Start the profile-aware Canton IDE Protocol backend | Adjunct workbench backend |
 | `cantonctl playground` | Open the local browser workbench | Adjunct demo and inspection surface |
+| `cantonctl topology show/export` | Preview or export the local Canton-only topology | Local topology builder |
 | `cantonctl validator experimental ...` | Opt into operator-only validator-internal flows | Experimental only |
 
 All commands except `console` and `playground` support `--json`.
@@ -186,6 +189,7 @@ Examples:
 - [docs/concepts/target-users.md](docs/concepts/target-users.md)
 - [docs/concepts/non-goals.md](docs/concepts/non-goals.md)
 - [docs/reference/configuration.md](docs/reference/configuration.md)
+- [docs/reference/topology.md](docs/reference/topology.md)
 - [docs/reference/localnet.md](docs/reference/localnet.md)
 - [docs/reference/compatibility.md](docs/reference/compatibility.md)
 - [docs/reference/preflight.md](docs/reference/preflight.md)
@@ -202,5 +206,7 @@ Examples:
 
 - [docs/release-notes/v0.4.0-splice-support.md](docs/release-notes/v0.4.0-splice-support.md)
 - [docs/release-notes/vNEXT-community-fit.md](docs/release-notes/vNEXT-community-fit.md)
+- [docs/release-notes/vNEXT-net-mode.md](docs/release-notes/vNEXT-net-mode.md)
 - [docs/migration/v0.4.0-splice-support.md](docs/migration/v0.4.0-splice-support.md)
 - [docs/migration/vNEXT-community-fit.md](docs/migration/vNEXT-community-fit.md)
+- [docs/migration/vNEXT-net-mode.md](docs/migration/vNEXT-net-mode.md)

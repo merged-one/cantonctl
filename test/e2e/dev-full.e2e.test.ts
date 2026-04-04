@@ -1,7 +1,7 @@
 /**
  * @module test/e2e/dev-full
  *
- * End-to-end tests for `cantonctl dev --full` (multi-node Docker topology).
+ * End-to-end tests for `cantonctl dev --net` (multi-node Docker topology).
  *
  * These tests start a real Canton Docker topology via Docker Compose, verify
  * health polling across multiple participants, and test party provisioning.
@@ -90,7 +90,7 @@ const TOPOLOGY_CONTAINER_NAME = 'fulldev-test-canton-1'
 // Test suite
 // ---------------------------------------------------------------------------
 
-describeIfReady('dev --full E2E: multi-node Docker topology', () => {
+describeIfReady('dev --net E2E: multi-node Docker topology', () => {
   let workDir: string
   let projectDir: string
   let server: FullDevServer | null = null
@@ -214,8 +214,8 @@ describeIfReady('dev --full E2E: multi-node Docker topology', () => {
     // -----------------------------------------------------------------------
     // Verify: topology generated and Docker started
     // -----------------------------------------------------------------------
-    expect(output.messages.some(m => m.includes('Generating multi-node topology'))).toBe(true)
-    expect(output.messages.some(m => m.includes('Starting multi-node Canton topology'))).toBe(true)
+    expect(output.messages.some(m => m.includes('Generating local Canton net topology'))).toBe(true)
+    expect(output.messages.some(m => m.includes('Topology "') && m.includes('participants + 1 synchronizer'))).toBe(true)
 
     // Verify: .cantonctl/ config directory was created
     const configDir = path.join(projectDir, '.cantonctl')

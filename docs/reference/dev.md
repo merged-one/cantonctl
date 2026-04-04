@@ -2,7 +2,7 @@
 
 Start the local sandbox wrapper with hot reload.
 
-This command complements DPM rather than replacing it. The default path is sandbox-first. `dev --full` remains the Canton-only multi-node topology. Splice LocalNet stays separate under `cantonctl localnet ...`.
+This command complements DPM rather than replacing it. The default path is sandbox-first. `dev --net` is the Canton-only multi-node topology. Splice LocalNet stays separate under `cantonctl localnet ...`.
 
 ## Usage
 
@@ -13,7 +13,7 @@ cantonctl dev [flags]
 ## Runtime Model
 
 - `cantonctl dev` wraps the local sandbox workflow
-- `cantonctl dev --full` starts the Canton-only multi-node Docker topology
+- `cantonctl dev --net` starts the Canton-only multi-node Docker topology
 - `cantonctl localnet ...` wraps the official Splice LocalNet workspace
 
 ## DPM-First Notes
@@ -28,7 +28,8 @@ cantonctl dev [flags]
 |---|---|
 | `--port`, `-p` | Canton participant port |
 | `--json-api-port` | JSON Ledger API port |
-| `--full` | Start the Canton-only multi-node topology |
+| `--net` | Start the Canton-only multi-node topology |
+| `--topology <name>` | Select a named topology from `topologies:` |
 | `--json` | Output structured JSON |
 
 ## Source

@@ -15,7 +15,7 @@ import {CI_TOOLCHAIN} from '../../scripts/ci/manifest.js'
 /** Pinned SDK version used across all E2E tests. */
 export const SDK_VERSION = CI_TOOLCHAIN.damlSdkVersion
 
-/** Canton Docker image used by `dev --full` and Docker E2E tests. */
+/** Canton Docker image used by `dev --net` and Docker E2E tests. */
 export const CANTON_IMAGE = CI_TOOLCHAIN.cantonImage
 
 /**
@@ -145,7 +145,7 @@ export function hasCantonImage(): boolean {
 /**
  * Create an E2E temp directory.
  *
- * `dev --full` writes Docker bind-mounted config files into this directory.
+ * `dev --net` writes Docker bind-mounted config files into this directory.
  * When local CI parity runs inside a container with the host Docker socket,
  * those bind mounts must point at a host-backed path rather than container-
  * private `/tmp`, so the Docker daemon can see the generated files.

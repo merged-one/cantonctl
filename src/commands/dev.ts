@@ -3,13 +3,14 @@
  *
  * Starts a local Canton development environment with hot-reload.
  * Thin oclif wrapper over {@link createDevServer} (sandbox mode)
- * and {@link createFullDevServer} (multi-node Docker mode).
+ * and {@link createFullDevServer} (local Canton-only net mode).
  *
  * @example
  * ```bash
  * cantonctl dev                      # Start sandbox on default ports
  * cantonctl dev --port 6001          # Custom Canton node port
- * cantonctl dev --full               # Multi-node topology via Docker
+ * cantonctl dev --net                # Multi-node topology via Docker
+ * cantonctl dev --net --topology demo
  * cantonctl dev --json               # JSON output for CI
  * ```
  */
@@ -25,14 +26,14 @@ import {createDamlSdk, type DamlSdk} from '../lib/daml.js'
 import {createFullDevServer, type FullDevServer} from '../lib/dev-server-full.js'
 import {createDevServer, type DevServer} from '../lib/dev-server.js'
 import {createDockerManager, type DockerManager} from '../lib/docker.js'
-import {CantonctlError} from '../lib/errors.js'
+import {CantonctlError, ErrorCode} from '../lib/errors.js'
 import {createSandboxToken} from '../lib/jwt.js'
 import {createLedgerClient} from '../lib/ledger-client.js'
 import {createOutput} from '../lib/output.js'
 import {createProcessRunner, type ProcessRunner} from '../lib/process-runner.js'
 import {findDarFile, isTcpPortInUse} from '../lib/runtime-support.js'
 
-/** Default Canton Docker image for --full mode. */
+/** Default Canton Docker image for --net mode. */
 const DEFAULT_CANTON_IMAGE = 'ghcr.io/digital-asset/decentralized-canton-sync/docker/canton:0.5.3'
 
 export default class Dev extends Command {
@@ -41,23 +42,18 @@ export default class Dev extends Command {
   static override examples = [
     '<%= config.bin %> dev',
     '<%= config.bin %> dev --port 6001',
-    '<%= config.bin %> dev --full',
-    '<%= config.bin %> dev --full --base-port 20000',
+    '<%= config.bin %> dev --net',
+    '<%= config.bin %> dev --net --topology demo',
+    '<%= config.bin %> dev --net --base-port 20000',
     '<%= config.bin %> dev --json',
   ]
 
   static override flags = {
     'base-port': Flags.integer({
-      default: 10_000,
-      description: 'Base port for multi-node topology (--full mode only)',
+      description: 'Base port for multi-node topology (--net mode only)',
     }),
     'canton-image': Flags.string({
-      default: DEFAULT_CANTON_IMAGE,
-      description: 'Canton Docker image for --full mode',
-    }),
-    full: Flags.boolean({
-      default: false,
-      description: 'Start full multi-node topology (requires Docker)',
+      description: 'Canton Docker image for --net mode',
     }),
     json: Flags.boolean({
       default: false,
@@ -67,10 +63,17 @@ export default class Dev extends Command {
       default: 7575,
       description: 'JSON Ledger API port (sandbox mode only)',
     }),
+    net: Flags.boolean({
+      default: false,
+      description: 'Start the local Canton-only net topology (requires Docker)',
+    }),
     port: Flags.integer({
       char: 'p',
       default: 5001,
       description: 'Canton node port (sandbox mode only)',
+    }),
+    topology: Flags.string({
+      description: 'Named local topology from topologies: in cantonctl.yaml (--net mode only)',
     }),
   }
 
@@ -81,6 +84,12 @@ export default class Dev extends Command {
     let server: DevServer | FullDevServer | null = null
 
     try {
+      if (flags.topology && !flags.net) {
+        throw new CantonctlError(ErrorCode.CONFIG_SCHEMA_VIOLATION, {
+          suggestion: 'Use "--topology" together with "--net", or remove the topology selection.',
+        })
+      }
+
       const config = await this.loadProjectConfig()
       const runner = this.createRunner()
       const sdk = this.createSdk(runner)
@@ -99,17 +108,17 @@ export default class Dev extends Command {
           server = null
         }
 
-        out.success(flags.full ? 'Multi-node topology stopped' : 'Canton sandbox stopped')
+        out.success(flags.net ? 'Local Canton net topology stopped' : 'Canton sandbox stopped')
         out.result({data: {status: 'stopped'}, success: true})
         shutdownPromiseResolve?.()
       }
 
-      if (flags.full) {
-        // --full mode: multi-node Docker topology
+      if (flags.net) {
+        // --net mode: local Canton-only Docker topology
         const docker = this.createDockerManager(out, runner)
 
         const fullServer = this.createFullServer({
-          cantonImage: flags['canton-image'],
+          cantonImage: DEFAULT_CANTON_IMAGE,
           config,
           docker,
           output: out,
@@ -120,16 +129,19 @@ export default class Dev extends Command {
 
         await fullServer.start({
           basePort: flags['base-port'],
+          cantonImage: flags['canton-image'],
           projectDir,
           signal: controller.signal,
+          topologyName: flags.topology,
         })
 
         if (flags.json) {
           out.result({
             data: {
-              mode: 'full',
+              mode: 'net',
               parties: config.parties?.map(p => p.name) ?? [],
               status: 'running',
+              topology: flags.topology ?? 'default',
             },
             success: true,
           })

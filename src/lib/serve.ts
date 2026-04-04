@@ -343,8 +343,8 @@ export function createServeServer(deps: ServeServerDeps): ServeServer {
         readAs: ['Alice', 'Bob'],
       })
 
-      // Detect multi-node topology:
-      // - multiNode === true: explicitly requested (playground --full)
+      // Detect local net topology:
+      // - multiNode === true: explicitly requested (playground --net)
       // - multiNode === undefined: auto-detect from .cantonctl/ (serve --no-sandbox)
       // - multiNode === false: explicitly single-node, skip detection
       const topology = opts.multiNode !== false ? await detectTopology(projectDir) : null
@@ -687,11 +687,19 @@ export function createServeServer(deps: ServeServerDeps): ServeServer {
       // ── Topology ─────────────────────────────────────────────
 
       app.get('/api/topology', async (_req: Request, res: Response) => {
+        const topologyMetadata = isMultiNode ? topology!.manifest!.metadata : null
         res.json({
-          mode: isMultiNode ? 'multi' : 'single',
+          mode: isMultiNode ? topologyMetadata!.mode : 'single',
           participants: participantClients.map(pc => ({name: pc.name, port: pc.port})),
+          selection: isMultiNode ? {
+            'base-port': topologyMetadata!['base-port'],
+            'canton-image': topologyMetadata!['canton-image'],
+            selectedBy: topologyMetadata!.selectedBy,
+            topologyName: topologyMetadata!.topologyName,
+          } : null,
           synchronizer: isMultiNode ? topology!.synchronizer : null,
           topology: isMultiNode ? {
+            metadata: topologyMetadata,
             participants: topology!.participants.map(p => ({
               name: p.name,
               parties: p.parties,

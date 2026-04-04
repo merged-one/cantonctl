@@ -8,6 +8,8 @@ This is an adjunct demo and inspection surface. It is useful for local explorati
 
 ```bash
 cantonctl playground
+cantonctl playground --net
+cantonctl playground --net --topology demo
 cantonctl playground --profile splice-devnet --no-open
 cantonctl playground --port 8080
 ```
@@ -16,6 +18,7 @@ cantonctl playground --port 8080
 
 - Use Daml Studio for day-to-day contract authoring
 - Use `playground` when you want a local workbench around the same project
+- Use `playground --net` when you want that workbench backed by a local Canton-only multi-node runtime
 - Use `serve` when you want the backend without the browser UI
 
 ## Source

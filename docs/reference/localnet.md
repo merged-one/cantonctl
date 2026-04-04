@@ -1,12 +1,12 @@
 # LocalNet Commands
 
-`cantonctl localnet` wraps the official Splice LocalNet workspace. It does not replace Quickstart and it does not redefine `dev --full`.
+`cantonctl localnet` wraps the official Splice LocalNet workspace. It does not replace Quickstart and it does not redefine `dev --net`.
 
 ## Purpose
 
 - Use Quickstart for the official reference app and LocalNet launchpad
 - Use `cantonctl localnet ...` when you want a project-local wrapper around that official workspace
-- Keep `dev --full` for the Canton-only topology generated under `.cantonctl/`
+- Keep `dev --net` for the Canton-only topology generated under `.cantonctl/`
 
 ## Commands
 

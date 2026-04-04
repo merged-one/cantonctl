@@ -50,6 +50,80 @@ const PartySchema = z.object({
   role: z.enum(['operator', 'participant', 'observer']).optional(),
 })
 
+const NamedTopologyParticipantSchema = z.object({
+  name: z.string(),
+  parties: z.array(z.string()),
+})
+
+const TOPOLOGY_DEFAULT_BASE_PORT = 10_000
+const TOPOLOGY_PORT_STRIDE = 10
+const TOPOLOGY_MEDIATOR_ADMIN_OFFSET = 1001
+
+const NamedTopologySchema = z.object({
+  'base-port': z.number().int().positive().optional(),
+  'canton-image': z.string().optional(),
+  'display-name': z.string().optional(),
+  kind: z.literal('canton-multi'),
+  participants: z.array(NamedTopologyParticipantSchema).min(1),
+}).superRefine((topology, ctx) => {
+  const participantNames = new Set<string>()
+  const partyNames = new Set<string>()
+
+  for (const [participantIndex, participant] of topology.participants.entries()) {
+    if (participantNames.has(participant.name)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: `Duplicate participant name "${participant.name}"`,
+        path: ['participants', participantIndex, 'name'],
+      })
+    }
+
+    participantNames.add(participant.name)
+
+    for (const [partyIndex, party] of participant.parties.entries()) {
+      if (partyNames.has(party)) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: `Duplicate party name "${party}"`,
+          path: ['participants', participantIndex, 'parties', partyIndex],
+        })
+      }
+
+      partyNames.add(party)
+    }
+  }
+
+  const basePort = topology['base-port'] ?? TOPOLOGY_DEFAULT_BASE_PORT
+  const portOwners = new Map<number, string>([
+    [basePort + 1, 'synchronizer admin'],
+    [basePort + 2, 'synchronizer public'],
+    [basePort + TOPOLOGY_MEDIATOR_ADMIN_OFFSET, 'mediator admin'],
+  ])
+
+  for (const [participantIndex, participant] of topology.participants.entries()) {
+    const rangeBase = basePort + (participantIndex + 1) * TOPOLOGY_PORT_STRIDE
+    const generatedPorts: Array<[number, string]> = [
+      [rangeBase + 1, `${participant.name} admin`],
+      [rangeBase + 2, `${participant.name} ledger-api`],
+      [rangeBase + 3, `${participant.name} json-api`],
+    ]
+
+    for (const [port, owner] of generatedPorts) {
+      const existingOwner = portOwners.get(port)
+      if (existingOwner) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: `Generated port collision between ${existingOwner} and ${owner}`,
+          path: ['base-port'],
+        })
+        continue
+      }
+
+      portOwners.set(port, owner)
+    }
+  }
+})
+
 const NetworkSchema = z.object({
   auth: z.enum(['jwt', 'shared-secret', 'none']).optional(),
   'json-api-port': z.number().optional(),
@@ -107,6 +181,7 @@ const RawConfigSchema = z.object({
   parties: z.array(PartySchema).optional(),
   plugins: z.array(z.string()).optional(),
   profiles: z.record(z.string(), ProfileSchema).optional(),
+  topologies: z.record(z.string(), NamedTopologySchema).optional(),
   project: z.object({
     name: z.string(),
     'sdk-version': z.string(),
@@ -116,6 +191,8 @@ const RawConfigSchema = z.object({
 }).passthrough()
 
 type RawConfig = z.infer<typeof RawConfigSchema>
+export type NamedTopologyConfig = z.infer<typeof NamedTopologySchema>
+export type NamedTopologyParticipantConfig = z.infer<typeof NamedTopologyParticipantSchema>
 
 /** Validated cantonctl configuration object. */
 export interface CantonctlConfig {
@@ -125,6 +202,7 @@ export interface CantonctlConfig {
   parties?: Array<z.infer<typeof PartySchema>>
   plugins?: string[]
   profiles?: Record<string, NormalizedProfile>
+  topologies?: Record<string, NamedTopologyConfig>
   project: z.infer<typeof RawConfigSchema>['project']
   version: number
 }
@@ -137,6 +215,7 @@ export type PartialConfig = {
   parties?: Array<z.infer<typeof PartySchema>>
   plugins?: string[]
   profiles?: Record<string, Partial<NormalizedProfile>>
+  topologies?: Record<string, Partial<NamedTopologyConfig>>
   project?: Partial<RawConfig['project']>
   version?: number
 }
@@ -147,6 +226,7 @@ type RawPartialConfig = {
   parties?: Array<z.infer<typeof PartySchema>>
   plugins?: string[]
   profiles?: Record<string, RawProfileConfig>
+  topologies?: Record<string, Partial<NamedTopologyConfig>>
   project?: Partial<RawConfig['project']>
   version?: number
 }
@@ -342,6 +422,34 @@ function mergeConfigsRaw(base: CantonctlConfig, overrides: PartialConfig): Canto
     result.profiles = mergedProfiles
   }
 
+  if (overrides.topologies || base.topologies) {
+    const baseTopologies = (base.topologies ?? {}) as Record<string, NamedTopologyConfig>
+    const overrideTopologies = (overrides.topologies ?? {}) as Record<string, Partial<NamedTopologyConfig>>
+    const mergedTopologies: Record<string, NamedTopologyConfig | Partial<NamedTopologyConfig>> = {}
+    const allKeys = new Set([...Object.keys(baseTopologies), ...Object.keys(overrideTopologies)])
+    for (const key of allKeys) {
+      const baseTopology = baseTopologies[key]
+      const overrideTopology = overrideTopologies[key]
+      if (!baseTopology) {
+        mergedTopologies[key] = overrideTopology
+        continue
+      }
+
+      if (!overrideTopology) {
+        mergedTopologies[key] = baseTopology
+        continue
+      }
+
+      mergedTopologies[key] = {
+        ...baseTopology,
+        ...overrideTopology,
+        participants: overrideTopology.participants ?? baseTopology.participants,
+      }
+    }
+
+    result.topologies = mergedTopologies
+  }
+
   if (overrides['default-profile'] !== undefined) {
     result['default-profile'] = overrides['default-profile']
   }
@@ -485,6 +593,7 @@ function validateConfigObject(parsed: unknown): CantonctlConfig {
     parties,
     plugins,
     profiles: Object.keys(normalized.profiles).length > 0 ? normalized.profiles : undefined,
+    topologies: result.data.topologies,
     project,
     version,
   }

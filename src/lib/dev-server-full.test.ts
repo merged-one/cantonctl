@@ -129,6 +129,10 @@ describe('FullDevServer', () => {
         '/project/.cantonctl/bootstrap.canton',
         expect.stringContaining('connect_local'),
       )
+      expect(deps.writeFile).toHaveBeenCalledWith(
+        '/project/.cantonctl/topology.json',
+        expect.stringContaining('"mode": "net"'),
+      )
     })
 
     it('starts Docker Compose with generated compose file', async () => {

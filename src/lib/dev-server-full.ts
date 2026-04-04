@@ -1,8 +1,8 @@
 /**
  * @module dev-server-full
  *
- * Orchestrates a multi-node Canton development environment using Docker Compose.
- * This is the `--full` mode counterpart to the sandbox-based dev server.
+ * Orchestrates the local Canton-only `dev --net` environment using Docker Compose.
+ * This is the multi-node counterpart to the sandbox-based dev server.
  *
  * The startup sequence follows the conformance kit pattern:
  *   1. Check Docker is available
@@ -33,7 +33,7 @@ import {CantonctlError, ErrorCode} from './errors.js'
 import type {SandboxTokenOptions} from './jwt.js'
 import type {LedgerClient, LedgerClientOptions} from './ledger-client.js'
 import type {OutputWriter} from './output.js'
-import {generateTopology, type GeneratedTopology, type TopologyParticipant} from './topology.js'
+import {generateTopology, serializeTopologyManifest, type GeneratedTopology, type TopologyParticipant} from './topology.js'
 
 // ---------------------------------------------------------------------------
 // Types
@@ -81,16 +81,20 @@ export interface FullDevServerOptions {
   signal?: AbortSignal
   /** Base port for the topology (default 10000). */
   basePort?: number
+  /** Optional explicit Canton image override from the CLI. */
+  cantonImage?: string
   /** Health check timeout in ms (default 120000). */
   healthTimeoutMs?: number
   /** Health check retry delay in ms (default 2000). */
   healthRetryDelayMs?: number
   /** Debounce delay for file watcher in ms (default 300). */
   debounceMs?: number
+  /** Optional named topology selection from config.topologies. */
+  topologyName?: string
 }
 
 export interface FullDevServer {
-  /** Start the multi-node topology, provision parties, and begin watching. */
+  /** Start the local net topology, provision parties, and begin watching. */
   start(opts: FullDevServerOptions): Promise<void>
   /** Stop the topology and file watcher. */
   stop(): Promise<void>
@@ -129,14 +133,17 @@ export function createFullDevServer(deps: FullDevServerDeps): FullDevServer {
       await docker.checkAvailable()
 
       // Step 2: Generate topology from config
-      output.info('Generating multi-node topology...')
+      output.info('Generating local Canton net topology...')
       topology = generateTopology({
         basePort: opts.basePort,
         cantonImage,
+        cantonImageOverride: opts.cantonImage,
         config,
+        topologyName: opts.topologyName,
       })
 
-      output.info(`Topology: ${topology.participants.length} participants + 1 synchronizer`)
+      const topologyName = topology.manifest!.metadata.topologyName
+      output.info(`Topology "${topologyName}": ${topology.participants.length} participants + 1 synchronizer`)
 
       // Step 3: Write generated configs to .cantonctl/
       configDir = path.join(projectDir, CONFIG_DIR)
@@ -144,6 +151,7 @@ export function createFullDevServer(deps: FullDevServerDeps): FullDevServer {
       await writeFile(path.join(configDir, 'docker-compose.yml'), topology.dockerCompose)
       await writeFile(path.join(configDir, 'canton.conf'), topology.cantonConf)
       await writeFile(path.join(configDir, 'bootstrap.canton'), topology.bootstrapScript)
+      await writeFile(path.join(configDir, 'topology.json'), serializeTopologyManifest(topology))
 
       // Step 4: Start Docker Compose
       const composeFile = path.join(configDir, 'docker-compose.yml')
