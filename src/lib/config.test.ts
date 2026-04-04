@@ -277,9 +277,9 @@ topologies:
     base-port: 20000
     canton-image: ghcr.io/example/canton:test
     participants:
-      - name: participant-a
+      - name: participant_a
         parties: [Alice]
-      - name: participant-b
+      - name: participant_b
         parties: [Bob]
 `
     const fs = createMockFs({'/project/cantonctl.yaml': yaml})
@@ -291,8 +291,8 @@ topologies:
         'canton-image': 'ghcr.io/example/canton:test',
         kind: 'canton-multi',
         participants: [
-          {name: 'participant-a', parties: ['Alice']},
-          {name: 'participant-b', parties: ['Bob']},
+          {name: 'participant_a', parties: ['Alice']},
+          {name: 'participant_b', parties: ['Bob']},
         ],
       },
     })
@@ -318,6 +318,29 @@ topologies:
     await expect(loadConfig({dir: '/project', fs})).rejects.toMatchObject({
       code: ErrorCode.CONFIG_SCHEMA_VIOLATION,
       suggestion: expect.stringContaining('Duplicate participant name "participant1"'),
+    })
+  })
+
+  it('rejects named topology participant names that are not identifier-safe', async () => {
+    const yaml = `
+version: 1
+project:
+  name: my-app
+  sdk-version: "3.4.11"
+topologies:
+  broken:
+    kind: canton-multi
+    participants:
+      - name: participant-a
+        parties: [Alice]
+      - name: participant_ok
+        parties: [Bob]
+`
+    const fs = createMockFs({'/project/cantonctl.yaml': yaml})
+
+    await expect(loadConfig({dir: '/project', fs})).rejects.toMatchObject({
+      code: ErrorCode.CONFIG_SCHEMA_VIOLATION,
+      suggestion: expect.stringContaining('Participant name "participant-a" must start with a letter or underscore'),
     })
   })
 

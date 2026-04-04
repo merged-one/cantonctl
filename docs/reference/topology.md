@@ -35,6 +35,7 @@ topologies:
 
 - Only `kind: canton-multi` is supported
 - Participant names must be unique
+- Participant names must start with a letter or underscore and then use only letters, digits, or underscores
 - Party names must be unique across the topology
 - Port assignment is deterministic from `base-port` and participant order
 - `dev --net` without `--topology` uses the default implicit topology derived from `parties:`
