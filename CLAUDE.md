@@ -135,6 +135,8 @@ The GitHub Actions workflow (`.github/workflows/ci.yml`) is generated from the s
 | `doctor.ts` | `createDoctor(deps)` | Environment diagnostics: Node, Java, SDK, Docker, ports |
 | `daml-parser.ts` | `parseDamlSource(source)` | Regex-based Daml source parser: templates, fields, choices, signatories |
 | `splice-public.ts` | `createStableSplice(deps)` | Stable public Splice surface orchestration for scan, token-standard, ANS, and validator-user flows |
+| `profile-runtime.ts` | `createProfileRuntimeResolver(deps)` | Shared profile/network/auth/token resolution for companion runtime commands |
+| `preflight/checks.ts` | `createPreflightChecks(deps)` | Read-only remote readiness checks: profile, auth, scan, egress, and optional health probes |
 
 ## Playground (`playground/`)
 
