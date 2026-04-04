@@ -8,17 +8,18 @@ cantonctl is an institutional-grade CLI toolchain for Canton Network — the ent
 
 ```bash
 npm install                         # Install dependencies
-npm test                            # Run 399 unit tests (project: unit)
-npm run test:e2e:sdk                # Run 66 SDK E2E tests (project: e2e-sdk)
-npm run test:e2e:sandbox            # Run 9 sandbox E2E tests (project: e2e-sandbox)
-npm run test:e2e:docker             # Run 2 Docker E2E tests (project: e2e-docker)
-npm run test:e2e:playground         # Run 14 playground E2E tests (project: e2e-playground)
-npm run test:e2e                    # Run SDK + sandbox E2E tests (75 tests)
-npm run test:all                    # Run all 490 tests
+npm test                            # Run the unit project
+npm run test:e2e:sdk                # Run the SDK E2E project
+npm run test:e2e:sandbox            # Run the sandbox E2E project
+npm run test:e2e:docker             # Run the Docker E2E project
+npm run test:e2e:playground         # Run the playground E2E project
+npm run test:e2e                    # Run the PR-required E2E suites
+npm run test:all                    # Run all test projects
 npm run test:coverage               # Coverage report
 npm run build                       # Compile TypeScript to dist/
-npm run ci                          # Local CI check (native)
-./scripts/ci-local.sh --docker      # Local CI check (Docker — exact GitHub Actions parity)
+npm run ci                          # Local CI check (Docker — exact GitHub Actions parity)
+npm run ci:all                      # Local CI check for every suite, including experimental
+npm run ci:native                   # Native convenience check (not parity)
 ./scripts/install-prerequisites.sh  # Install Daml SDK + Java 21
 ```
 
@@ -30,7 +31,7 @@ npm run ci                          # Local CI check (native)
 4. **CantonctlError for all errors**: Every error is a `CantonctlError` with code (E1xxx-E8xxx), suggestion, and docs URL. Never throw bare `Error` or use `this.error()` in commands.
 5. **Dual output**: Every command supports `--json` flag via `OutputWriter`. Use `createOutput({json: flags.json})`.
 6. **Thin command wrappers**: Commands in `src/commands/` are thin oclif wrappers. All logic lives in `src/lib/` modules.
-7. **CI parity**: Code must pass in Docker (`./scripts/ci-local.sh --docker`) before pushing. See CI rules below.
+7. **CI parity**: Code must pass in Docker (`npm run ci`) before pushing. See CI rules below.
 
 ## CI parity rules (non-negotiable)
 
@@ -38,7 +39,7 @@ Local and GitHub Actions must run identical steps. Passing locally must guarante
 
 ### Verify before pushing
 
-Run `./scripts/ci-local.sh --docker` (or `npm run ci` for native). The `--docker` flag runs inside an ubuntu container with the exact same Node, Java, and Daml SDK versions as GitHub Actions. This is the gold standard.
+Run `npm run ci`. This is the authoritative Docker path and uses the same suite manifest, Node matrix, Java, and Daml SDK versions as GitHub Actions. `npm run ci:native` is only a convenience check and must not be treated as parity.
 
 ### Cross-platform code — no hardcoded paths
 
@@ -49,15 +50,17 @@ Run `./scripts/ci-local.sh --docker` (or `npm run ci` for native). The `--docker
 
 ### Test project structure
 
-Tests are organized into five vitest projects in `vitest.config.ts`:
+Tests are organized into manifest-driven vitest projects in `vitest.config.ts`:
 
 | Project | Files | Isolation | Purpose |
 |---------|-------|-----------|---------|
 | `unit` | `src/**/*.test.ts` | Default (threads) | Fast, no external deps |
-| `e2e-sdk` | `test/e2e/{init,build,test-cmd}.e2e.test.ts` (includes build --watch E2E) | Default (threads) | Requires Daml SDK + Java |
+| `e2e-sdk` | `test/e2e/{init,build,build-watch,test-cmd}.e2e.test.ts` | Default (threads) | Core Daml SDK E2E |
+| `e2e-stable-public` | `test/e2e/{scan,token-standard,ans,localnet,scan-validator,compat}.e2e.test.ts` | Default (threads) | Stable/public Splice surfaces |
 | `e2e-sandbox` | `test/e2e/{dev,deploy,status}.e2e.test.ts` | `pool: 'forks'`, `singleFork: true` | Requires Canton sandbox (JVM) |
 | `e2e-docker` | `test/e2e/dev-full.e2e.test.ts` | `pool: 'forks'`, `singleFork: true` | Requires Docker + Canton image |
 | `e2e-playground` | `test/e2e/playground.e2e.test.ts` | `pool: 'forks'`, `singleFork: true` | Playground serve API + sandbox |
+| `e2e-experimental` | `test/e2e/experimental-scan-proxy.e2e.test.ts` | Default (threads) | Experimental or informational coverage only |
 
 **Why forks for sandbox/docker/playground tests**: Vitest's default thread pool kills JVM child processes when a test file completes. The `forks` pool isolates each file in its own Node.js process, preventing cross-file interference between Canton sandbox JVM process trees.
 
@@ -71,17 +74,23 @@ Long-running processes (Canton sandbox) must be properly cleaned up:
 
 ### CI workflow structure
 
-The GitHub Actions workflow (`.github/workflows/ci.yml`) has four jobs:
-- **`unit-tests`** — Matrix: Node 18/20/22. Runs on every push and PR. Required.
-- **`e2e-sdk-tests`** — Node 22 + Java 21 + Daml SDK. Runs on every push and PR. Required.
-- **`e2e-sandbox-tests`** — Same as SDK + Canton sandbox. Runs on main pushes only. Informational (not in gate).
-- **`all-green`** — Gate job. Depends on `unit-tests` + `e2e-sdk-tests`. The only required status check in branch protection.
+The GitHub Actions workflow (`.github/workflows/ci.yml`) is generated from the shared CI manifest and currently gates:
+- unit matrix on Node 18/20/22
+- generated-spec verification
+- `e2e-sdk`
+- `e2e-stable-public`
+- `e2e-sandbox`
+- `e2e-playground`
+- `e2e-docker`
+- `all-green` as the aggregate branch-protection target
+
+`e2e-experimental` remains informational and is only included in the `main`/`all` scope.
 
 ### Docker CI environment
 
 `Dockerfile.ci` replicates the GitHub Actions runner:
 - Ubuntu 24.04 (matches `ubuntu-latest`)
-- Node 22 (override with `NODE_VERSION=18 docker compose -f docker-compose.ci.yml build ci`)
+- Node 22 in the container image, with the full unit matrix orchestrated by `scripts/ci/run.js`
 - Java 21 Temurin (matches `actions/setup-java distribution: temurin`)
 - Daml SDK 3.4.11 (matches CI install step)
 - `JAVA_OPTS: -Xms512M -Xmx2G -XX:+UseSerialGC` for sandbox tests (matches CI env)
@@ -99,7 +108,7 @@ The GitHub Actions workflow (`.github/workflows/ci.yml`) has four jobs:
 | Module | Factory | Purpose |
 |--------|---------|---------|
 | `config.ts` | `loadConfig()`, `resolveConfig()` | YAML config with hierarchical merge (project > user > env > flags) |
-| `errors.ts` | `new CantonctlError(ErrorCode.XXX, opts)` | 24 error codes organized E1xxx-E8xxx |
+| `errors.ts` | `new CantonctlError(ErrorCode.XXX, opts)` | 30 error codes organized E1xxx-E8xxx |
 | `output.ts` | `createOutput({json, quiet, noColor})` | Human/JSON/quiet output modes |
 | `process-runner.ts` | `createProcessRunner()` | execa wrapper. Mock with `vi.fn()` stubs. |
 | `daml.ts` | `createDamlSdk({runner})` | SDK abstraction: detect, build, test, codegen, startSandbox |
@@ -118,11 +127,14 @@ The GitHub Actions workflow (`.github/workflows/ci.yml`) has four jobs:
 | `topology.ts` | `generateTopology(opts)` | Pure function: generates Docker Compose + Canton HOCON + bootstrap script from config |
 | `docker.ts` | `createDockerManager(deps)` | Docker Compose lifecycle: checkAvailable, composeUp, composeDown, composeLogs |
 | `dev-server-full.ts` | `createFullDevServer(deps)` | Multi-node dev server: Docker topology, multi-participant health, cross-node hot-reload |
+| `localnet-workspace.ts` | `createLocalnetWorkspaceDetector(deps)` | Detects official Splice LocalNet workspace layout and derives service URLs |
+| `localnet.ts` | `createLocalnet(deps)` | Thin wrapper around upstream LocalNet `make` targets plus validator health/status parsing |
 | `cleaner.ts` | `createCleaner(deps)` | Build artifact cleanup (.daml/, dist/, node_modules/) |
 | `keytar-backend.ts` | `createBackendWithFallback()` | OS keychain backend via keytar with in-memory fallback |
 | `serve.ts` | `createServeServer(deps)` | Canton IDE Protocol server: REST + WebSocket API for any IDE client |
 | `doctor.ts` | `createDoctor(deps)` | Environment diagnostics: Node, Java, SDK, Docker, ports |
 | `daml-parser.ts` | `parseDamlSource(source)` | Regex-based Daml source parser: templates, fields, choices, signatories |
+| `splice-public.ts` | `createStableSplice(deps)` | Stable public Splice surface orchestration for scan, token-standard, ANS, and validator-user flows |
 
 ## Playground (`playground/`)
 
@@ -204,7 +216,7 @@ vi.spyOn(process.stdout, 'write').mockReturnValue(true)
 
 - E1xxx: Configuration (E1001 not found, E1002 invalid YAML, E1003 schema violation, E1004 directory exists)
 - E2xxx: SDK/Tools (E2001 not installed, E2002 version mismatch, E2003 command failed)
-- E3xxx: Sandbox (E3001 start failed, E3002 port in use, E3003 health timeout, E3004 Docker not available, E3005 Docker Compose failed)
+- E3xxx: Sandbox and local runtimes (E3001 start failed, E3002 port in use, E3003 health timeout, E3004 Docker not available, E3005 Docker Compose failed, E3006 LocalNet workspace invalid, E3007 LocalNet command failed)
 - E4xxx: Build (E4001 Daml error, E4002 DAR not found)
 - E5xxx: Test (E5001 execution failed)
 - E6xxx: Deploy (E6001 auth failed, E6002 unreachable, E6003 upload failed, E6004 exists)

@@ -29,14 +29,21 @@ interface KeytarModule {
   findCredentials(service: string): Promise<Array<{account: string; password: string}>>
 }
 
+interface KeytarBackendOptions {
+  loadKeytar?: () => Promise<KeytarModule>
+}
+
 /**
  * Create a KeychainBackend backed by the OS keychain via keytar.
  * Throws if keytar is not installed or cannot be loaded.
  */
-export async function createKeytarBackend(): Promise<KeychainBackend> {
+export async function createKeytarBackend(options: KeytarBackendOptions = {}): Promise<KeychainBackend> {
   // Dynamic import so the module is optional at install time
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const keytar = await (import('keytar' as string) as Promise<KeytarModule>)
+  const loadKeytar = options.loadKeytar
+    ?? (() =>
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      import('keytar' as string) as Promise<KeytarModule>)
+  const keytar = await loadKeytar()
 
   return {
     async getPassword(service: string, account: string): Promise<string | null> {
@@ -68,9 +75,13 @@ export async function createKeytarBackend(): Promise<KeychainBackend> {
  *
  * Returns `{backend, isKeychain}` so callers can warn when falling back.
  */
-export async function createBackendWithFallback(): Promise<{backend: KeychainBackend; isKeychain: boolean}> {
+export async function createBackendWithFallback(
+  options: {
+    createKeytarBackend?: () => Promise<KeychainBackend>
+  } = {},
+): Promise<{backend: KeychainBackend; isKeychain: boolean}> {
   try {
-    const backend = await createKeytarBackend()
+    const backend = await (options.createKeytarBackend ?? (() => createKeytarBackend()))()
     return {backend, isKeychain: true}
   } catch {
     return {backend: createInMemoryBackend(), isKeychain: false}

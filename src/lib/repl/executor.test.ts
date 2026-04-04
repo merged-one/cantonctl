@@ -106,6 +106,19 @@ describe('Executor', () => {
       await executor.execute({type: 'parties'})
       expect(output.info).toHaveBeenCalledWith('No parties found')
     })
+
+    it('fills missing party fields with empty strings in the rendered table', async () => {
+      const {client, executor, output} = createTestExecutor()
+      client.getParties.mockResolvedValue({
+        partyDetails: [{}],
+      })
+
+      await executor.execute({type: 'parties'})
+      expect(output.table).toHaveBeenCalledWith(
+        ['Party', 'ID', 'Local'],
+        [['', '', '']],
+      )
+    })
   })
 
   describe('query', () => {
@@ -194,6 +207,20 @@ describe('Executor', () => {
         commands: [{ExerciseCommand: {argument: {}, choiceName: 'Accept', contractId: 'c123'}}],
       }))
       expect(output.success).toHaveBeenCalledWith('Choice exercised')
+    })
+
+    it('throws on invalid exercise payload json', async () => {
+      const {executor} = createTestExecutor()
+      const cmd: ReplCommand = {
+        action: 'exercise',
+        choiceName: 'Accept',
+        contractId: 'c123',
+        party: 'Alice',
+        payload: 'not json',
+        type: 'submit',
+      }
+
+      await expect(executor.execute(cmd)).rejects.toThrow(CantonctlError)
     })
   })
 

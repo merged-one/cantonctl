@@ -24,6 +24,8 @@ ENV DEBIAN_FRONTEND=noninteractive
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
     curl \
+    docker-compose-v2 \
+    docker.io \
     git \
     gnupg \
     && rm -rf /var/lib/apt/lists/*
@@ -88,4 +90,4 @@ COPY scripts/ci-docker-entrypoint.sh /usr/local/bin/ci-entrypoint.sh
 RUN chmod +x /usr/local/bin/ci-entrypoint.sh
 
 ENTRYPOINT ["ci-entrypoint.sh"]
-CMD ["all"]
+CMD ["required"]

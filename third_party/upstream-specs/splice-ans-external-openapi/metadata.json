@@ -1,0 +1,36 @@
+{
+  "version": 1,
+  "sourceId": "splice-ans-external-openapi",
+  "name": "Splice ANS external API",
+  "family": "validator",
+  "stability": "stable-external",
+  "format": "openapi",
+  "artifactVersion": "0.0.1",
+  "fetchedAt": "2026-04-02T20:11:16.928Z",
+  "selectorApplied": false,
+  "selector": null,
+  "upstream": {
+    "kind": "git",
+    "path": "apps/validator/src/main/openapi/ans-external.yaml",
+    "ref": "275c31b8545ba33e66576e8298521e251eb34b21",
+    "repo": "https://github.com/hyperledger-labs/splice",
+    "url": "https://raw.githubusercontent.com/hyperledger-labs/splice/275c31b8545ba33e66576e8298521e251eb34b21/apps/validator/src/main/openapi/ans-external.yaml"
+  },
+  "files": {
+    "source": "source.yaml",
+    "selected": "selected.yaml"
+  },
+  "mirror": {
+    "entry": "mirror/apps/validator/src/main/openapi/ans-external.yaml",
+    "dependencies": [
+      {
+        "path": "mirror/apps/common/src/main/openapi/common-external.yaml",
+        "sha256": "73f59af80ba70f7f6dbdfe321de97f08bfcaa18a6f6520a40d4c9b6b501de314"
+      }
+    ]
+  },
+  "hashes": {
+    "sourceSha256": "2999da38ddc9bfdadcf687a18386e3f60de4f96e3697d57a868ffc191f691bc5",
+    "selectedSha256": "2999da38ddc9bfdadcf687a18386e3f60de4f96e3697d57a868ffc191f691bc5"
+  }
+}

@@ -4,7 +4,7 @@ Create a Canton token contract with Mint, Transfer, and Burn operations, then st
 
 **Difficulty:** Beginner
 **Time:** 5 minutes
-**Prerequisites:** Node.js 18+, dpm or daml CLI installed
+**Prerequisites:** Node.js 18+, `dpm` CLI installed
 
 ## Steps
 

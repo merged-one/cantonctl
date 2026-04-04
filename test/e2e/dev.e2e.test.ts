@@ -4,8 +4,8 @@
  * End-to-end tests for `cantonctl dev` (DevServer). These tests start a real
  * Canton sandbox, verify health, party provisioning, and hot-reload.
  *
- * Prerequisites: daml CLI on PATH, Java 21+
- * Skip condition: Tests are skipped if daml is not available.
+ * Prerequisites: supported SDK CLI on PATH (`dpm` current, `daml` legacy), Java 21+
+ * Skip condition: Tests are skipped if no supported SDK CLI is available.
  *
  * IMPORTANT: These tests use real ports. Each test uses unique ports to avoid
  * conflicts. Sandbox startup takes ~8-10 seconds.
@@ -24,13 +24,13 @@ import {createSandboxToken} from '../../src/lib/jwt.js'
 import {createOutput} from '../../src/lib/output.js'
 import {createProcessRunner} from '../../src/lib/process-runner.js'
 import {scaffoldProject} from '../../src/lib/scaffold.js'
-import {hasDaml, SDK_VERSION} from './helpers.js'
+import {hasSdk, SDK_VERSION} from './helpers.js'
 
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 
-const SDK_AVAILABLE = hasDaml()
+const SDK_AVAILABLE = hasSdk()
 const describeWithSdk = SDK_AVAILABLE ? describe : describe.skip
 
 /** Find the first .dar file in a directory. */

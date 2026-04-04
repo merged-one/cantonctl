@@ -1,0 +1,7 @@
+{
+  "description": "Liquidity pool with AddLiquidity and Swap choices",
+  "extraDirectories": [
+    "frontend",
+    "frontend/src"
+  ]
+}

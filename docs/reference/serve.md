@@ -7,6 +7,7 @@ Starts the Canton IDE Protocol server, a headless REST + WebSocket API that any 
 ```bash
 cantonctl serve                     # Start at localhost:4000
 cantonctl serve --port 8080         # Custom port
+cantonctl serve --profile splice-devnet --no-sandbox
 cantonctl serve --no-sandbox        # Connect to existing sandbox
 cantonctl serve --json              # Output connection info as JSON
 ```
@@ -16,6 +17,7 @@ cantonctl serve --json              # Output connection info as JSON
 | Flag | Default | Description |
 |------|---------|-------------|
 | `--port`, `-p` | 4000 | Server port |
+| `--profile` | - | Resolved runtime profile exposed through the IDE server |
 | `--json-api-port` | 7575 | Canton JSON Ledger API port |
 | `--sandbox-port` | 5001 | Canton sandbox port |
 | `--no-sandbox` | false | Connect to an existing sandbox |
@@ -39,11 +41,57 @@ All endpoints return JSON. Base URL: `http://localhost:{port}`.
 GET /api/health
 ```
 
-Returns sandbox health and Canton version.
+Returns active ledger health for the selected profile plus the current profile service summary.
 
 ```json
-{"healthy": true, "version": "3.4.9"}
+{
+  "healthy": true,
+  "version": "3.4.9",
+  "profile": {"name": "sandbox", "kind": "sandbox", "experimental": false},
+  "services": [{"name": "ledger", "status": "healthy", "healthy": true}]
+}
 ```
+
+### Runtime Profile
+
+```
+GET /api/profile
+PUT /api/profile
+Content-Type: application/json
+
+{"profile": "splice-devnet"}
+```
+
+Returns the available profiles, the currently selected profile, and its resolution source. `PUT` switches the active profile for ledger queries, service-health checks, and stable Splice reads without restarting the server.
+
+### Profile Status
+
+```
+GET /api/profile/status
+GET /api/service-health
+```
+
+Returns service-health for the selected profile. The server probes `ledger`, `scan` or `scanProxy`, `validator`, `tokenStandard`, and `ans` when configured.
+
+```json
+{
+  "healthy": true,
+  "profile": {"name": "splice-devnet", "kind": "remote-validator", "experimental": false},
+  "services": [
+    {"name": "ledger", "endpoint": "https://ledger.example.com", "status": "healthy", "healthy": true, "version": "3.5.0"},
+    {"name": "scan", "endpoint": "https://scan.example.com", "status": "healthy", "healthy": true},
+    {"name": "validator", "endpoint": "https://validator.example.com/api/validator", "status": "healthy", "healthy": true}
+  ]
+}
+```
+
+### Profile Compatibility
+
+```
+GET /api/profile/compat
+```
+
+Returns the same compatibility summary as `cantonctl compat check`, scoped to the currently selected profile.
 
 ### Files
 
@@ -206,6 +254,8 @@ Content-Type: application/json
 
 Submits a command to the Canton ledger and waits for the result. Supports `CreateCommand` and `ExerciseCommand`.
 
+The response preserves the ledger transaction payload and surfaces `updateId` at the top level for IDE clients that key off it.
+
 ### Build
 
 ```
@@ -228,6 +278,37 @@ Runs Daml Script tests. Returns test result.
 
 ```json
 {"passed": true, "output": "Test Summary\n...", "durationMs": 1500}
+```
+
+### Stable Splice Reads
+
+```
+GET /api/splice/token-holdings?party={partyId}
+GET /api/splice/scan/updates?pageSize=20
+```
+
+Expose a minimal stable Splice utility surface through the active profile.
+
+`/api/splice/token-holdings` returns ledger-backed token holdings visible to the given party.
+
+```json
+{
+  "endpoint": "https://ledger.example.com",
+  "holdings": [{"contractId": "holding-1", "owner": "Alice", "amount": "5.0000000000"}],
+  "interfaceId": "#splice-api-token-holding-v1:Splice.Api.Token.HoldingV1:Holding",
+  "warnings": []
+}
+```
+
+`/api/splice/scan/updates` returns the stable public Scan update history for the active profile.
+
+```json
+{
+  "endpoint": "https://scan.example.com",
+  "source": "scan",
+  "updates": [{"updateId": "update-1", "kind": "transaction", "migrationId": 7, "recordTime": "2026-04-02T20:00:00Z"}],
+  "warnings": []
+}
 ```
 
 ## WebSocket Protocol

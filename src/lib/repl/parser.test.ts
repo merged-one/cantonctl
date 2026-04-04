@@ -124,6 +124,14 @@ describe('parseCommand', () => {
         type: 'query',
       })
     })
+
+    it('ignores extra positional tokens after the template id', () => {
+      expect(parseCommand('query MyModule:MyTemplate ignored --party Alice')).toEqual({
+        party: 'Alice',
+        templateId: 'MyModule:MyTemplate',
+        type: 'query',
+      })
+    })
   })
 
   describe('submit create command', () => {
@@ -185,6 +193,10 @@ describe('parseCommand', () => {
       } catch (err) {
         expect((err as CantonctlError).code).toBe(ErrorCode.CONSOLE_PARSE_ERROR)
       }
+    })
+
+    it('throws CONSOLE_PARSE_ERROR for create with too few args', () => {
+      expect(() => parseCommand('submit Alice create')).toThrow(CantonctlError)
     })
 
     it('throws CONSOLE_PARSE_ERROR for unknown action', () => {

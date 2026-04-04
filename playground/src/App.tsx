@@ -5,6 +5,7 @@ import {api} from './lib/api'
 import {useBuild} from './hooks/useBuild'
 import {useContracts} from './hooks/useContracts'
 import {useFiles} from './hooks/useFiles'
+import {useProfile} from './hooks/useProfile'
 import {useTemplates} from './hooks/useTemplates'
 import {Editor} from './panels/Editor'
 import {FileExplorer} from './panels/FileExplorer'
@@ -20,6 +21,7 @@ export function App() {
   const files = useFiles()
   const contracts = useContracts()
   const build = useBuild()
+  const profile = useProfile()
   const {templates} = useTemplates()
   const [viewMode, setViewMode] = useState<ViewMode>('editor')
 
@@ -41,6 +43,23 @@ export function App() {
             <span className="text-zinc-300"> Playground</span>
           </h1>
           <div className="h-4 w-px bg-zinc-800" />
+          {profile.profiles.length > 0 && (
+            <>
+              <select
+                value={profile.selectedProfile?.name ?? ''}
+                onChange={(event) => { void profile.switchProfile(event.target.value) }}
+                disabled={profile.switching}
+                className="bg-zinc-900 border border-zinc-800 text-zinc-300 text-[11px] rounded px-2 py-1 outline-none"
+              >
+                {profile.profiles.map(entry => (
+                  <option key={entry.name} value={entry.name}>
+                    {entry.name} ({entry.kind})
+                  </option>
+                ))}
+              </select>
+              <div className="h-4 w-px bg-zinc-800" />
+            </>
+          )}
           <PartySelector
             parties={contracts.parties}
             activeParty={contracts.activeParty}
@@ -176,7 +195,7 @@ export function App() {
           /* Topology View */
           <div className="flex-1 flex flex-col overflow-hidden">
             <div className="flex-1 overflow-hidden">
-              <TopologyView />
+              <TopologyView activeParty={contracts.activeParty} />
             </div>
             <div className="h-40 shrink-0 border-t border-zinc-800/50">
               <Terminal

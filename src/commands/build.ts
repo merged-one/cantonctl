@@ -10,55 +10,13 @@ import * as fs from 'node:fs'
 import * as path from 'node:path'
 import {watch} from 'chokidar'
 
-import {createBuilder} from '../lib/builder.js'
-import {createDamlSdk} from '../lib/daml.js'
+import {createBuilder, type Builder} from '../lib/builder.js'
+import {createDamlSdk, type DamlSdk} from '../lib/daml.js'
 import {CantonctlError} from '../lib/errors.js'
 import {createOutput} from '../lib/output.js'
-import {createPluginHookManager} from '../lib/plugin-hooks.js'
-import {createProcessRunner} from '../lib/process-runner.js'
-
-/** Find the first .dar file in a directory. */
-async function findDarFile(dir: string): Promise<string | null> {
-  try {
-    const entries = await fs.promises.readdir(dir)
-    const darFile = entries.find(e => e.endsWith('.dar'))
-    return darFile ? path.join(dir, darFile) : null
-  } catch {
-    return null
-  }
-}
-
-/** Get file modification time in ms since epoch. */
-async function getFileMtime(filePath: string): Promise<number | null> {
-  try {
-    const stat = await fs.promises.stat(filePath)
-    return stat.mtimeMs
-  } catch {
-    return null
-  }
-}
-
-/** Get the newest mtime among all .daml files in a directory (recursive). */
-async function getDamlSourceMtime(dir: string): Promise<number> {
-  let newest = 0
-  try {
-    const entries = await fs.promises.readdir(dir, {withFileTypes: true})
-    for (const entry of entries) {
-      const fullPath = path.join(dir, entry.name)
-      if (entry.isDirectory()) {
-        const sub = await getDamlSourceMtime(fullPath)
-        if (sub > newest) newest = sub
-      } else if (entry.name.endsWith('.daml')) {
-        const stat = await fs.promises.stat(fullPath)
-        if (stat.mtimeMs > newest) newest = stat.mtimeMs
-      }
-    }
-  } catch {
-    // Directory doesn't exist
-  }
-
-  return newest
-}
+import {createPluginHookManager, type PluginHookManager} from '../lib/plugin-hooks.js'
+import {createProcessRunner, type ProcessRunner} from '../lib/process-runner.js'
+import {findDarFile, getFileMtime, getNewestDamlSourceMtime} from '../lib/runtime-support.js'
 
 export default class Build extends Command {
   static override description = 'Compile Daml contracts and generate TypeScript bindings'
@@ -98,10 +56,11 @@ export default class Build extends Command {
     const out = createOutput({json: flags.json})
 
     try {
-      const runner = createProcessRunner()
-      const sdk = createDamlSdk({runner})
-      const hooks = createPluginHookManager()
-      const builder = createBuilder({findDarFile, getDamlSourceMtime, getFileMtime, hooks, sdk})
+      const runner = this.createRunner()
+      const sdk = this.createSdk(runner)
+      const hooks = this.createHooks()
+      const builder = this.createBuilder({hooks, sdk})
+      const projectDir = this.getProjectDir()
 
       if (flags.watch) {
         // Watch mode: continuous compilation
@@ -113,9 +72,9 @@ export default class Build extends Command {
 
         const {stop} = await builder.watch({
           output: out,
-          projectDir: process.cwd(),
+          projectDir,
           signal: controller.signal,
-          watch: (paths, opts) => watch(paths, opts),
+          watch: this.createWatcher(),
         })
 
         const shutdown = async () => {
@@ -140,7 +99,7 @@ export default class Build extends Command {
         }
 
         // Do an initial build
-        const result = await builder.build({force: flags.force, projectDir: process.cwd()})
+        const result = await builder.build({force: flags.force, projectDir})
         if (result.cached) {
           out.success('Build up to date (cached)')
         } else {
@@ -162,8 +121,8 @@ export default class Build extends Command {
       out.info('Compiling Daml contracts...')
 
       const result = flags.codegen
-        ? await builder.buildWithCodegen({force: flags.force, language: 'ts', projectDir: process.cwd()})
-        : await builder.build({force: flags.force, projectDir: process.cwd()})
+        ? await builder.buildWithCodegen({force: flags.force, language: 'ts', projectDir})
+        : await builder.build({force: flags.force, projectDir})
 
       if (result.cached) {
         out.success('Build up to date (cached)')
@@ -175,7 +134,7 @@ export default class Build extends Command {
       }
 
       if (result.darPath) {
-        out.info(`DAR: ${path.relative(process.cwd(), result.darPath)}`)
+        out.info(`DAR: ${path.relative(projectDir, result.darPath)}`)
       }
 
       out.result({
@@ -198,5 +157,35 @@ export default class Build extends Command {
 
       throw err
     }
+  }
+
+  protected createBuilder(deps: {hooks: PluginHookManager; sdk: DamlSdk}): Builder {
+    return createBuilder({
+      findDarFile,
+      getDamlSourceMtime: getNewestDamlSourceMtime,
+      getFileMtime,
+      hooks: deps.hooks,
+      sdk: deps.sdk,
+    })
+  }
+
+  protected createHooks(): PluginHookManager {
+    return createPluginHookManager()
+  }
+
+  protected createRunner(): ProcessRunner {
+    return createProcessRunner()
+  }
+
+  protected createSdk(runner: ProcessRunner): DamlSdk {
+    return createDamlSdk({runner})
+  }
+
+  protected createWatcher() {
+    return (paths: string | string[], opts: Parameters<typeof watch>[1]) => watch(paths, opts)
+  }
+
+  protected getProjectDir(): string {
+    return process.cwd()
   }
 }

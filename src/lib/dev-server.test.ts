@@ -326,6 +326,23 @@ describe('DevServer', () => {
       await expect(server.start({...defaultOpts, signal: controller.signal}))
         .rejects.toThrow()
     })
+
+    it('uses default health and debounce options when they are omitted', async () => {
+      const deps = createDefaultDeps()
+      const server = createDevServer(deps)
+
+      await server.start({
+        jsonApiPort: 7575,
+        port: 5001,
+        projectDir: '/project',
+      })
+
+      expect(deps.sdk.startSandbox).toHaveBeenCalledWith({
+        jsonApiPort: 7575,
+        port: 5001,
+      })
+      expect(deps.watch).toHaveBeenCalledWith(expect.stringContaining('daml'), expect.anything())
+    })
   })
 
   describe('port checking', () => {
@@ -406,6 +423,29 @@ describe('DevServer', () => {
         expect(err).toBeInstanceOf(CantonctlError)
         expect((err as CantonctlError).code).toBe(ErrorCode.SANDBOX_START_FAILED)
       }
+    })
+
+    it('does not log an unexpected exit before the ledger client is created', async () => {
+      const mockProc = createMockProcess()
+      const sdk = createMockSdk()
+      const output = createMockOutput()
+      sdk.detect.mockResolvedValue({path: '/bin/dpm', tool: 'dpm', version: '3.4.9'})
+      sdk.startSandbox.mockResolvedValue(mockProc)
+
+      const deps = createDefaultDeps({
+        createToken: vi.fn().mockImplementation(async () => {
+          for (const cb of mockProc._exitCallbacks) cb(137)
+          return 'mock-jwt-token'
+        }),
+        output,
+        sdk,
+      })
+      const server = createDevServer(deps)
+
+      await expect(server.start(defaultOpts)).rejects.toMatchObject({
+        code: ErrorCode.SANDBOX_START_FAILED,
+      })
+      expect(output.error).not.toHaveBeenCalledWith(expect.stringContaining('exited unexpectedly'))
     })
   })
 
@@ -672,6 +712,58 @@ describe('DevServer', () => {
       await vi.runAllTimersAsync()
 
       expect(output.error).toHaveBeenCalledWith(expect.stringContaining('unexpected crash'))
+      vi.useRealTimers()
+    })
+
+    it('ignores rebuild triggers after the sandbox has already exited', async () => {
+      vi.useFakeTimers()
+      const watcher = createMockWatcher()
+      const sdk = createMockSdk()
+      const mockProc = createMockProcess()
+      sdk.detect.mockResolvedValue({path: '/bin/dpm', tool: 'dpm', version: '3.4.9'})
+      sdk.startSandbox.mockResolvedValue(mockProc)
+
+      const deps = createDefaultDeps({
+        sdk,
+        watch: vi.fn().mockReturnValue(watcher),
+      })
+      const server = createDevServer(deps)
+      await server.start(defaultOpts)
+
+      for (const cb of mockProc._exitCallbacks) cb(0)
+      watcher.handlers.change('/project/daml/Main.daml')
+      await vi.runAllTimersAsync()
+
+      expect(sdk.build).not.toHaveBeenCalled()
+      vi.useRealTimers()
+    })
+
+    it('formats non-Error build failures with String(err)', async () => {
+      vi.useFakeTimers()
+      const watcher = createMockWatcher()
+      const sdk = createMockSdk()
+      const client = createMockClient()
+      const output = createMockOutput()
+      sdk.detect.mockResolvedValue({path: '/bin/dpm', tool: 'dpm', version: '3.4.9'})
+      sdk.startSandbox.mockResolvedValue(createMockProcess())
+      sdk.build.mockRejectedValue('boom')
+      client.getVersion.mockResolvedValue({version: '3.4.9'})
+      client.getParties.mockResolvedValue({partyDetails: []})
+      client.allocateParty.mockResolvedValue({partyDetails: {}})
+
+      const deps = createDefaultDeps({
+        createClient: () => client,
+        output,
+        sdk,
+        watch: vi.fn().mockReturnValue(watcher),
+      })
+      const server = createDevServer(deps)
+      await server.start(defaultOpts)
+
+      watcher.handlers.change('/project/daml/Main.daml')
+      await vi.runAllTimersAsync()
+
+      expect(output.error).toHaveBeenCalledWith('Build failed: boom')
       vi.useRealTimers()
     })
   })

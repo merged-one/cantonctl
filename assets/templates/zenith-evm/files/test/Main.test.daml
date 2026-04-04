@@ -1,0 +1,30 @@
+module Main.Test where
+
+import Daml.Script
+import Main
+
+testCreateBridgeRecord : Script ()
+testCreateBridgeRecord = script do
+  operator <- allocateParty "Operator"
+  submit operator do
+    createCmd EvmBridgeRecord with
+      operator
+      evmContractAddress = "0x1234567890abcdef1234567890abcdef12345678"
+      tokenName = "ZenithToken"
+      totalSupply = 1000000.0
+  pure ()
+
+testSyncFromEvm : Script ()
+testSyncFromEvm = script do
+  operator <- allocateParty "Operator"
+  recordId <- submit operator do
+    createCmd EvmBridgeRecord with
+      operator
+      evmContractAddress = "0x0000000000000000000000000000000000000000"
+      tokenName = "ZenithToken"
+      totalSupply = 0.0
+  submit operator do
+    exerciseCmd recordId SyncFromEvm with
+      newAddress = "0xabcdefabcdefabcdefabcdefabcdefabcdefabcd"
+      newSupply = 500000.0
+  pure ()

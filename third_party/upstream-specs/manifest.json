@@ -1,0 +1,210 @@
+{
+  "version": 1,
+  "generatedAt": "2026-04-02T20:11:16.928Z",
+  "syncedSourceIds": [
+    "canton-json-ledger-api-openapi",
+    "splice-scan-external-openapi",
+    "splice-scan-proxy-openapi",
+    "splice-ans-external-openapi",
+    "splice-dapp-api-openrpc"
+  ],
+  "sources": [
+    {
+      "version": 1,
+      "sourceId": "canton-json-ledger-api-openapi",
+      "name": "Canton JSON Ledger API OpenAPI",
+      "family": "ledger-json-api",
+      "stability": "stable-external",
+      "format": "openapi",
+      "artifactVersion": "3.5.0-SNAPSHOT",
+      "fetchedAt": "2026-04-02T20:11:16.928Z",
+      "selectorApplied": false,
+      "selector": null,
+      "upstream": {
+        "kind": "git",
+        "path": "community/ledger/ledger-json-api/src/test/resources/json-api-docs/openapi.yaml",
+        "ref": "v3.4.11",
+        "repo": "https://github.com/digital-asset/canton",
+        "url": "https://raw.githubusercontent.com/digital-asset/canton/v3.4.11/community/ledger/ledger-json-api/src/test/resources/json-api-docs/openapi.yaml"
+      },
+      "files": {
+        "source": "source.yaml",
+        "selected": "selected.yaml"
+      },
+      "mirror": {
+        "entry": "mirror/community/ledger/ledger-json-api/src/test/resources/json-api-docs/openapi.yaml",
+        "dependencies": []
+      },
+      "hashes": {
+        "sourceSha256": "72760bdd836ab6316430590d353dbe05c0d7953eb8e59344beced0665e8c0f0d",
+        "selectedSha256": "72760bdd836ab6316430590d353dbe05c0d7953eb8e59344beced0665e8c0f0d"
+      },
+      "directory": "canton-json-ledger-api-openapi"
+    },
+    {
+      "version": 1,
+      "sourceId": "splice-scan-external-openapi",
+      "name": "Splice Scan external API",
+      "family": "scan",
+      "stability": "stable-external",
+      "format": "openapi",
+      "artifactVersion": "0.0.1",
+      "fetchedAt": "2026-04-02T20:11:16.928Z",
+      "selectorApplied": true,
+      "selector": {
+        "tagsAllOf": [
+          "external",
+          "scan"
+        ],
+        "tagsNoneOf": [
+          "internal",
+          "pre-alpha"
+        ]
+      },
+      "upstream": {
+        "kind": "git",
+        "path": "apps/scan/src/main/openapi/scan.yaml",
+        "ref": "275c31b8545ba33e66576e8298521e251eb34b21",
+        "repo": "https://github.com/hyperledger-labs/splice",
+        "url": "https://raw.githubusercontent.com/hyperledger-labs/splice/275c31b8545ba33e66576e8298521e251eb34b21/apps/scan/src/main/openapi/scan.yaml"
+      },
+      "files": {
+        "source": "source.yaml",
+        "selected": "selected.yaml"
+      },
+      "mirror": {
+        "entry": "mirror/apps/scan/src/main/openapi/scan.yaml",
+        "dependencies": [
+          {
+            "path": "mirror/apps/common/src/main/openapi/common-internal.yaml",
+            "sha256": "f99d5314c70f553b2533a14d57ddff5f114020c38987679a6addb3bde30ee75a"
+          },
+          {
+            "path": "mirror/apps/common/src/main/openapi/common-external.yaml",
+            "sha256": "73f59af80ba70f7f6dbdfe321de97f08bfcaa18a6f6520a40d4c9b6b501de314"
+          }
+        ]
+      },
+      "hashes": {
+        "sourceSha256": "8431b1c5cb1b8e3039af1e978fbf064cc54ba7683441245e8fe354d99e88e6db",
+        "selectedSha256": "d8c78d8e2b5a69991d2e19d28f2e423dc0cc2a4e8ebd98fc707849f23e99cde3"
+      },
+      "directory": "splice-scan-external-openapi"
+    },
+    {
+      "version": 1,
+      "sourceId": "splice-scan-proxy-openapi",
+      "name": "Splice Scan proxy API",
+      "family": "validator",
+      "stability": "experimental-internal",
+      "format": "openapi",
+      "artifactVersion": "0.0.1",
+      "fetchedAt": "2026-04-02T20:11:16.928Z",
+      "selectorApplied": true,
+      "selector": {
+        "pathPrefixes": [
+          "/v0/scan-proxy/"
+        ]
+      },
+      "upstream": {
+        "kind": "git",
+        "path": "apps/validator/src/main/openapi/scan-proxy.yaml",
+        "ref": "275c31b8545ba33e66576e8298521e251eb34b21",
+        "repo": "https://github.com/hyperledger-labs/splice",
+        "url": "https://raw.githubusercontent.com/hyperledger-labs/splice/275c31b8545ba33e66576e8298521e251eb34b21/apps/validator/src/main/openapi/scan-proxy.yaml"
+      },
+      "files": {
+        "source": "source.yaml",
+        "selected": "selected.yaml"
+      },
+      "mirror": {
+        "entry": "mirror/apps/validator/src/main/openapi/scan-proxy.yaml",
+        "dependencies": [
+          {
+            "path": "mirror/apps/scan/src/main/openapi/scan.yaml",
+            "sha256": "8431b1c5cb1b8e3039af1e978fbf064cc54ba7683441245e8fe354d99e88e6db"
+          },
+          {
+            "path": "mirror/apps/common/src/main/openapi/common-internal.yaml",
+            "sha256": "f99d5314c70f553b2533a14d57ddff5f114020c38987679a6addb3bde30ee75a"
+          },
+          {
+            "path": "mirror/apps/common/src/main/openapi/common-external.yaml",
+            "sha256": "73f59af80ba70f7f6dbdfe321de97f08bfcaa18a6f6520a40d4c9b6b501de314"
+          }
+        ]
+      },
+      "hashes": {
+        "sourceSha256": "012527ca3309d385bc1b1b94c61fd42ff3f1a584335565491966ca889f232721",
+        "selectedSha256": "8114d4089b873af0eb142798acd4033e770c13c12e7a819880c56d3e088620aa"
+      },
+      "directory": "splice-scan-proxy-openapi"
+    },
+    {
+      "version": 1,
+      "sourceId": "splice-ans-external-openapi",
+      "name": "Splice ANS external API",
+      "family": "validator",
+      "stability": "stable-external",
+      "format": "openapi",
+      "artifactVersion": "0.0.1",
+      "fetchedAt": "2026-04-02T20:11:16.928Z",
+      "selectorApplied": false,
+      "selector": null,
+      "upstream": {
+        "kind": "git",
+        "path": "apps/validator/src/main/openapi/ans-external.yaml",
+        "ref": "275c31b8545ba33e66576e8298521e251eb34b21",
+        "repo": "https://github.com/hyperledger-labs/splice",
+        "url": "https://raw.githubusercontent.com/hyperledger-labs/splice/275c31b8545ba33e66576e8298521e251eb34b21/apps/validator/src/main/openapi/ans-external.yaml"
+      },
+      "files": {
+        "source": "source.yaml",
+        "selected": "selected.yaml"
+      },
+      "mirror": {
+        "entry": "mirror/apps/validator/src/main/openapi/ans-external.yaml",
+        "dependencies": [
+          {
+            "path": "mirror/apps/common/src/main/openapi/common-external.yaml",
+            "sha256": "73f59af80ba70f7f6dbdfe321de97f08bfcaa18a6f6520a40d4c9b6b501de314"
+          }
+        ]
+      },
+      "hashes": {
+        "sourceSha256": "2999da38ddc9bfdadcf687a18386e3f60de4f96e3697d57a868ffc191f691bc5",
+        "selectedSha256": "2999da38ddc9bfdadcf687a18386e3f60de4f96e3697d57a868ffc191f691bc5"
+      },
+      "directory": "splice-ans-external-openapi"
+    },
+    {
+      "version": 1,
+      "sourceId": "splice-dapp-api-openrpc",
+      "name": "Splice Wallet Gateway dApp API",
+      "family": "wallet",
+      "stability": "stable-external",
+      "format": "openrpc",
+      "artifactVersion": "0.5.0",
+      "fetchedAt": "2026-04-02T20:11:16.928Z",
+      "selectorApplied": false,
+      "selector": null,
+      "upstream": {
+        "kind": "git",
+        "path": "api-specs/openrpc-dapp-api.json",
+        "ref": "84e89330978979d4df8905bc67939b6473f23d1c",
+        "repo": "https://github.com/hyperledger-labs/splice-wallet-kernel",
+        "url": "https://raw.githubusercontent.com/hyperledger-labs/splice-wallet-kernel/84e89330978979d4df8905bc67939b6473f23d1c/api-specs/openrpc-dapp-api.json"
+      },
+      "files": {
+        "source": "source.json",
+        "selected": "selected.json"
+      },
+      "mirror": null,
+      "hashes": {
+        "sourceSha256": "b55b5b59353426e3aa98918a350f16e9d69da083dc88b2818292638bc023a2cb",
+        "selectedSha256": "b55b5b59353426e3aa98918a350f16e9d69da083dc88b2818292638bc023a2cb"
+      },
+      "directory": "splice-dapp-api-openrpc"
+    }
+  ]
+}

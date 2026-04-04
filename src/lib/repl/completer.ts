@@ -50,7 +50,7 @@ export function createCompleter(deps: CompleterDeps = {}): Completer {
 
       // Complete command name (first token)
       if (tokens.length <= 1) {
-        const prefix = tokens[0] ?? ''
+        const prefix = tokens[0]
         const matches = COMMANDS.filter(c => c.startsWith(prefix.toLowerCase()))
         return [matches, prefix]
       }

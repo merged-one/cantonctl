@@ -4,7 +4,7 @@ Start a local Canton development environment with hot-reload for rapid iteration
 
 **Difficulty:** Beginner
 **Time:** 2 minutes
-**Prerequisites:** Node.js 18+, dpm or daml CLI, an existing cantonctl project
+**Prerequisites:** Node.js 18+, `dpm` CLI, an existing cantonctl project
 
 ## Steps
 
@@ -29,7 +29,7 @@ cantonctl dev
 <!-- doctest:end -->
 
 The dev server:
-1. Detects your SDK (`dpm` or `daml`)
+1. Detects `dpm` for the current Canton 3.4 toolchain, with legacy `daml` fallback only for older projects
 2. Starts a Canton sandbox on `localhost:5001`
 3. Starts the JSON Ledger API on `localhost:7575`
 4. Provisions all parties defined in `cantonctl.yaml`
@@ -66,6 +66,6 @@ cantonctl dev --port 6001 --json-api-port 8575
 | Problem | Solution |
 |---------|----------|
 | "Port in use" (E3002) | Kill the process on that port: `lsof -i :5001` then `kill <PID>` |
-| "SDK not installed" (E2001) | Install dpm: https://www.digitalasset.com/developers |
+| "SDK not installed" (E2001) | Install DPM: `curl https://get.digitalasset.com/install/install.sh | sh` |
 | "Health timeout" (E3003) | Check system resources and port availability |
 | Hot-reload not triggering | Ensure you're editing `.daml` files (not `.yaml` or other files) |

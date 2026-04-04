@@ -5,7 +5,7 @@ Daml Script tests verify your smart contract logic before deployment. cantonctl 
 ## Prerequisites
 
 - A cantonctl project with Daml source files in `daml/`
-- Daml SDK installed (`dpm` or `daml` on PATH)
+- DPM installed (`dpm` on PATH for the current Canton 3.4 flow)
 
 ## Writing Tests
 
@@ -96,7 +96,7 @@ The `--json` output includes the failure details in `data.output`.
 
 | Error | Resolution |
 |-------|-----------|
-| E2001 (SDK not installed) | Install the Daml SDK: `./scripts/install-prerequisites.sh` |
+| E2001 (SDK not installed) | Install DPM: `./scripts/install-prerequisites.sh` |
 | E5001 (test failed) | Fix the failing test logic in your Daml source |
 
 ## Related

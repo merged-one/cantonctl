@@ -1,0 +1,30 @@
+module Main.Test where
+
+import Daml.Script
+import Main
+
+testCreateBookmark : Script ()
+testCreateBookmark = script do
+  alice <- allocateParty "Alice"
+  submit alice do
+    createCmd ScanBookmark with
+      reader = alice
+      label = "default"
+      lastMigrationId = 0
+      lastRecordTime = "2026-04-02T20:00:00Z"
+  pure ()
+
+testAdvanceCursor : Script ()
+testAdvanceCursor = script do
+  alice <- allocateParty "Alice"
+  bookmarkId <- submit alice do
+    createCmd ScanBookmark with
+      reader = alice
+      label = "default"
+      lastMigrationId = 0
+      lastRecordTime = "2026-04-02T20:00:00Z"
+  submit alice do
+    exerciseCmd bookmarkId AdvanceCursor with
+      newMigrationId = 1
+      newRecordTime = "2026-04-02T20:05:00Z"
+  pure ()

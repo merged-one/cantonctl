@@ -13,10 +13,13 @@ import {createDamlSdk} from '../../src/lib/daml.js'
 import {createProcessRunner} from '../../src/lib/process-runner.js'
 import {createTestRunner} from '../../src/lib/test-runner.js'
 import {scaffoldProject} from '../../src/lib/scaffold.js'
-import {ENV_PATH, hasDaml, SDK_VERSION} from './helpers.js'
+import {ENV_PATH, hasSdk, SDK_COMMAND, SDK_VERSION} from './helpers.js'
 
-const SDK_AVAILABLE = hasDaml()
+const SDK_AVAILABLE = hasSdk()
 const describeWithSdk = SDK_AVAILABLE ? describe : describe.skip
+const SDK_BUILD_COMMAND = SDK_COMMAND === 'daml'
+  ? 'daml build --no-legacy-assistant-warning'
+  : 'dpm build'
 
 let workDir: string
 
@@ -35,12 +38,12 @@ describeWithSdk('test E2E', () => {
     fs.writeFileSync(path.join(projectDir, 'daml.yaml'), damlYaml.replace(/sdk-version: .*/, `sdk-version: ${SDK_VERSION}`))
 
     // Build first (tests require compiled project)
-    execSync('daml build --no-legacy-assistant-warning', {
+    execSync(SDK_BUILD_COMMAND, {
       cwd: projectDir,
       env: {...process.env, PATH: ENV_PATH},
       stdio: 'pipe',
     })
-  })
+  }, 60_000)
 
   it('runs tests and reports success', async () => {
     const runner = createProcessRunner()

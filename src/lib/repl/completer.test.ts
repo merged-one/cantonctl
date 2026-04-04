@@ -31,6 +31,13 @@ describe('Completer', () => {
       const [matches] = completer.complete('xyz')
       expect(matches).toEqual([])
     })
+
+    it('handles whitespace-only input like an empty prefix', () => {
+      const completer = createCompleter()
+      const [matches, prefix] = completer.complete('   ')
+      expect(prefix).toBe('')
+      expect(matches).toEqual(['help', 'status', 'parties', 'query', 'submit', 'exit'])
+    })
   })
 
   describe('party completion after submit', () => {
@@ -72,6 +79,19 @@ describe('Completer', () => {
       const completer = createCompleter({partyNames: ['Alice', 'Bob']})
       const [matches] = completer.complete('query Template --party A')
       expect(matches).toEqual(['Alice'])
+    })
+
+    it('returns no completions for non-query trailing tokens that do not match a query flag shape', () => {
+      const completer = createCompleter({partyNames: ['Alice', 'Bob']})
+      const [matches] = completer.complete('status extra')
+      expect(matches).toEqual([])
+    })
+
+    it('returns no completions for query arguments that are neither flags nor party completions', () => {
+      const completer = createCompleter({partyNames: ['Alice', 'Bob']})
+      const [matches, line] = completer.complete('query Template literal')
+      expect(matches).toEqual([])
+      expect(line).toBe('query Template literal')
     })
   })
 })

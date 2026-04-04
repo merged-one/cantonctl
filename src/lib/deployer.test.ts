@@ -139,6 +139,19 @@ describe('Deployer', () => {
       )
     })
 
+    it('defaults projectDir to the current working directory when none is provided', async () => {
+      const cwdSpy = vi.spyOn(process, 'cwd').mockReturnValue('/cwd-project')
+      const deps = createDefaultDeps()
+      const deployer = createDeployer(deps)
+
+      await deployer.deploy({network: 'local'})
+
+      expect(deps.mockBuilder.build).toHaveBeenCalledWith(
+        expect.objectContaining({projectDir: '/cwd-project'}),
+      )
+      cwdSpy.mockRestore()
+    })
+
     it('skips build when --dar path is provided', async () => {
       const deps = createDefaultDeps()
       const deployer = createDeployer(deps)
@@ -222,6 +235,26 @@ describe('Deployer', () => {
       expect(deps.mockOutput.info).toHaveBeenCalledWith('[6/6] Verifying deployment...')
       expect(deps.mockOutput.success).toHaveBeenCalledWith('Deployed successfully to local')
     })
+
+    it('reports when the build is reused from cache', async () => {
+      const deps = createDefaultDeps({
+        builder: {
+          build: vi.fn().mockResolvedValue({
+            cached: true,
+            darPath: '/project/.daml/dist/my-app-1.0.0.dar',
+            durationMs: 100,
+            success: true,
+          }),
+          buildWithCodegen: vi.fn(),
+          watch: vi.fn(),
+        },
+      })
+      const deployer = createDeployer(deps)
+
+      await deployer.deploy(defaultOpts)
+
+      expect(deps.mockOutput.info).toHaveBeenCalledWith('  Build up to date (cached)')
+    })
   })
 
   describe('--dry-run', () => {
@@ -262,6 +295,22 @@ describe('Deployer', () => {
       }
     })
 
+    it('reports no available networks when the config does not define any', async () => {
+      const deps = createDefaultDeps({
+        config: {
+          ...DEFAULT_CONFIG,
+          networks: undefined,
+        } as CantonctlConfig,
+      })
+      const deployer = createDeployer(deps)
+
+      await expect(deployer.deploy({...defaultOpts, network: 'unknown'})).rejects.toMatchObject({
+        code: ErrorCode.CONFIG_SCHEMA_VIOLATION,
+        context: {availableNetworks: [], network: 'unknown'},
+        suggestion: expect.stringContaining('Available: none'),
+      })
+    })
+
     it('throws BUILD_DAR_NOT_FOUND when build produces no DAR', async () => {
       const deps = createDefaultDeps({
         builder: {
@@ -296,6 +345,20 @@ describe('Deployer', () => {
       }
     })
 
+    it('drops non-Error DAR read failures from the wrapped cause', async () => {
+      const deps = createDefaultDeps({
+        fs: {readFile: vi.fn().mockRejectedValue('ENOENT')},
+      })
+      const deployer = createDeployer(deps)
+
+      try {
+        await deployer.deploy(defaultOpts)
+      } catch (err) {
+        expect((err as CantonctlError).code).toBe(ErrorCode.BUILD_DAR_NOT_FOUND)
+        expect((err as Error & {cause?: unknown}).cause).toBeUndefined()
+      }
+    })
+
     it('throws DEPLOY_AUTH_FAILED when token creation fails', async () => {
       const deps = createDefaultDeps({
         createToken: vi.fn().mockRejectedValue(new Error('auth error')),
@@ -308,6 +371,20 @@ describe('Deployer', () => {
         await deployer.deploy(defaultOpts)
       } catch (err) {
         expect((err as CantonctlError).code).toBe(ErrorCode.DEPLOY_AUTH_FAILED)
+      }
+    })
+
+    it('drops non-Error auth failures from the wrapped cause', async () => {
+      const deps = createDefaultDeps({
+        createToken: vi.fn().mockRejectedValue('auth error'),
+      })
+      const deployer = createDeployer(deps)
+
+      try {
+        await deployer.deploy(defaultOpts)
+      } catch (err) {
+        expect((err as CantonctlError).code).toBe(ErrorCode.DEPLOY_AUTH_FAILED)
+        expect((err as Error & {cause?: unknown}).cause).toBeUndefined()
       }
     })
 
@@ -330,6 +407,18 @@ describe('Deployer', () => {
       } catch (err) {
         expect((err as CantonctlError).code).toBe(ErrorCode.DEPLOY_NETWORK_UNREACHABLE)
       }
+    })
+
+    it('rethrows unexpected pre-flight errors', async () => {
+      const error = new Error('boom')
+      const mockClient = createMockLedgerClient()
+      mockClient.getVersion.mockRejectedValue(error)
+      const deps = createDefaultDeps({
+        createLedgerClient: vi.fn().mockReturnValue(mockClient),
+      })
+      const deployer = createDeployer(deps)
+
+      await expect(deployer.deploy(defaultOpts)).rejects.toBe(error)
     })
 
     it('throws DEPLOY_UPLOAD_FAILED when upload is rejected', async () => {
@@ -376,6 +465,33 @@ describe('Deployer', () => {
       }
     })
 
+    it('rethrows non-upload CantonctlError failures from DAR upload', async () => {
+      const error = new CantonctlError(ErrorCode.LEDGER_CONNECTION_FAILED, {
+        context: {status: 500},
+        suggestion: 'Upstream failed.',
+      })
+      const mockClient = createMockLedgerClient()
+      mockClient.uploadDar.mockRejectedValue(error)
+      const deps = createDefaultDeps({
+        createLedgerClient: vi.fn().mockReturnValue(mockClient),
+      })
+      const deployer = createDeployer(deps)
+
+      await expect(deployer.deploy(defaultOpts)).rejects.toBe(error)
+    })
+
+    it('rethrows non-CantonctlError failures from DAR upload', async () => {
+      const error = new Error('socket closed')
+      const mockClient = createMockLedgerClient()
+      mockClient.uploadDar.mockRejectedValue(error)
+      const deps = createDefaultDeps({
+        createLedgerClient: vi.fn().mockReturnValue(mockClient),
+      })
+      const deployer = createDeployer(deps)
+
+      await expect(deployer.deploy(defaultOpts)).rejects.toBe(error)
+    })
+
     it('uses fallback actAs when no parties configured', async () => {
       const deps = createDefaultDeps({
         config: {...DEFAULT_CONFIG, parties: []},
@@ -386,6 +502,20 @@ describe('Deployer', () => {
       expect(deps.createToken).toHaveBeenCalledWith(
         expect.objectContaining({actAs: ['admin']}),
       )
+    })
+
+    it('uses empty readAs lists when parties are omitted entirely', async () => {
+      const deps = createDefaultDeps({
+        config: {...DEFAULT_CONFIG, parties: undefined},
+      })
+      const deployer = createDeployer(deps)
+
+      await deployer.deploy(defaultOpts)
+
+      expect(deps.createToken).toHaveBeenCalledWith(expect.objectContaining({
+        actAs: ['admin'],
+        readAs: [],
+      }))
     })
   })
 

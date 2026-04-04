@@ -1,0 +1,16 @@
+module Main where
+
+template WalletConnection
+  with
+    operator : Party
+    walletParty : Party
+    provider : Text
+  where
+    signatory operator, walletParty
+
+    choice RememberProvider : ContractId WalletConnection
+      with
+        nextProvider : Text
+      controller operator
+      do
+        create this with provider = nextProvider

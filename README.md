@@ -20,11 +20,11 @@ cantonctl eliminates the "infrastructure engineer before product builder" proble
 | **Daml SDK** | 3.4.11 | Smart contract compilation, testing, sandbox | `curl -sSL https://get.daml.com/ \| sh -s 3.4.11` |
 | **Java** | 21 (LTS) | JVM runtime required by Daml SDK and Canton | See below |
 
-### Optional (for `dev --full`)
+### Optional (for `dev --full` and `localnet`)
 
 | Dependency | Version | Purpose | Install |
 |-----------|---------|---------|---------|
-| **Docker** | ≥ 24 | Multi-node topology via Docker Compose | [docker.com](https://docs.docker.com/get-docker/) |
+| **Docker** | ≥ 24 | Canton multi-node topology and upstream LocalNet workspaces | [docker.com](https://docs.docker.com/get-docker/) |
 | **Canton image** | 0.5.3 | Canton runtime for multi-node mode | `docker pull ghcr.io/digital-asset/decentralized-canton-sync/docker/canton:0.5.3` |
 
 ### Verify your environment
@@ -72,6 +72,8 @@ cantonctl build
 cantonctl build --watch   # Continuous compilation on .daml changes
 cantonctl test
 cantonctl status          # Multi-node aware via .cantonctl/ directory
+cantonctl profiles list   # Inspect resolved runtime profiles
+cantonctl compat check    # Check stable-surface compatibility for a profile
 
 # Deploy to local sandbox
 cantonctl deploy
@@ -90,8 +92,11 @@ cantonctl playground
 ```
 cantonctl playground                   # Open browser IDE
 cantonctl playground --port 8080       # Custom port
+cantonctl playground --profile splice-devnet --no-open
 cantonctl serve                        # Headless API only (for VS Code, Neovim)
 ```
+
+Both `serve` and `playground` are now profile-aware: the IDE server exposes `/api/profile`, `/api/profile/status`, `/api/profile/compat`, plus stable Splice reads for token holdings and Scan updates. The browser playground can switch profiles at runtime and surfaces configured service health for ledger, scan, validator, token-standard, and ANS endpoints, with scan-proxy kept separate as a non-GA surface.
 
 **What it solves** (mapped to [Q1 2026 Developer Survey](https://forum.canton.network/t/canton-network-developer-experience-and-tooling-survey-analysis-2026/8412) pain points):
 
@@ -115,20 +120,66 @@ cantonctl serve                        # Headless API only (for VS Code, Neovim)
 |---------|-------------|--------|
 | `cantonctl init [name]` | Scaffold a new project (interactive prompts when no args) | Implemented |
 | `cantonctl dev` | Start local Canton sandbox with hot-reload | Implemented |
-| `cantonctl dev --full` | Multi-node Docker topology (synchronizer + N participants) | Implemented |
+| `cantonctl dev --full` | Canton-only multi-node Docker topology (generated under `.cantonctl/`) | Implemented |
+| `cantonctl localnet up/down/status` | Wrap an official Splice LocalNet workspace without redefining `dev --full` | Implemented |
 | `cantonctl build` | Compile Daml + generate TypeScript bindings | Implemented |
 | `cantonctl build --watch` | Continuous compilation on `.daml` file changes (chokidar) | Implemented |
 | `cantonctl test` | Run Daml Script tests with structured output | Implemented |
 | `cantonctl deploy <network>` | 6-step DAR deployment pipeline for local and remote networks | Implemented |
 | `cantonctl console` | Interactive REPL for querying and submitting ledger commands | Implemented |
-| `cantonctl status` | Show node health, version, and active parties (multi-node aware) | Implemented |
-| `cantonctl auth login/logout/status` | Manage JWT credentials per network | Implemented |
+| `cantonctl status` | Show ledger health plus profile-aware service endpoints (`--profile` supported) | Implemented |
+| `cantonctl scan updates/acs/current-state` | Query stable public Scan history, ACS snapshots, and direct current state via Scan | Implemented |
+| `cantonctl token holdings/transfer` | Read holdings and move tokens through stable holding and transfer-factory surfaces | Implemented |
+| `cantonctl ans list/create` | Read or create ANS entries through stable external ANS and Scan-backed public surfaces | Implemented |
+| `cantonctl validator traffic-buy/traffic-status` | Use stable validator-user wallet-backed traffic purchase endpoints | Implemented |
+| `cantonctl profiles list/show/validate` | Inspect and validate resolved runtime profiles | Implemented |
+| `cantonctl compat check [profile]` | Check profile compatibility against stable tracked upstream surfaces | Implemented |
+| `cantonctl codegen sync` | Sync upstream specs and regenerate stable generated clients | Implemented |
+| `cantonctl auth login/logout/status` | Manage network auth profiles and stored bearer credentials, with explicit warnings for unsafe/operator modes | Implemented |
+| `cantonctl validator experimental ...` | Operator-only validator-internal onboarding, external-party, and setup-proposal flows | Experimental |
 | `cantonctl clean` | Remove build artifacts (.daml/, dist/, .cantonctl/) | Implemented |
-| `cantonctl doctor` | Check prerequisites (Node, Java, SDK, Docker, ports) | Implemented |
-| `cantonctl serve` | Start Canton IDE Protocol server (REST + WebSocket) | Implemented |
-| `cantonctl playground` | Open Remix-like browser IDE with Monaco editor | Implemented |
+| `cantonctl doctor` | Check prerequisites plus optional profile-aware diagnostics | Implemented |
+| `cantonctl serve` | Start the profile-aware Canton IDE Protocol server (REST + WebSocket) | Implemented |
+| `cantonctl playground` | Open the profile-aware browser IDE with Monaco editor and Splice service views | Implemented |
 
 All commands except `console` and `playground` support `--json` for CI pipeline integration. All errors include error codes, suggestions, and documentation links.
+
+## Support Status
+
+GA / stable-public:
+
+- Canton sandbox workflows: `dev`, `build`, `test`, `deploy`, `status`, `serve`, and `playground`
+- `cantonctl dev --full` as the Canton-only multi-node Docker topology under `.cantonctl/`
+- profile-based config plus legacy `networks:` compatibility and `compat check`
+- `codegen sync` plus generated-spec verification
+- direct Scan update/ACS/current-state reads
+- token-standard holdings and transfer-factory transfers
+- external ANS list/create
+- validator-user traffic buy/status
+- `localnet up|status|down` plus `splice-localnet` stable/public smoke coverage
+
+Experimental or operator-only:
+
+- scan-proxy-only reads
+- `cantonctl validator experimental ...`
+- auth modes that require explicit experimental acknowledgement such as `localnet-unsafe-hmac` and `oidc-client-credentials`
+
+Required PR CI now covers unit tests, generated-spec verification, SDK core E2E, stable/public Splice E2E, and sandbox smoke. Experimental/operator-only coverage is kept in separate non-blocking jobs.
+
+Release and upgrade context:
+
+- [v0.4.0 release notes](docs/release-notes/v0.4.0-splice-support.md)
+- [v0.4.0 migration guide](docs/migration/v0.4.0-splice-support.md)
+
+## Experimental Operator Surfaces
+
+`cantonctl validator experimental ...` is intentionally separate from the stable validator-user commands. These wrappers target upstream `validator-internal` endpoints that are operator-only and may change without notice.
+
+- Every `validator experimental` command requires `--experimental`.
+- `cantonctl auth login` and `cantonctl auth status` now surface explicit auth profile modes: `env-or-keychain-jwt`, `bearer-token`, `oidc-client-credentials`, and `localnet-unsafe-hmac`.
+- `oidc-client-credentials` and `localnet-unsafe-hmac` emit clear experimental warnings in human output.
+
+See [docs/reference/experimental.md](docs/reference/experimental.md) for the unstable command surface and opt-in rules.
 
 ## Templates
 
@@ -138,18 +189,163 @@ cantonctl init my-app --template token       # Token with Mint/Transfer/Burn
 cantonctl init my-app --template defi-amm    # Liquidity pool + AMM swap
 cantonctl init my-app --template api-service # Express.js + Ledger API
 cantonctl init my-app --template zenith-evm  # Solidity + Hardhat + Canton bridge
+cantonctl init my-app --template splice-token-app   # Stable token-standard starter
+cantonctl init my-app --template splice-scan-reader # Stable Scan reader starter
+cantonctl init my-app --template splice-dapp-sdk    # Public dApp SDK starter
 cantonctl init my-app --from <github-url>    # Community template
 ```
 
 | Template | Target Audience | What's Generated |
 |----------|----------------|------------------|
-| `basic` | First-time Canton developer | Hello contract, Daml Script test, cantonctl.yaml |
-| `token` | DeFi builder | Token with Transfer/Burn/Mint, 4 test cases, React frontend scaffold |
-| `defi-amm` | AMM / liquidity pool | LiquidityPool with AddLiquidity/Swap, 2 test cases |
+| `basic` | First-time Canton developer | Hello contract, Daml Script test, profile-based `cantonctl.yaml` |
+| `token` | DeFi builder | Token with Transfer/Burn/Mint, 4 test cases, frontend starter directories |
+| `defi-amm` | AMM / liquidity pool | LiquidityPool with AddLiquidity/Swap, 2 test cases, frontend starter directories |
 | `api-service` | Backend developer | Daml Record contract + Express.js server with Ledger API endpoints |
 | `zenith-evm` | EVM developer via Zenith | Solidity ERC-20 token, Hardhat config, Canton bridge contract |
+| `splice-token-app` | Splice token app builder | Local Daml starter plus stable holdings/transfer-instruction example client and remote validator profile |
+| `splice-scan-reader` | Scan ingestion / reporting app | Local Daml starter plus stable Scan `/v2/updates` reader and remote validator profile |
+| `splice-dapp-sdk` | Wallet-connected frontend | Local Daml starter plus public `@canton-network/dapp-sdk` and `@canton-network/wallet-sdk` package starter |
 
 Community templates: any GitHub repo with a `cantonctl-template.yaml` manifest.
+
+Splice example walkthroughs:
+
+- [Splice Token App](docs/examples/splice-token-app.md)
+- [Splice Scan Reader](docs/examples/splice-scan-reader.md)
+- [Splice dApp SDK](docs/examples/splice-dapp-sdk.md)
+
+## Configuration
+
+`cantonctl.yaml` supports both the original `networks` shape and the newer profile-based shape.
+Existing projects do not need to migrate immediately. Legacy `networks` entries still load unchanged, and cantonctl normalizes them into internal profiles for newer runtime work.
+New scaffolds now generate the profile-based shape by default and keep `networks` references for compatibility with existing command defaults.
+See the [v0.4.0 migration guide](docs/migration/v0.4.0-splice-support.md) for the config upgrade path and the `dev --full` versus `localnet` split.
+
+Legacy shape:
+
+```yaml
+version: 1
+
+project:
+  name: my-app
+  sdk-version: "3.4.11"
+
+networks:
+  local:
+    type: sandbox
+    port: 5001
+    json-api-port: 7575
+```
+
+Profile-based shape:
+
+```yaml
+version: 1
+
+project:
+  name: my-app
+  sdk-version: "3.4.11"
+
+default-profile: sandbox
+
+profiles:
+  sandbox:
+    kind: sandbox
+    ledger:
+      port: 5001
+      json-api-port: 7575
+
+networks:
+  local:
+    profile: sandbox
+```
+
+Supported profile kinds are `sandbox`, `canton-multi`, `splice-localnet`, `remote-validator`, and `remote-sv-network`.
+Splice-aware scaffolds add a `splice-devnet` `remote-validator` profile with stable public service blocks and keep `sandbox` as the local default.
+
+See [docs/reference/configuration.md](docs/reference/configuration.md) for the full schema, service blocks, and migration guidance.
+
+## Profiles And Compatibility
+
+Use the profile commands to inspect the resolved control plane without starting new runtimes:
+
+```bash
+cantonctl profiles list
+cantonctl profiles show sandbox
+cantonctl profiles validate
+cantonctl status --profile sandbox
+cantonctl doctor --profile splice-devnet
+cantonctl compat check splice-devnet
+```
+
+`cantonctl compat check` stays on stable-surface-only policy. Stable tracked surfaces pass, reference-only or operator-only surfaces warn, and the project SDK version is checked against the pinned Canton compatibility baseline in the upstream manifest. Where upstream surfaces do not have a stable generated spec yet, cantonctl backs the support claim with dedicated smoke tests in CI.
+
+For repository maintainers, `cantonctl codegen sync` wraps the existing manifest-driven spec sync and generation steps:
+
+```bash
+cantonctl codegen sync
+```
+
+## Stable Splice Surfaces
+
+Remote validator profiles can now drive first-class stable public Splice commands without relying on app-internal validator APIs.
+
+```yaml
+version: 1
+
+default-profile: splice-devnet
+
+project:
+  name: my-app
+  sdk-version: "3.4.11"
+
+profiles:
+  splice-devnet:
+    kind: remote-validator
+    experimental: false
+    ledger:
+      url: https://ledger.example.com
+    scan:
+      url: https://scan.example.com
+    tokenStandard:
+      url: https://tokens.example.com
+    ans:
+      url: https://ans.example.com
+    validator:
+      url: https://validator.example.com/api/validator
+```
+
+### Scan
+
+```bash
+cantonctl scan updates --profile splice-devnet --page-size 20 --json
+cantonctl scan acs --profile splice-devnet --migration-id 7 --page-size 25 --json
+cantonctl scan current-state --profile splice-devnet
+```
+
+- `scan updates` reads stable public history and keeps parsing tolerant of unknown upstream fields.
+- `scan acs` resolves snapshot timestamps when `--record-time` is omitted, then reads the corresponding stable ACS page.
+- `scan current-state` is GA when backed by direct Scan. scan-proxy-only reads remain separate experimental coverage.
+
+See [docs/reference/scan.md](docs/reference/scan.md) for the full flag reference.
+
+### Token, ANS, And Validator User
+
+```bash
+cantonctl token holdings --profile splice-devnet --party Alice --token eyJ...
+cantonctl token transfer --profile splice-devnet --sender Alice --receiver Bob --amount 10.0 --instrument-admin Registry --instrument-id USD --token eyJ...
+cantonctl ans list --profile splice-devnet --token eyJ...
+cantonctl ans create --profile splice-devnet --name alice.unverified.ans --description "Alice profile" --url https://alice.example.com --token eyJ...
+cantonctl validator traffic-buy --profile splice-devnet --receiving-validator-party-id AliceValidator --domain-id domain::1 --traffic-amount 4096 --token eyJ...
+cantonctl validator traffic-status --profile splice-devnet --tracking-id traffic-123 --token eyJ...
+```
+
+- `token holdings` reads the stable holding Daml interface through the public JSON Ledger API.
+- `token transfer` uses the stable token-standard transfer factory plus a ledger interface-choice submission. cantonctl does not default to deprecated transfer-offer workflows.
+- `ans list` is GA when backed by external ANS or direct Scan. scan-proxy-only reads remain experimental.
+- `ans create`, `validator traffic-buy`, and `validator traffic-status` stay on the stable external service surfaces intended for downstream clients.
+
+See [docs/reference/token-standard.md](docs/reference/token-standard.md) for token command details.
 
 ## Local Development
 
@@ -171,15 +367,16 @@ cantonctl dev --port 6001        # Custom Canton node port
 cantonctl dev --json             # JSON output for CI
 ```
 
-### Multi-Node Mode (`--full`)
+### Canton Multi-Node Mode (`--full`)
 
-`cantonctl dev --full` launches a realistic multi-node Canton topology via Docker:
+`cantonctl dev --full` launches a realistic Canton-only multi-node topology via Docker:
 
 - **Single Canton container** hosting synchronizer + multiple participants (conformance kit pattern)
 - **Auto-generated configs** — Docker Compose, Canton HOCON, and bootstrap scripts from `cantonctl.yaml`
 - **Party-to-participant mapping** — `operator` → participant1, `participant` → participant2
 - **Cross-node hot-reload** — DAR changes uploaded to all participants simultaneously
 - **In-memory storage** — Fastest startup, no Postgres required
+- **Generated workspace** — files live under `.cantonctl/` and are regenerated on each run
 
 ```bash
 cantonctl dev --full                          # Multi-node on default ports (10000+)
@@ -189,11 +386,29 @@ cantonctl dev --full --canton-image <image>   # Custom Canton Docker image
 
 See [ADR-0014](docs/adr/0014-dev-full-multi-node-topology.md) for architecture details.
 
+### Splice LocalNet Workspace Wrapper
+
+`cantonctl localnet ...` is a separate workflow for official Splice LocalNet workspaces. It does not generate topology files in this repo and it does not change `dev --full`.
+
+- **Delegates upstream** — runs the workspace's own `make start|stop|status` flow
+- **Detects official layout** — expects a `Makefile`, root compose file, `.env`, config directory, and LocalNet module files
+- **Health checks** — probes validator `readyz`
+- **Endpoint discovery** — reports ledger, scan, wallet, and validator URLs derived from the upstream workspace
+
+```bash
+cantonctl localnet up --workspace ../quickstart
+cantonctl localnet up --workspace ../quickstart --profile app-provider
+cantonctl localnet status --workspace ../quickstart
+cantonctl localnet down --workspace ../quickstart
+```
+
+See [docs/reference/localnet.md](docs/reference/localnet.md) for command details and workspace expectations.
+
 ## Architecture
 
 ### Core Principles
 
-- **Test-first TDD**: Tests define the contract, implementation follows (490 tests, 98.18% statement coverage)
+- **Test-first TDD**: Tests define the contract, implementation follows across unit, stable/public E2E, sandbox, and Docker coverage
 - **Dependency injection**: Every I/O module accepts injected dependencies. Zero `vi.mock()`.
 - **AbortSignal everywhere**: All long-running operations support graceful cancellation
 - **Structured errors**: Every error is a `CantonctlError` with code (E1xxx-E8xxx), suggestion, and docs URL
@@ -203,14 +418,15 @@ See [ADR-0014](docs/adr/0014-dev-full-multi-node-topology.md) for architecture d
 
 | Module | Purpose | Test Coverage |
 |--------|---------|---------------|
-| `src/lib/config.ts` | Hierarchical config: project > user > env > flags. Zod-validated YAML. | 98% |
+| `src/lib/config.ts` | Hierarchical config loading with backward-compatible `networks` plus normalized profiles. | 98% |
+| `src/lib/config-profile.ts` | Canonical profile model and legacy-network normalization for Canton and Splice targets. | 100% |
 | `src/lib/errors.ts` | 24 error codes (E1xxx-E8xxx) with suggestions and docs URLs | 100% |
 | `src/lib/output.ts` | Human/JSON/quiet output modes, spinners, tables | 97% |
 | `src/lib/process-runner.ts` | Subprocess abstraction over execa. Injectable mock for tests. | Mock-tested |
 | `src/lib/daml.ts` | DamlSdk: detect, build, test, codegen, startSandbox | 95% |
 | `src/lib/ledger-client.ts` | HTTP client for Canton JSON Ledger API V2 (6 endpoints) | 100% |
 | `src/lib/jwt.ts` | HS256 JWT generation for sandbox auth (well-known secret) | 100% |
-| `src/lib/scaffold.ts` | Pure scaffolding logic, 5 templates, community template support, interactive mode | 100% |
+| `src/lib/scaffold.ts` | Pure scaffolding logic, 8 templates, community template support, interactive mode | 100% |
 | `src/lib/dev-server.ts` | Dev server orchestration: sandbox + health + parties + hot-reload | 100% |
 | `src/lib/builder.ts` | Build orchestration with DAR caching, codegen, and --watch mode (chokidar) | 100% |
 | `src/lib/test-runner.ts` | Test execution with structured output and ANSI stripping | 100% |
@@ -328,6 +544,7 @@ Plugins are auto-discovered from `node_modules` matching `@cantonctl/plugin-*` o
 | [ADR-0012](docs/adr/0012-test-output-parsing.md) | Test output parsing |
 | [ADR-0013](docs/adr/0013-dar-caching-strategy.md) | DAR caching strategy |
 | [ADR-0014](docs/adr/0014-dev-full-multi-node-topology.md) | Multi-node Docker topology |
+| [ADR-0015](docs/adr/ADR-0015-splice-full-support-architecture.md) | Profile-based Canton + Splice runtime architecture |
 
 ### Research & Design
 
@@ -341,13 +558,16 @@ Plugins are auto-discovered from `node_modules` matching `@cantonctl/plugin-*` o
 
 ```bash
 npm install           # Install dependencies
-npm test              # Run unit tests (399 tests)
+npm test              # Run unit tests
+npm run test:generated-specs # Verify tracked generated specs and manifest policy
 npm run test:watch    # Watch mode
-npm run test:e2e      # Run E2E tests (77 tests, requires Daml SDK + Java 21)
-npm run test:e2e:docker # Run Docker E2E tests (2 tests, requires Docker)
-npm run test:e2e:playground # Run playground E2E tests (14 tests)
-npm run test:all      # Run all 490 tests
-npm run test:coverage # Coverage report (98.18% statements)
+npm run test:e2e      # Run required E2E gate (SDK core + stable/public + sandbox)
+npm run test:e2e:stable-public # Run stable/public Splice E2E only
+npm run test:e2e:experimental # Run experimental/operator-only E2E only
+npm run test:e2e:docker # Run Docker E2E tests (requires Docker)
+npm run test:e2e:playground # Run playground E2E tests
+npm run test:all      # Run all Vitest projects
+npm run test:coverage # Coverage report
 npm run build         # Compile TypeScript
 npm run ci            # Local CI check (mirrors GitHub Actions)
 ./scripts/ci-local.sh --docker  # Docker CI check (exact GitHub Actions parity)

@@ -146,7 +146,7 @@ describe('LedgerClient', () => {
       })
       expect(result.transaction.transactionId).toBe('tx-1')
       expect(fetch).toHaveBeenCalledWith(
-        `${baseUrl}/v2/commands/submit-and-wait`,
+        `${baseUrl}/v2/commands/submit-and-wait-for-transaction`,
         expect.objectContaining({method: 'POST'}),
       )
     })
@@ -205,6 +205,24 @@ describe('LedgerClient', () => {
       expect(fetch).toHaveBeenCalledTimes(2)
       expect(fetch.mock.calls[0][0]).toContain('/v2/state/ledger-end')
       expect(fetch.mock.calls[1][0]).toContain('/v2/state/active-contracts')
+    })
+  })
+
+  describe('getLedgerEnd()', () => {
+    it('returns the reported ledger end offset', async () => {
+      const fetch = createMockFetch()
+      fetch.mockJsonResponse(200, {offset: 42})
+
+      const client = createLedgerClient({baseUrl, fetch, token})
+      await expect(client.getLedgerEnd()).resolves.toEqual({offset: 42})
+    })
+
+    it('falls back to zero when the adapter omits the offset', async () => {
+      const fetch = createMockFetch()
+      fetch.mockJsonResponse(200, {})
+
+      const client = createLedgerClient({baseUrl, fetch, token})
+      await expect(client.getLedgerEnd()).resolves.toEqual({offset: 0})
     })
   })
 

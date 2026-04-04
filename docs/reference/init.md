@@ -18,7 +18,7 @@ cantonctl init <name> [flags]
 
 | Flag | Short | Default | Description |
 |------|-------|---------|-------------|
-| `--template` | `-t` | `basic` | Project template: `basic`, `token`, `defi-amm`, `api-service`, `zenith-evm` |
+| `--template` | `-t` | `basic` | Project template: `basic`, `token`, `defi-amm`, `api-service`, `zenith-evm`, `splice-token-app`, `splice-scan-reader`, `splice-dapp-sdk` |
 | `--from` | `-f` | — | Create from a community template (GitHub URL). Mutually exclusive with `--template`. |
 | `--json` | — | `false` | Output result as JSON |
 
@@ -28,7 +28,7 @@ cantonctl init <name> [flags]
 Minimal project for first-time Canton developers.
 
 **Generated files:**
-- `cantonctl.yaml` — Project configuration
+- `cantonctl.yaml` — Profile-based project configuration
 - `daml.yaml` — Daml SDK configuration
 - `daml/Main.daml` — Hello contract with `UpdateMessage` choice
 - `test/Main.test.daml` — `testCreate` and `testUpdate` scripts
@@ -38,7 +38,7 @@ Minimal project for first-time Canton developers.
 Token contract targeting DeFi builders.
 
 **Generated files:** Same as basic, plus:
-- `frontend/src/` — React frontend scaffold
+- `frontend/src/` — Frontend starter directories
 - `daml/Main.daml` — Token contract with `Transfer`, `Burn`, `Mint` choices
 - `test/Main.test.daml` — `testMint`, `testTransfer`, `testCannotOverTransfer`, `testBurn`
 
@@ -66,6 +66,29 @@ Solidity + Hardhat project for EVM developers building via Zenith.
 - `package.json` — Hardhat + ethers dependencies
 - `daml/Main.daml` — EvmBridgeRecord contract for Canton-side state mirroring
 
+### `splice-token-app`
+Stable token-standard starter for Splice-aware applications.
+
+**Generated files:** Same as basic, plus:
+- `frontend/package.json` — TypeScript starter scripts
+- `frontend/src/token-client.ts` — Holdings and transfer-instruction example client
+- `cantonctl.yaml` — Adds a `splice-devnet` remote-validator profile with stable public service blocks
+
+### `splice-scan-reader`
+Stable Scan ingestion starter.
+
+**Generated files:** Same as basic, plus:
+- `scripts/read-scan-updates.mjs` — Reads the stable `POST /v2/updates` Scan surface
+- `cantonctl.yaml` — Adds a `splice-devnet` remote-validator profile for direct Scan access
+
+### `splice-dapp-sdk`
+Public Canton Network dApp SDK starter.
+
+**Generated files:** Same as basic, plus:
+- `frontend/package.json` — Pinned public `@canton-network/dapp-sdk` and `@canton-network/wallet-sdk` dependencies
+- `frontend/src/wallet.ts` — Public SDK discovery starter
+- `cantonctl.yaml` — Adds a `splice-devnet` remote-validator profile with stable public service blocks
+
 ## Community Templates
 
 ```bash
@@ -82,6 +105,9 @@ cantonctl init my-app
 
 # Create a token project
 cantonctl init my-defi-app --template token
+
+# Create a stable Splice token starter
+cantonctl init my-token-app --template splice-token-app
 
 # Create from a community template
 cantonctl init my-app --from https://github.com/user/canton-template

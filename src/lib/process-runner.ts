@@ -60,6 +60,15 @@ export interface ProcessRunner {
   which(cmd: string): Promise<string | null>
 }
 
+export interface ProcessRunnerDeps {
+  env?: NodeJS.ProcessEnv
+  execa?: typeof execa
+  execSync?: typeof execSync
+  existsSync?: typeof existsSync
+  homedir?: typeof os.homedir
+  platform?: typeof os.platform
+}
+
 // ---------------------------------------------------------------------------
 // Java discovery
 // ---------------------------------------------------------------------------
@@ -83,20 +92,25 @@ export interface ProcessRunner {
  * This function runs once at module init (not per-subprocess), so the cost of
  * the fallback probes is paid only once.
  */
-function resolveJavaBinDir(): string | null {
+function resolveJavaBinDir(deps: ProcessRunnerDeps): string | null {
+  const env = deps.env ?? process.env
+  const platform = deps.platform ?? os.platform
+  const execaExistsSync = deps.existsSync ?? existsSync
+  const execSyncImpl = deps.execSync ?? execSync
+
   // 1. JAVA_HOME (CI, sdkman, asdf, manual export)
-  if (process.env.JAVA_HOME) {
-    return path.join(process.env.JAVA_HOME, 'bin')
+  if (env.JAVA_HOME) {
+    return path.join(env.JAVA_HOME, 'bin')
   }
 
   // 2. macOS java_home utility (Apple/Adoptium installers register here)
-  if (os.platform() === 'darwin') {
+  if (platform() === 'darwin') {
     try {
-      const home = execSync('/usr/libexec/java_home -v 21', {
+      const home = execSyncImpl('/usr/libexec/java_home -v 21', {
         stdio: ['pipe', 'pipe', 'pipe'],
         timeout: 5_000,
       }).toString().trim()
-      if (home && existsSync(path.join(home, 'bin', 'java'))) {
+      if (home && execaExistsSync(path.join(home, 'bin', 'java'))) {
         return path.join(home, 'bin')
       }
     } catch {
@@ -107,14 +121,14 @@ function resolveJavaBinDir(): string | null {
   // 3. Homebrew well-known paths (Homebrew doesn't register with java_home)
   //    These paths are stable across Homebrew versions and are the documented
   //    install locations: https://formulae.brew.sh/formula/openjdk@21
-  const homebrewPaths = os.platform() === 'darwin' ? [
+  const homebrewPaths = platform() === 'darwin' ? [
     '/opt/homebrew/opt/openjdk@21',   // ARM (Apple Silicon)
     '/usr/local/opt/openjdk@21',      // Intel
   ] : []
 
   for (const brewPath of homebrewPaths) {
     const binDir = path.join(brewPath, 'bin')
-    if (existsSync(path.join(binDir, 'java'))) {
+    if (execaExistsSync(path.join(binDir, 'java'))) {
       return binDir
     }
   }
@@ -127,18 +141,21 @@ function resolveJavaBinDir(): string | null {
  * Create a ProcessRunner backed by execa.
  * In production, call with no arguments. In tests, provide a mock implementation.
  */
-export function createProcessRunner(): ProcessRunner {
-  const javaBinDir = resolveJavaBinDir()
+export function createProcessRunner(deps: ProcessRunnerDeps = {}): ProcessRunner {
+  const baseEnv = deps.env ?? process.env
+  const execaImpl = deps.execa ?? execa
+  const homedir = deps.homedir ?? os.homedir
+  const javaBinDir = resolveJavaBinDir(deps)
 
   const defaultToolPaths = [
-    path.join(os.homedir(), '.daml', 'bin'),
+    path.join(homedir(), '.daml', 'bin'),
     ...(javaBinDir ? [javaBinDir] : []),
   ]
 
   function resolveEnv(overrides?: Record<string, string>): Record<string, string> {
     const env: Record<string, string> = {}
 
-    for (const [key, value] of Object.entries(process.env)) {
+    for (const [key, value] of Object.entries(baseEnv)) {
       if (typeof value === 'string') {
         env[key] = value
       }
@@ -182,7 +199,7 @@ export function createProcessRunner(): ProcessRunner {
       }
 
       try {
-        const result = await execa(cmd, args, execaOpts)
+        const result = await execaImpl(cmd, args, execaOpts)
         return {
           exitCode: result.exitCode ?? 0,
           stderr: normalizeOutput(result.stderr),
@@ -204,7 +221,7 @@ export function createProcessRunner(): ProcessRunner {
     },
 
     spawn(cmd: string, args: string[], opts?: RunOptions): SpawnedProcess {
-      const proc: ResultPromise = execa(cmd, args, {
+      const proc: ResultPromise = execaImpl(cmd, args, {
         cleanup: true,
         cwd: opts?.cwd,
         env: resolveEnv(opts?.env),
@@ -247,7 +264,7 @@ export function createProcessRunner(): ProcessRunner {
 
     async which(cmd: string): Promise<string | null> {
       try {
-        const result = await execa('which', [cmd], {
+        const result = await execaImpl('which', [cmd], {
           env: resolveEnv(),
           reject: false,
         })

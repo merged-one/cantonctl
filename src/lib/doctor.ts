@@ -16,6 +16,8 @@
 
 import * as net from 'node:net'
 
+import type {CantonctlConfig} from './config.js'
+import {createCompatibilityReport} from './compat.js'
 import type {OutputWriter} from './output.js'
 import type {ProcessRunner} from './process-runner.js'
 
@@ -46,7 +48,9 @@ export interface DoctorResult {
 }
 
 export interface DoctorDeps {
+  config?: CantonctlConfig
   output: OutputWriter
+  profileName?: string
   runner: ProcessRunner
   /** Override for testing — check if port is free. */
   checkPort?: (port: number) => Promise<boolean>
@@ -76,7 +80,7 @@ function isPortFree(port: number): Promise<boolean> {
 // ---------------------------------------------------------------------------
 
 export function createDoctor(deps: DoctorDeps): Doctor {
-  const {checkPort = isPortFree, output, runner} = deps
+  const {checkPort = isPortFree, config, output, profileName, runner} = deps
 
   return {
     async check(): Promise<DoctorResult> {
@@ -97,7 +101,7 @@ export function createDoctor(deps: DoctorDeps): Doctor {
       const javaCheck = await checkJava(runner)
       checks.push(javaCheck)
 
-      // 3. Daml SDK (dpm or daml)
+      // 3. SDK CLI (`dpm` current, `daml` legacy fallback)
       const sdkCheck = await checkSdk(runner)
       checks.push(sdkCheck)
 
@@ -133,6 +137,31 @@ export function createDoctor(deps: DoctorDeps): Doctor {
         status: port7575Free ? 'pass' : 'warn',
       })
 
+      if (config) {
+        try {
+          const report = createCompatibilityReport(config, profileName)
+          checks.push({
+            detail: `${report.profile.name} (${report.profile.kind})${report.profile.experimental ? ', experimental' : ''}`,
+            name: 'Profile',
+            required: false,
+            status: report.profile.experimental ? 'warn' : 'pass',
+          })
+
+          for (const check of report.checks) {
+            checks.push({
+              detail: check.detail,
+              fix: undefined,
+              name: check.name,
+              required: false,
+              status: check.status,
+            })
+          }
+        } catch {
+          // Profile diagnostics are best-effort. Doctor should still report the
+          // environment even when no resolvable profile is available.
+        }
+      }
+
       const passed = checks.filter(c => c.status === 'pass').length
       const failed = checks.filter(c => c.status === 'fail').length
       const warned = checks.filter(c => c.status === 'warn').length
@@ -165,7 +194,7 @@ async function checkJava(runner: ProcessRunner): Promise<CheckResult> {
     const majorVersion = versionMatch ? Number.parseInt(versionMatch[1], 10) : 0
 
     return {
-      detail: output.split('\n')[0]?.trim() ?? 'Unknown version',
+      detail: output.split('\n')[0]?.trim() || 'Unknown version',
       fix: majorVersion < 21 ? 'Upgrade to Java 21: brew install openjdk@21' : undefined,
       name: 'Java 21',
       required: true,
@@ -187,9 +216,9 @@ async function checkSdk(runner: ProcessRunner): Promise<CheckResult> {
   const dpmPath = await runner.which('dpm')
   if (dpmPath) {
     try {
-      const result = await runner.run('dpm', ['--version'], {ignoreExitCode: true})
+      const result = await runner.run('dpm', ['version', '--active'], {ignoreExitCode: true})
       return {
-        detail: `dpm ${result.stdout.trim() || 'installed'}`,
+        detail: `dpm ${result.stdout.trim() || result.stderr.trim() || 'installed'}`,
         name: 'Daml SDK',
         required: true,
         status: 'pass',
@@ -204,7 +233,7 @@ async function checkSdk(runner: ProcessRunner): Promise<CheckResult> {
       const result = await runner.run('daml', ['version'], {ignoreExitCode: true})
       const version = result.stdout.trim() || result.stderr.trim()
       return {
-        detail: `daml ${version.split('\n')[0] || 'installed'}`,
+        detail: `daml ${version.split('\n')[0] || 'installed'} (legacy fallback)`,
         name: 'Daml SDK',
         required: true,
         status: 'pass',
@@ -214,7 +243,7 @@ async function checkSdk(runner: ProcessRunner): Promise<CheckResult> {
 
   return {
     detail: 'Not found',
-    fix: 'Install Daml SDK: curl -sSL https://get.daml.com/ | sh -s 3.4.11',
+    fix: 'Install DPM: curl https://get.digitalasset.com/install/install.sh | sh',
     name: 'Daml SDK',
     required: true,
     status: 'fail',
@@ -235,8 +264,9 @@ async function checkDocker(runner: ProcessRunner): Promise<CheckResult> {
     }
 
     const result = await runner.run('docker', ['--version'], {ignoreExitCode: true})
+    const detail = result.stdout.trim().replace('Docker version ', '').split(',')[0] || 'Installed'
     return {
-      detail: result.stdout.trim().replace('Docker version ', '').split(',')[0] ?? 'Installed',
+      detail,
       name: 'Docker',
       required: false,
       status: result.exitCode === 0 ? 'pass' : 'warn',
@@ -266,7 +296,7 @@ async function checkDockerCompose(runner: ProcessRunner): Promise<CheckResult> {
     }
 
     return {
-      detail: result.stdout.trim().replace('Docker Compose version ', '') ?? 'Installed',
+      detail: result.stdout.trim().replace('Docker Compose version ', '') || 'Installed',
       name: 'Docker Compose',
       required: false,
       status: 'pass',

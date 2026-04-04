@@ -47,6 +47,49 @@ export interface PartyDetails {
   isLocal: boolean
 }
 
+export interface ProfileListEntry {
+  experimental: boolean
+  isDefault: boolean
+  kind: string
+  name: string
+  services: string[]
+}
+
+export interface ProfileSummary {
+  experimental: boolean
+  kind: string
+  name: string
+}
+
+export interface ServiceHealthEntry {
+  detail: string
+  endpoint?: string
+  error?: string
+  healthy: boolean
+  name: string
+  status: 'auth-required' | 'configured' | 'healthy' | 'unconfigured' | 'unreachable'
+  version?: string
+}
+
+export interface CompatCheck {
+  detail: string
+  name: string
+  status: string
+}
+
+export interface TokenHolding {
+  amount?: string
+  contractId?: string
+  owner?: string
+}
+
+export interface ScanUpdate {
+  kind?: string
+  migrationId?: number
+  recordTime?: string
+  updateId?: string
+}
+
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
   const res = await fetch(`${BASE}${path}`, {
     headers: {'Content-Type': 'application/json'},
@@ -61,6 +104,36 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
 
 export const api = {
   getHealth: () => request<{healthy: boolean; version?: string}>('/api/health'),
+
+  getProfile: () => request<{
+    profiles: ProfileListEntry[]
+    selectedProfile: ProfileSummary | null
+    source: string | null
+  }>('/api/profile'),
+
+  setProfile: (profile: string) =>
+    request<{
+      profiles: ProfileListEntry[]
+      selectedProfile: ProfileSummary | null
+      source: string | null
+    }>('/api/profile', {
+      method: 'PUT',
+      body: JSON.stringify({profile}),
+    }),
+
+  getProfileStatus: () => request<{
+    healthy: boolean
+    profile: ProfileSummary | null
+    services: ServiceHealthEntry[]
+  }>('/api/profile/status'),
+
+  getProfileCompat: () => request<{
+    checks: CompatCheck[]
+    failed: number
+    passed: number
+    profile: ProfileSummary
+    warned: number
+  }>('/api/profile/compat'),
 
   getFiles: () => request<FileNode[]>('/api/files'),
 
@@ -115,6 +188,12 @@ export const api = {
       contractCount: number
     }>
   }>('/api/topology/status'),
+
+  getSpliceTokenHoldings: (party: string) =>
+    request<{holdings: TokenHolding[]; warnings: string[]}>(`/api/splice/token-holdings?party=${encodeURIComponent(party)}`),
+
+  getScanUpdates: (pageSize = 5) =>
+    request<{updates: ScanUpdate[]; warnings: string[]}>(`/api/splice/scan/updates?pageSize=${pageSize}`),
 
   build: () => request<{darPath?: string; durationMs?: number}>('/api/build', {method: 'POST'}),
 

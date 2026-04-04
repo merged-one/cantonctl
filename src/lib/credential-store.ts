@@ -21,6 +21,8 @@
  * ```
  */
 
+import {type AuthProfileMode, isAuthProfileMode, toJwtEnvVarName} from './auth-profile.js'
+
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
@@ -46,13 +48,27 @@ export interface CredentialStoreDeps {
   env?: Record<string, string | undefined>
 }
 
+export interface StoredCredential {
+  mode?: AuthProfileMode
+  storedAt?: string
+  token: string
+}
+
+export interface ResolvedCredential extends StoredCredential {
+  source: 'env' | 'stored'
+}
+
 export interface CredentialStore {
   /** Store a JWT token for a network in the keychain. */
-  store(network: string, token: string): Promise<void>
+  store(network: string, token: string, options?: {mode?: AuthProfileMode}): Promise<void>
   /** Retrieve a JWT token from the keychain (ignoring env vars). */
   retrieve(network: string): Promise<string | null>
+  /** Retrieve the stored credential envelope from the keychain. */
+  retrieveRecord(network: string): Promise<StoredCredential | null>
   /** Resolve a JWT token: env var > keychain > null. */
   resolve(network: string): Promise<string | null>
+  /** Resolve the credential envelope: env var > keychain > null. */
+  resolveRecord(network: string): Promise<ResolvedCredential | null>
   /** Remove stored credentials for a network. */
   remove(network: string): Promise<boolean>
   /** List network names that have stored credentials. */
@@ -63,9 +79,31 @@ export interface CredentialStore {
 // Helpers
 // ---------------------------------------------------------------------------
 
-/** Convert a network name to its env var name: devnet → CANTONCTL_JWT_DEVNET */
-function toEnvVarName(network: string): string {
-  return `CANTONCTL_JWT_${network.toUpperCase().replace(/-/g, '_')}`
+function parseStoredCredential(raw: string | null): StoredCredential | null {
+  if (!raw) return null
+
+  try {
+    const parsed = JSON.parse(raw) as Record<string, unknown>
+    if (typeof parsed.token === 'string') {
+      return {
+        mode: typeof parsed.mode === 'string' && isAuthProfileMode(parsed.mode) ? parsed.mode : undefined,
+        storedAt: typeof parsed.storedAt === 'string' ? parsed.storedAt : undefined,
+        token: parsed.token,
+      }
+    }
+  } catch {
+    // Backward compatibility: plain token string entries predate envelopes.
+  }
+
+  return {token: raw}
+}
+
+function serializeStoredCredential(record: StoredCredential): string {
+  return JSON.stringify({
+    mode: record.mode,
+    storedAt: record.storedAt,
+    token: record.token,
+  })
 }
 
 // ---------------------------------------------------------------------------
@@ -78,25 +116,54 @@ function toEnvVarName(network: string): string {
 export function createCredentialStore(deps: CredentialStoreDeps): CredentialStore {
   const {backend, env = process.env} = deps
 
+  const retrieveRecord = async (network: string): Promise<StoredCredential | null> =>
+    parseStoredCredential(await backend.getPassword(SERVICE_NAME, network))
+
+  const resolveRecord = async (network: string): Promise<ResolvedCredential | null> => {
+    const envVar = toJwtEnvVarName(network)
+    const envValue = env[envVar]
+    if (envValue) {
+      return {
+        source: 'env',
+        token: envValue,
+      }
+    }
+
+    const stored = await retrieveRecord(network)
+    if (!stored) return null
+    return {
+      ...stored,
+      source: 'stored',
+    }
+  }
+
   return {
-    async store(network: string, token: string): Promise<void> {
-      await backend.setPassword(SERVICE_NAME, network, token)
+    async store(network: string, token: string, options: {mode?: AuthProfileMode} = {}): Promise<void> {
+      await backend.setPassword(
+        SERVICE_NAME,
+        network,
+        serializeStoredCredential({
+          mode: options.mode,
+          storedAt: new Date().toISOString(),
+          token,
+        }),
+      )
     },
 
     async retrieve(network: string): Promise<string | null> {
-      return backend.getPassword(SERVICE_NAME, network)
+      return (await retrieveRecord(network))?.token ?? null
+    },
+
+    async retrieveRecord(network: string): Promise<StoredCredential | null> {
+      return retrieveRecord(network)
     },
 
     async resolve(network: string): Promise<string | null> {
-      // 1. Check env var override
-      const envVar = toEnvVarName(network)
-      const envValue = env[envVar]
-      if (envValue) {
-        return envValue
-      }
+      return (await resolveRecord(network))?.token ?? null
+    },
 
-      // 2. Check keychain
-      return backend.getPassword(SERVICE_NAME, network)
+    async resolveRecord(network: string): Promise<ResolvedCredential | null> {
+      return resolveRecord(network)
     },
 
     async remove(network: string): Promise<boolean> {

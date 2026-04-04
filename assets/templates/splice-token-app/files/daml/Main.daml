@@ -1,0 +1,22 @@
+module Main where
+
+template TokenWatchlist
+  with
+    owner : Party
+    instrumentAdmin : Party
+    instrumentId : Text
+    lastSeenAmount : Optional Decimal
+  where
+    signatory owner
+
+    choice RefreshSnapshot : ContractId TokenWatchlist
+      with
+        newAmount : Decimal
+      controller owner
+      do
+        create this with lastSeenAmount = Some newAmount
+
+    choice ClearSnapshot : ContractId TokenWatchlist
+      controller owner
+      do
+        create this with lastSeenAmount = None

@@ -20,13 +20,13 @@ cantonctl build [flags]
 ## Behavior
 
 ### Compilation
-Delegates to `dpm build` or `daml build` (auto-detected). Produces a `.dar` archive at `.daml/dist/{name}-{version}.dar`.
+Delegates to `dpm build` for the current Canton 3.4 toolchain. If only the legacy `daml` CLI is installed, cantonctl falls back to `daml build` for older projects. Produces a `.dar` archive at `.daml/dist/{name}-{version}.dar`.
 
 ### Caching (ADR-0013)
 Before invoking the SDK, compares the `.dar` modification time against all `.daml` source files. If the DAR is newer than all sources, the build is skipped. Use `--force` to override (e.g., after `git checkout`).
 
 ### Code Generation
-With `--codegen`, runs `dpm codegen ts` (or `daml codegen js`) after a successful build to produce TypeScript bindings.
+With `--codegen`, runs the detected SDK code generation command after a successful build. On current toolchains that is typically `dpm codegen ts`; legacy fallback uses `daml codegen js`.
 
 ## Examples
 
@@ -55,7 +55,7 @@ cantonctl build --json           # JSON output for CI
 
 | Code | Error | Resolution |
 |------|-------|------------|
-| E2001 | SDK not installed | Install dpm or daml |
+| E2001 | SDK not installed | Install DPM: `curl https://get.digitalasset.com/install/install.sh | sh` |
 | E4001 | Daml compilation failed | Fix errors in .daml source files |
 | E4002 | DAR not found | Build succeeded but no .dar produced. Check daml.yaml. |
 

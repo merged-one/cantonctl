@@ -9,20 +9,23 @@ import * as os from 'node:os'
 import * as path from 'node:path'
 import {execSync} from 'node:child_process'
 
+import {CI_TOOLCHAIN} from '../../scripts/ci/manifest.js'
+
 /** Pinned SDK version used across all E2E tests. */
-export const SDK_VERSION = '3.4.11'
+export const SDK_VERSION = CI_TOOLCHAIN.damlSdkVersion
 
 /** Canton Docker image used by `dev --full` and Docker E2E tests. */
-export const CANTON_IMAGE = 'ghcr.io/digital-asset/decentralized-canton-sync/docker/canton:0.5.3'
+export const CANTON_IMAGE = CI_TOOLCHAIN.cantonImage
 
 /**
- * Build a PATH that includes the Daml SDK and Java 21.
+ * Build a PATH that includes the current SDK CLI and Java 21.
  *
  * Uses the same Java discovery logic as `createProcessRunner()` in
  * `src/lib/process-runner.ts` — see `resolveJavaBinDir()` there for the
  * full resolution algorithm and justification.
  *
- * This function is used by `execSync`-based helpers (`hasDaml()`) which
+ * This function is used by `execSync`-based helpers (`hasSdk()` and
+ * `resolveSdkCommand()`) which
  * need a plain string PATH. The actual E2E tests use `createProcessRunner()`
  * directly, so Java discovery is exercised through the same production path.
  *
@@ -30,11 +33,13 @@ export const CANTON_IMAGE = 'ghcr.io/digital-asset/decentralized-canton-sync/doc
  *   1. JAVA_HOME/bin (CI, sdkman, asdf)
  *   2. /usr/libexec/java_home -v 21 (macOS Apple/Adoptium installers)
  *   3. Homebrew openjdk@21 well-known paths (ARM + Intel, existence-checked)
- *   4. ~/.daml/bin
- *   5. System PATH
+ *   4. ~/.dpm/bin
+ *   5. ~/.daml/bin
+ *   6. System PATH
  */
 export function resolveE2ePath(): string {
   const fs = require('fs') as typeof import('fs')
+  const dpmPath = path.join(os.homedir(), '.dpm', 'bin')
   const damlPath = path.join(os.homedir(), '.daml', 'bin')
 
   const javaPaths: string[] = []
@@ -67,23 +72,43 @@ export function resolveE2ePath(): string {
     }
   }
 
-  return [...javaPaths, damlPath, process.env.PATH].filter(Boolean).join(path.delimiter)
+  return [...javaPaths, dpmPath, damlPath, process.env.PATH].filter(Boolean).join(path.delimiter)
 }
 
 /** The resolved PATH for subprocess execution. */
 export const ENV_PATH = resolveE2ePath()
 
-/** Check if the Daml SDK is available on the resolved PATH. */
-export function hasDaml(): boolean {
+export type E2eSdkCommand = 'daml' | 'dpm'
+
+/** Resolve the current SDK command for E2E subprocesses. */
+export function resolveSdkCommand(): E2eSdkCommand | null {
+  try {
+    execSync('dpm version --active', {
+      env: {...process.env, PATH: ENV_PATH},
+      stdio: 'pipe',
+    })
+    return 'dpm'
+  } catch {
+    // fall through to legacy `daml` detection
+  }
+
   try {
     execSync('daml version --no-legacy-assistant-warning', {
       env: {...process.env, PATH: ENV_PATH},
       stdio: 'pipe',
     })
-    return true
+    return 'daml'
   } catch {
-    return false
+    return null
   }
+}
+
+/** The SDK command available to E2E subprocesses, if any. */
+export const SDK_COMMAND = resolveSdkCommand()
+
+/** Check if a supported SDK CLI is available on the resolved PATH. */
+export function hasSdk(): boolean {
+  return SDK_COMMAND !== null
 }
 
 /**

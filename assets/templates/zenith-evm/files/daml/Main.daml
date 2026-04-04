@@ -1,0 +1,25 @@
+module Main where
+
+template EvmBridgeRecord
+  with
+    operator : Party
+    evmContractAddress : Text
+    tokenName : Text
+    totalSupply : Decimal
+  where
+    signatory operator
+
+    choice UpdateSupply : ContractId EvmBridgeRecord
+      with
+        newSupply : Decimal
+      controller operator
+      do
+        create this with totalSupply = newSupply
+
+    choice SyncFromEvm : ContractId EvmBridgeRecord
+      with
+        newAddress : Text
+        newSupply : Decimal
+      controller operator
+      do
+        create this with evmContractAddress = newAddress, totalSupply = newSupply

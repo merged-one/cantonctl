@@ -33,6 +33,7 @@ describe('DamlSdk', () => {
       expect(info.tool).toBe('dpm')
       expect(info.path).toBe('/usr/local/bin/dpm')
       expect(info.version).toBe('dpm 3.4.9')
+      expect(runner.run).toHaveBeenCalledWith('dpm', ['version', '--active'], {ignoreExitCode: true})
     })
 
     it('falls back to daml when dpm is not found', async () => {
@@ -46,6 +47,21 @@ describe('DamlSdk', () => {
       const info = await sdk.detect()
       expect(info.tool).toBe('daml')
       expect(info.path).toBe('/usr/local/bin/daml')
+    })
+
+    it('uses stderr when the version command writes nothing to stdout', async () => {
+      const runner = createMockRunner()
+      runner.which.mockImplementation(async (cmd: string) =>
+        cmd === 'dpm' ? '/usr/local/bin/dpm' : null,
+      )
+      runner.run.mockResolvedValue({exitCode: 0, stderr: 'dpm 3.4.11', stdout: ''})
+
+      const sdk = createDamlSdk({runner})
+      await expect(sdk.detect()).resolves.toEqual({
+        path: '/usr/local/bin/dpm',
+        tool: 'dpm',
+        version: 'dpm 3.4.11',
+      })
     })
 
     it('throws SDK_NOT_INSTALLED when neither dpm nor daml is found', async () => {
@@ -266,6 +282,31 @@ describe('DamlSdk', () => {
       expect(runner.spawn).toHaveBeenCalledWith(
         'dpm',
         expect.arrayContaining(['--static-time']),
+        expect.anything(),
+      )
+    })
+
+    it('uses default sandbox ports when none are provided', async () => {
+      const runner = createMockRunner()
+      runner.which.mockImplementation(async (cmd: string) =>
+        cmd === 'dpm' ? '/usr/local/bin/dpm' : null,
+      )
+      const mockProc: SpawnedProcess = {
+        kill: vi.fn(),
+        onExit: vi.fn(),
+        waitForExit: vi.fn().mockResolvedValue(0),
+        pid: 6666,
+        stderr: null,
+        stdout: null,
+      }
+      runner.spawn.mockReturnValue(mockProc)
+
+      const sdk = createDamlSdk({runner})
+      await sdk.startSandbox({})
+
+      expect(runner.spawn).toHaveBeenCalledWith(
+        'dpm',
+        expect.arrayContaining(['sandbox', '--port', '5001', '--json-api-port', '7575']),
         expect.anything(),
       )
     })

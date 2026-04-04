@@ -1,0 +1,12 @@
+{
+  "description": "Solidity + Hardhat for EVM developers via Zenith",
+  "extraDirectories": [
+    "frontend",
+    "frontend/src"
+  ],
+  "gitignore": [
+    "artifacts/",
+    "cache/",
+    "typechain-types/"
+  ]
+}

@@ -9,7 +9,7 @@ import {Command, Flags} from '@oclif/core'
 import * as fs from 'node:fs'
 import * as readline from 'node:readline'
 
-import {createCleaner} from '../lib/cleaner.js'
+import {createCleaner, type Cleaner} from '../lib/cleaner.js'
 import {CantonctlError} from '../lib/errors.js'
 import {createOutput} from '../lib/output.js'
 
@@ -43,14 +43,7 @@ export default class Clean extends Command {
     const out = createOutput({json: flags.json})
 
     try {
-      const cleaner = createCleaner({
-        confirm: flags.json ? undefined : (msg: string) => this.promptConfirm(msg),
-        fs: {
-          rm: (path: string, opts: {force: boolean; recursive: boolean}) => fs.promises.rm(path, opts),
-          stat: (path: string) => fs.promises.stat(path),
-        },
-        output: out,
-      })
+      const cleaner = this.createCleaner(flags.json, out)
 
       const result = await cleaner.clean({
         all: flags.all,
@@ -79,8 +72,23 @@ export default class Clean extends Command {
     }
   }
 
+  protected createCleaner(json: boolean, out: ReturnType<typeof createOutput>): Cleaner {
+    return createCleaner({
+      confirm: json ? undefined : (msg: string) => this.promptConfirm(msg),
+      fs: {
+        rm: (path: string, opts: {force: boolean; recursive: boolean}) => fs.promises.rm(path, opts),
+        stat: (path: string) => fs.promises.stat(path),
+      },
+      output: out,
+    })
+  }
+
+  protected createReadlineInterface(options: readline.ReadLineOptions): readline.Interface {
+    return readline.createInterface(options)
+  }
+
   private async promptConfirm(message: string): Promise<boolean> {
-    const rl = readline.createInterface({
+    const rl = this.createReadlineInterface({
       input: process.stdin,
       output: process.stderr,
     })

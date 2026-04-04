@@ -9,11 +9,10 @@
 #   - macOS with Homebrew (or Linux with apt/dnf)
 #   - Node.js 18+ (for cantonctl itself)
 #   - Java 21+ (for Canton sandbox)
-#   - Daml SDK 3.4.x (for Daml compilation and sandbox)
+#   - DPM 3.4.x toolchain (current Canton/Daml CLI)
 
 set -euo pipefail
 
-DAML_VERSION="${DAML_VERSION:-3.4.11}"
 JAVA_VERSION="${JAVA_VERSION:-21}"
 CHECK_ONLY="${1:-}"
 
@@ -64,22 +63,22 @@ else
   MISSING=$((MISSING + 1))
 fi
 
-# Daml SDK
-if command -v daml &>/dev/null; then
-  ok "Daml SDK (daml on PATH)"
-elif [ -x "$HOME/.daml/bin/daml" ]; then
-  ok "Daml SDK (~/.daml/bin/daml, needs PATH)"
-  warn "  Add to PATH: export PATH=\"\$HOME/.daml/bin:\$PATH\""
+# DPM (current CLI)
+if command -v dpm &>/dev/null; then
+  ok "DPM (current Canton Package Manager)"
+elif [ -x "$HOME/.dpm/bin/dpm" ]; then
+  ok "DPM (~/.dpm/bin/dpm, needs PATH)"
+  warn "  Add to PATH: export PATH=\"\$HOME/.dpm/bin:\$PATH\""
 else
-  fail "Daml SDK not found"
+  fail "DPM not found"
   MISSING=$((MISSING + 1))
 fi
 
-# dpm (optional, preferred over daml)
-if command -v dpm &>/dev/null; then
-  ok "dpm (Canton Package Manager)"
-else
-  warn "dpm not found (optional — daml CLI will be used as fallback)"
+# daml (legacy fallback only)
+if command -v daml &>/dev/null; then
+  warn "Legacy daml CLI detected (kept only for older Canton 3.3 projects)"
+elif [ -x "$HOME/.daml/bin/daml" ]; then
+  warn "Legacy daml CLI available at ~/.daml/bin/daml (kept only for older Canton 3.3 projects)"
 fi
 
 # Git
@@ -122,31 +121,16 @@ if ! command -v java &>/dev/null && [ ! -x "/opt/homebrew/opt/openjdk@$JAVA_VERS
   fi
 fi
 
-# Install Daml SDK
-if ! command -v daml &>/dev/null && [ ! -x "$HOME/.daml/bin/daml" ]; then
-  echo "Installing Daml SDK $DAML_VERSION..."
-  PLATFORM="$(uname -s | tr '[:upper:]' '[:lower:]')"
-  ARCH="x86_64"  # Daml SDK only ships x86_64, uses Rosetta on ARM Macs
-
-  RELEASE_URL="https://github.com/digital-asset/daml/releases/download/v${DAML_VERSION}/daml-sdk-${DAML_VERSION}-${PLATFORM}-${ARCH}.tar.gz"
-
-  TMPDIR=$(mktemp -d)
-  curl -sSL "$RELEASE_URL" -o "$TMPDIR/daml-sdk.tar.gz"
-  cd "$TMPDIR" && tar xzf daml-sdk.tar.gz
-
-  DAML_HOME="$HOME/.daml"
-  mkdir -p "$DAML_HOME/sdk/$DAML_VERSION" "$DAML_HOME/bin"
-  cp -r "$TMPDIR/sdk-$DAML_VERSION/"* "$DAML_HOME/sdk/$DAML_VERSION/"
-  ln -sf "$DAML_HOME/sdk/$DAML_VERSION/daml/daml" "$DAML_HOME/bin/daml"
-  echo "$DAML_VERSION" > "$DAML_HOME/sdk/default"
-
-  rm -rf "$TMPDIR"
-  ok "Daml SDK $DAML_VERSION installed to $DAML_HOME"
+# Install DPM
+if ! command -v dpm &>/dev/null && [ ! -x "$HOME/.dpm/bin/dpm" ]; then
+  echo "Installing DPM..."
+  curl -fsSL https://get.digitalasset.com/install/install.sh | sh
+  ok "DPM installed to \$HOME/.dpm"
 fi
 
 echo ""
 echo "Add these to your shell profile (~/.zshrc or ~/.bashrc):"
 echo ""
-echo "  export PATH=\"/opt/homebrew/opt/openjdk@$JAVA_VERSION/bin:\$HOME/.daml/bin:\$PATH\""
+echo "  export PATH=\"/opt/homebrew/opt/openjdk@$JAVA_VERSION/bin:\$HOME/.dpm/bin:\$PATH\""
 echo ""
 echo "Then run: source ~/.zshrc && ./scripts/install-prerequisites.sh --check"

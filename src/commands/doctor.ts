@@ -2,7 +2,7 @@
  * @module commands/doctor
  *
  * Environment diagnostics — checks all prerequisites and reports status.
- * Offers to install missing required dependencies (Daml SDK).
+ * Offers to install missing required dependencies (DPM for current toolchains).
  * Thin oclif wrapper over {@link createDoctor}.
  */
 
@@ -11,9 +11,12 @@ import {execSync} from 'node:child_process'
 import * as readline from 'node:readline'
 import pc from 'picocolors'
 
+import {type CantonctlConfig, loadConfig} from '../lib/config.js'
+import {resolveProfile} from '../lib/compat.js'
 import {createDoctor, type CheckResult} from '../lib/doctor.js'
+import {CantonctlError, ErrorCode} from '../lib/errors.js'
 import {createOutput} from '../lib/output.js'
-import {createProcessRunner} from '../lib/process-runner.js'
+import {createProcessRunner, type ProcessRunner} from '../lib/process-runner.js'
 
 const BANNER = `
    ___          _                  _   _
@@ -41,13 +44,39 @@ export default class Doctor extends Command {
       default: false,
       description: 'Output result as JSON',
     }),
+    profile: Flags.string({
+      description: 'Run profile-aware diagnostics for the selected profile',
+    }),
   }
 
   async run(): Promise<void> {
     const {flags} = await this.parse(Doctor)
     const out = createOutput({json: flags.json})
-    const runner = createProcessRunner()
-    const doctor = createDoctor({output: out, runner})
+    const runner = this.createRunner()
+
+    let config: CantonctlConfig | undefined
+    try {
+      config = await this.loadProjectConfig()
+    } catch (err) {
+      if (!(err instanceof CantonctlError)) {
+        throw err
+      }
+
+      if (flags.profile || err.code !== ErrorCode.CONFIG_NOT_FOUND) {
+        out.result({
+          error: {code: err.code, message: err.message, suggestion: err.suggestion},
+          success: false,
+        })
+        this.exit(1)
+      }
+    }
+
+    const doctor = createDoctor({
+      config,
+      output: out,
+      profileName: flags.profile,
+      runner,
+    })
 
     if (!flags.json && process.stdout.isTTY) {
       process.stdout.write(pc.cyan(BANNER))
@@ -61,6 +90,9 @@ export default class Doctor extends Command {
     }
 
     const result = await doctor.check()
+    const resolvedProfile = config
+      ? this.resolveProfileSummary(config, flags.profile)
+      : undefined
 
     if (!flags.json) {
       for (const check of result.checks) {
@@ -78,23 +110,20 @@ export default class Doctor extends Command {
         out.success(summary)
       }
 
-      // Offer to install missing SDK
+      // Offer to install missing SDK CLI
       if (flags.fix || process.stdout.isTTY) {
         const sdkCheck = result.checks.find(c => c.name === 'Daml SDK' && c.status === 'fail')
         if (sdkCheck) {
           out.log('')
-          const shouldInstall = flags.fix || await this.confirm('Daml SDK is missing. Install it now? (y/N) ')
+          const shouldInstall = flags.fix || await this.confirm('DPM is missing. Install it now? (y/N) ')
           if (shouldInstall) {
             out.log('')
-            out.info('Installing Daml SDK 3.4.11...')
+            out.info('Installing DPM...')
             try {
-              execSync('curl -sSL https://get.daml.com/ | sh -s 3.4.11', {
-                stdio: 'inherit',
-                timeout: 300_000,
-              })
-              out.success('Daml SDK installed. Run "cantonctl doctor" again to verify.')
+              this.installSdk()
+              out.success('DPM installed. Run "cantonctl doctor" again to verify.')
             } catch {
-              out.error('SDK installation failed. Install manually: curl -sSL https://get.daml.com/ | sh -s 3.4.11')
+              out.error('SDK installation failed. Install manually: curl https://get.digitalasset.com/install/install.sh | sh')
             }
           }
         }
@@ -113,6 +142,7 @@ export default class Doctor extends Command {
           })),
           failed: result.failed,
           passed: result.passed,
+          profile: resolvedProfile,
           warned: result.warned,
         },
         success: result.failed === 0,
@@ -125,13 +155,48 @@ export default class Doctor extends Command {
   }
 
   private async confirm(message: string): Promise<boolean> {
-    const rl = readline.createInterface({input: process.stdin, output: process.stdout})
+    const rl = this.createReadlineInterface()
     return new Promise((resolve) => {
       rl.question(message, (answer) => {
         rl.close()
         resolve(answer.toLowerCase() === 'y' || answer.toLowerCase() === 'yes')
       })
     })
+  }
+
+  protected createRunner(): ProcessRunner {
+    return createProcessRunner()
+  }
+
+  protected createReadlineInterface(): readline.Interface {
+    return readline.createInterface({input: process.stdin, output: process.stdout})
+  }
+
+  protected installSdk(): void {
+    execSync('curl -fsSL https://get.digitalasset.com/install/install.sh | sh', {
+      stdio: 'inherit',
+      timeout: 300_000,
+    })
+  }
+
+  protected async loadProjectConfig(): Promise<CantonctlConfig> {
+    return loadConfig()
+  }
+
+  protected resolveProfileSummary(
+    config: CantonctlConfig,
+    profileName?: string,
+  ): {experimental: boolean; kind: string; name: string} | undefined {
+    try {
+      const {profile} = resolveProfile(config, profileName)
+      return {
+        experimental: profile.experimental,
+        kind: profile.kind,
+        name: profile.name,
+      }
+    } catch {
+      return undefined
+    }
   }
 
   private printCheck(check: CheckResult): void {

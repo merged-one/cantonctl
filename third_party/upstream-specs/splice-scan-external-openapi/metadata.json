@@ -1,0 +1,49 @@
+{
+  "version": 1,
+  "sourceId": "splice-scan-external-openapi",
+  "name": "Splice Scan external API",
+  "family": "scan",
+  "stability": "stable-external",
+  "format": "openapi",
+  "artifactVersion": "0.0.1",
+  "fetchedAt": "2026-04-02T20:11:16.928Z",
+  "selectorApplied": true,
+  "selector": {
+    "tagsAllOf": [
+      "external",
+      "scan"
+    ],
+    "tagsNoneOf": [
+      "internal",
+      "pre-alpha"
+    ]
+  },
+  "upstream": {
+    "kind": "git",
+    "path": "apps/scan/src/main/openapi/scan.yaml",
+    "ref": "275c31b8545ba33e66576e8298521e251eb34b21",
+    "repo": "https://github.com/hyperledger-labs/splice",
+    "url": "https://raw.githubusercontent.com/hyperledger-labs/splice/275c31b8545ba33e66576e8298521e251eb34b21/apps/scan/src/main/openapi/scan.yaml"
+  },
+  "files": {
+    "source": "source.yaml",
+    "selected": "selected.yaml"
+  },
+  "mirror": {
+    "entry": "mirror/apps/scan/src/main/openapi/scan.yaml",
+    "dependencies": [
+      {
+        "path": "mirror/apps/common/src/main/openapi/common-internal.yaml",
+        "sha256": "f99d5314c70f553b2533a14d57ddff5f114020c38987679a6addb3bde30ee75a"
+      },
+      {
+        "path": "mirror/apps/common/src/main/openapi/common-external.yaml",
+        "sha256": "73f59af80ba70f7f6dbdfe321de97f08bfcaa18a6f6520a40d4c9b6b501de314"
+      }
+    ]
+  },
+  "hashes": {
+    "sourceSha256": "8431b1c5cb1b8e3039af1e978fbf064cc54ba7683441245e8fe354d99e88e6db",
+    "selectedSha256": "d8c78d8e2b5a69991d2e19d28f2e423dc0cc2a4e8ebd98fc707849f23e99cde3"
+  }
+}

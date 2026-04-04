@@ -1,0 +1,20 @@
+module Main where
+
+template Record
+  with
+    owner : Party
+    key : Text
+    value : Text
+  where
+    signatory owner
+
+    choice UpdateValue : ContractId Record
+      with
+        newValue : Text
+      controller owner
+      do
+        create this with value = newValue
+
+    choice Archive_Record : ()
+      controller owner
+      do return ()

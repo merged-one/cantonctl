@@ -5,9 +5,13 @@
  * No mocking needed, no I/O, just input → output verification.
  */
 
+import * as fs from 'node:fs/promises'
+import * as os from 'node:os'
+import * as path from 'node:path'
+
 import {describe, expect, it} from 'vitest'
 import type {CantonctlConfig} from './config.js'
-import {generateTopology, type TopologyOptions} from './topology.js'
+import {detectTopology, generateTopology, type TopologyOptions} from './topology.js'
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -92,6 +96,16 @@ describe('generateTopology', () => {
       })
       const topology = generateTopology(createOpts({config}))
       expect(topology.participants.length).toBeGreaterThanOrEqual(2)
+    })
+
+    it('treats an omitted parties list as an empty topology input', () => {
+      const config = createConfig({parties: undefined})
+      const topology = generateTopology(createOpts({config}))
+
+      expect(topology.participants).toEqual([
+        expect.objectContaining({name: 'participant1', parties: []}),
+        expect.objectContaining({name: 'participant2', parties: []}),
+      ])
     })
   })
 
@@ -326,5 +340,119 @@ describe('generateTopology', () => {
       const {dockerCompose} = generateTopology(createOpts())
       expect(dockerCompose).not.toContain('\t')
     })
+  })
+})
+
+describe('detectTopology', () => {
+  it('returns null when the generated config directory is missing', async () => {
+    const projectDir = await fs.mkdtemp(path.join(os.tmpdir(), 'topology-missing-'))
+    await expect(detectTopology(projectDir)).resolves.toBeNull()
+  })
+
+  it('returns null when compose exists without participant health checks', async () => {
+    const projectDir = await fs.mkdtemp(path.join(os.tmpdir(), 'topology-empty-'))
+    const configDir = path.join(projectDir, '.cantonctl')
+    await fs.mkdir(configDir, {recursive: true})
+    await fs.writeFile(path.join(configDir, 'canton.conf'), 'canton {}')
+    await fs.writeFile(path.join(configDir, 'docker-compose.yml'), [
+      'services:',
+      '  canton:',
+      '    ports:',
+      '      - "10001:10001"',
+      '      - "10002:10002"',
+    ].join('\n'))
+
+    await expect(detectTopology(projectDir)).resolves.toBeNull()
+  })
+
+  it('reconstructs participants and synchronizer ports from generated compose output', async () => {
+    const projectDir = await fs.mkdtemp(path.join(os.tmpdir(), 'topology-detect-'))
+    const configDir = path.join(projectDir, '.cantonctl')
+    await fs.mkdir(configDir, {recursive: true})
+
+    const generated = generateTopology(createOpts())
+    await fs.writeFile(path.join(configDir, 'canton.conf'), generated.cantonConf)
+    await fs.writeFile(path.join(configDir, 'docker-compose.yml'), generated.dockerCompose)
+
+    const detected = await detectTopology(projectDir)
+    expect(detected).toEqual({
+      bootstrapScript: '',
+      cantonConf: '',
+      dockerCompose: generated.dockerCompose,
+      participants: [
+        {
+          name: 'participant1',
+          parties: [],
+          ports: {admin: 0, jsonApi: 10013, ledgerApi: 0},
+        },
+        {
+          name: 'participant2',
+          parties: [],
+          ports: {admin: 0, jsonApi: 10023, ledgerApi: 0},
+        },
+      ],
+      synchronizer: {admin: 10001, publicApi: 10002},
+    })
+  })
+
+  it('leaves synchronizer ports unknown when compose port mappings are incomplete', async () => {
+    const projectDir = await fs.mkdtemp(path.join(os.tmpdir(), 'topology-partial-'))
+    const configDir = path.join(projectDir, '.cantonctl')
+    await fs.mkdir(configDir, {recursive: true})
+    await fs.writeFile(path.join(configDir, 'canton.conf'), 'canton {}')
+    await fs.writeFile(path.join(configDir, 'docker-compose.yml'), [
+      'services:',
+      '  canton:',
+      '    ports:',
+      '      - "10001:10001"',
+      '    healthcheck:',
+      '      test: ["CMD-SHELL", "curl -sf http://localhost:10013/v2/version"]',
+    ].join('\n'))
+
+    await expect(detectTopology(projectDir)).resolves.toEqual({
+      bootstrapScript: '',
+      cantonConf: '',
+      dockerCompose: expect.stringContaining('10013/v2/version'),
+      participants: [{
+        name: 'participant1',
+        parties: [],
+        ports: {admin: 0, jsonApi: 10013, ledgerApi: 0},
+      }],
+      synchronizer: {admin: 0, publicApi: 0},
+    })
+  })
+
+  it('leaves synchronizer ports unknown when compose omits port mappings entirely', async () => {
+    const projectDir = await fs.mkdtemp(path.join(os.tmpdir(), 'topology-no-ports-'))
+    const configDir = path.join(projectDir, '.cantonctl')
+    await fs.mkdir(configDir, {recursive: true})
+    await fs.writeFile(path.join(configDir, 'canton.conf'), 'canton {}')
+    await fs.writeFile(path.join(configDir, 'docker-compose.yml'), [
+      'services:',
+      '  canton:',
+      '    healthcheck:',
+      '      test: ["CMD-SHELL", "curl -sf http://localhost:10013/v2/version"]',
+    ].join('\n'))
+
+    await expect(detectTopology(projectDir)).resolves.toEqual({
+      bootstrapScript: '',
+      cantonConf: '',
+      dockerCompose: expect.stringContaining('10013/v2/version'),
+      participants: [{
+        name: 'participant1',
+        parties: [],
+        ports: {admin: 0, jsonApi: 10013, ledgerApi: 0},
+      }],
+      synchronizer: {admin: 0, publicApi: 0},
+    })
+  })
+
+  it('returns null when compose discovery throws after the generated files appear to exist', async () => {
+    const projectDir = await fs.mkdtemp(path.join(os.tmpdir(), 'topology-read-error-'))
+    const configDir = path.join(projectDir, '.cantonctl')
+    await fs.mkdir(path.join(configDir, 'docker-compose.yml'), {recursive: true})
+    await fs.writeFile(path.join(configDir, 'canton.conf'), 'canton {}')
+
+    await expect(detectTopology(projectDir)).resolves.toBeNull()
   })
 })

@@ -32,6 +32,13 @@ import * as path from 'node:path'
 import * as yaml from 'js-yaml'
 import {z} from 'zod'
 
+import {
+  type LegacyNetworkConfig,
+  type NetworkConfigInput,
+  type NormalizedProfile,
+  type RawProfileConfig,
+  normalizeConfigProfiles,
+} from './config-profile.js'
 import {CantonctlError, ErrorCode} from './errors.js'
 
 // ---------------------------------------------------------------------------
@@ -51,27 +58,96 @@ const NetworkSchema = z.object({
   url: z.string().optional(),
 })
 
-const ConfigSchema = z.object({
-  networks: z.record(z.string(), NetworkSchema).optional(),
+const NetworkReferenceSchema = z.object({
+  kind: z.enum(['ledger', 'splice']).optional(),
+  profile: z.string(),
+})
+
+const UrlServiceSchema = z.object({
+  url: z.string(),
+})
+
+const LedgerServiceSchema = z.object({
+  auth: z.enum(['jwt', 'shared-secret', 'none']).optional(),
+  'json-api-port': z.number().optional(),
+  port: z.number().optional(),
+  url: z.string().optional(),
+})
+
+const AuthServiceSchema = z.object({
+  audience: z.string().optional(),
+  issuer: z.string().optional(),
+  kind: z.enum(['jwt', 'shared-secret', 'none', 'oidc']),
+  url: z.string().optional(),
+})
+
+const LocalnetServiceSchema = z.object({
+  'base-port': z.number().optional(),
+  'canton-image': z.string().optional(),
+  distribution: z.string().optional(),
+  version: z.string().optional(),
+})
+
+const ProfileSchema = z.object({
+  ans: UrlServiceSchema.optional(),
+  auth: AuthServiceSchema.optional(),
+  experimental: z.boolean().optional(),
+  kind: z.enum(['sandbox', 'canton-multi', 'splice-localnet', 'remote-validator', 'remote-sv-network']),
+  ledger: LedgerServiceSchema.optional(),
+  localnet: LocalnetServiceSchema.optional(),
+  scan: UrlServiceSchema.optional(),
+  scanProxy: UrlServiceSchema.optional(),
+  tokenStandard: UrlServiceSchema.optional(),
+  validator: UrlServiceSchema.optional(),
+})
+
+const RawConfigSchema = z.object({
+  'default-profile': z.string().optional(),
+  networks: z.record(z.string(), z.union([NetworkSchema, NetworkReferenceSchema])).optional(),
   parties: z.array(PartySchema).optional(),
   plugins: z.array(z.string()).optional(),
+  profiles: z.record(z.string(), ProfileSchema).optional(),
   project: z.object({
     name: z.string(),
     'sdk-version': z.string(),
     template: z.string().optional(),
   }),
   version: z.number(),
-})
+}).passthrough()
+
+type RawConfig = z.infer<typeof RawConfigSchema>
 
 /** Validated cantonctl configuration object. */
-export type CantonctlConfig = z.infer<typeof ConfigSchema>
+export interface CantonctlConfig {
+  'default-profile'?: string
+  networks?: Record<string, LegacyNetworkConfig>
+  networkProfiles?: Record<string, string>
+  parties?: Array<z.infer<typeof PartySchema>>
+  plugins?: string[]
+  profiles?: Record<string, NormalizedProfile>
+  project: z.infer<typeof RawConfigSchema>['project']
+  version: number
+}
 
 /** Partial config used for user-level overrides and merge layers. */
 export type PartialConfig = {
-  networks?: Record<string, z.infer<typeof NetworkSchema>>
+  'default-profile'?: string
+  networks?: Record<string, NetworkConfigInput>
+  networkProfiles?: Record<string, string>
   parties?: Array<z.infer<typeof PartySchema>>
   plugins?: string[]
-  project?: Partial<z.infer<typeof ConfigSchema>['project']>
+  profiles?: Record<string, Partial<NormalizedProfile>>
+  project?: Partial<RawConfig['project']>
+  version?: number
+}
+
+type RawPartialConfig = {
+  'default-profile'?: string
+  networks?: Record<string, NetworkConfigInput>
+  parties?: Array<z.infer<typeof PartySchema>>
+  plugins?: string[]
+  profiles?: Record<string, RawProfileConfig>
+  project?: Partial<RawConfig['project']>
   version?: number
 }
 
@@ -147,30 +223,22 @@ export async function resolveConfig(options: ResolveConfigOptions = {}): Promise
   const homeDir = options.homeDir ?? process.env.HOME ?? ''
 
   // Layer 1: User config (lowest priority)
-  let userPartial: PartialConfig = {}
+  let userPartial: RawPartialConfig = {}
   const userConfigPath = path.join(homeDir, USER_CONFIG_PATH)
   if (fsImpl.existsSync(userConfigPath)) {
     try {
       const raw = fsImpl.readFileSync(userConfigPath, 'utf8')
-      userPartial = (yaml.load(raw) as PartialConfig) ?? {}
+      userPartial = (yaml.load(raw) as RawPartialConfig) ?? {}
     } catch {
       // Silently ignore malformed user config
     }
   }
 
   // Layer 2: Project config
-  const projectConfig = await loadConfig({dir: options.dir, fs: fsImpl})
+  const projectRaw = readRawProjectConfig(options.dir ?? process.cwd(), fsImpl)
 
   // Merge: project over user
-  let merged = mergeConfigs(
-    // If user config has base fields, apply them under the project config
-    {...projectConfig},
-    {},
-  )
-  if (Object.keys(userPartial).length > 0) {
-    // User is the base, project overrides
-    merged = mergeConfigsRaw(userPartial, projectConfig)
-  }
+  let merged = mergeConfigLayers(userPartial, projectRaw)
 
   // Layer 3: Environment variable overrides
   const env = options.env ?? {}
@@ -184,7 +252,7 @@ export async function resolveConfig(options: ResolveConfigOptions = {}): Promise
     merged = applyDotOverrides(merged, options.flags)
   }
 
-  return merged
+  return validateConfigObject(merged)
 }
 
 // ---------------------------------------------------------------------------
@@ -204,18 +272,18 @@ export function mergeConfigs(base: CantonctlConfig, overrides: PartialConfig): C
  * Internal merge that works with partial configs on both sides.
  * Returns a full CantonctlConfig when base is complete.
  */
-function mergeConfigsRaw(base: PartialConfig | CantonctlConfig, overrides: PartialConfig | CantonctlConfig): CantonctlConfig {
+function mergeConfigsRaw(base: CantonctlConfig, overrides: PartialConfig): CantonctlConfig {
   const result: Record<string, unknown> = {...base}
 
   // Merge project (shallow merge)
   if (overrides.project) {
-    result.project = {...(base.project ?? {}), ...overrides.project}
+    result.project = {...base.project, ...overrides.project}
   }
 
   // Merge networks (deep per-network merge)
   if (overrides.networks || base.networks) {
-    const baseNetworks = (base.networks ?? {}) as Record<string, Record<string, unknown>>
-    const overrideNetworks = (overrides.networks ?? {}) as Record<string, Record<string, unknown>>
+    const baseNetworks = (base.networks ?? {}) as unknown as Record<string, Record<string, unknown>>
+    const overrideNetworks = (overrides.networks ?? {}) as unknown as Record<string, Record<string, unknown>>
     const mergedNetworks: Record<string, Record<string, unknown>> = {}
     const allKeys = new Set([...Object.keys(baseNetworks), ...Object.keys(overrideNetworks)])
     for (const key of allKeys) {
@@ -223,6 +291,13 @@ function mergeConfigsRaw(base: PartialConfig | CantonctlConfig, overrides: Parti
     }
 
     result.networks = mergedNetworks
+  }
+
+  if (overrides.networkProfiles || base.networkProfiles) {
+    result.networkProfiles = {
+      ...(base.networkProfiles ?? {}),
+      ...(overrides.networkProfiles ?? {}),
+    }
   }
 
   // Merge parties (concatenate)
@@ -236,12 +311,47 @@ function mergeConfigsRaw(base: PartialConfig | CantonctlConfig, overrides: Parti
     result.plugins = [...new Set(all)]
   }
 
+  if (overrides.profiles || base.profiles) {
+    const baseProfiles = (base.profiles ?? {}) as Record<string, NormalizedProfile>
+    const overrideProfiles = (overrides.profiles ?? {}) as Record<string, Partial<NormalizedProfile>>
+    const mergedProfiles: Record<string, NormalizedProfile | Partial<NormalizedProfile>> = {}
+    const allKeys = new Set([...Object.keys(baseProfiles), ...Object.keys(overrideProfiles)])
+    for (const key of allKeys) {
+      const baseProfile = baseProfiles[key]
+      const overrideProfile = overrideProfiles[key]
+      if (!baseProfile) {
+        mergedProfiles[key] = overrideProfile
+        continue
+      }
+
+      if (!overrideProfile) {
+        mergedProfiles[key] = baseProfile
+        continue
+      }
+
+      mergedProfiles[key] = {
+        ...baseProfile,
+        ...overrideProfile,
+        services: {
+          ...baseProfile.services,
+          ...(overrideProfile.services ?? {}),
+        },
+      }
+    }
+
+    result.profiles = mergedProfiles
+  }
+
+  if (overrides['default-profile'] !== undefined) {
+    result['default-profile'] = overrides['default-profile']
+  }
+
   // Carry over version from override if present
   if (overrides.version !== undefined) {
     result.version = overrides.version
   }
 
-  return result as CantonctlConfig
+  return result as unknown as CantonctlConfig
 }
 
 // ---------------------------------------------------------------------------
@@ -274,7 +384,7 @@ function parseEnvOverrides(env: Record<string, string | undefined>): Record<stri
  * Apply dot-notation overrides to a config object.
  * `{ 'project.name': 'foo' }` sets `config.project.name = 'foo'`.
  */
-function applyDotOverrides(config: CantonctlConfig, overrides: Record<string, string>): CantonctlConfig {
+function applyDotOverrides<T extends Record<string, unknown>>(config: T, overrides: Record<string, string>): T {
   const result = structuredClone(config)
   for (const [dotPath, value] of Object.entries(overrides)) {
     const parts = dotPath.split('.')
@@ -321,17 +431,103 @@ function findConfig(startDir: string, fsImpl: ConfigFileSystem): string | undefi
  * Throws CantonctlError with detailed messages on failure.
  */
 function parseAndValidate(raw: string): CantonctlConfig {
-  let parsed: unknown
+  return validateConfigObject(parseYaml(raw))
+}
+
+function parseYaml(raw: string): unknown {
   try {
-    parsed = yaml.load(raw)
+    return yaml.load(raw)
   } catch (err) {
     throw new CantonctlError(ErrorCode.CONFIG_INVALID_YAML, {
-      cause: err instanceof Error ? err : undefined,
+      cause: err as Error,
       suggestion: 'Check your YAML syntax. Common issues: incorrect indentation, missing colons, or unquoted special characters.',
     })
   }
+}
 
-  const result = ConfigSchema.safeParse(parsed)
+function validateConfigObject(parsed: unknown): CantonctlConfig {
+  const result = RawConfigSchema.safeParse(parsed)
+  if (!result.success) {
+    const issues = result.error.issues.map(issue => {
+      const path = issue.path.length > 0 ? issue.path.join('.') : '(root)'
+      return `  - ${path}: ${issue.message}`
+    })
+
+    throw new CantonctlError(ErrorCode.CONFIG_SCHEMA_VIOLATION, {
+      context: {
+        issues: result.error.issues.map(i => ({
+          message: i.message,
+          path: i.path.join('.'),
+        })),
+      },
+      suggestion: `Fix the following fields in cantonctl.yaml:\n${issues.join('\n')}`,
+    })
+  }
+
+  const normalized = normalizeConfigProfiles(result.data)
+  const networkProfiles = collectNetworkProfiles(result.data, normalized)
+  const {
+    'default-profile': _rawDefaultProfile,
+    networks: _rawNetworks,
+    parties,
+    plugins,
+    profiles: _rawProfiles,
+    project,
+    version,
+    ...rest
+  } = result.data
+
+  return {
+    ...rest,
+    'default-profile': normalized.defaultProfile,
+    networks: Object.keys(normalized.networks).length > 0 ? normalized.networks : undefined,
+    networkProfiles: Object.keys(networkProfiles).length > 0 ? networkProfiles : undefined,
+    parties,
+    plugins,
+    profiles: Object.keys(normalized.profiles).length > 0 ? normalized.profiles : undefined,
+    project,
+    version,
+  }
+}
+
+function collectNetworkProfiles(
+  raw: RawConfig,
+  normalized: ReturnType<typeof normalizeConfigProfiles>,
+): Record<string, string> {
+  const networkProfiles: Record<string, string> = {}
+
+  for (const [name, network] of Object.entries(raw.networks ?? {})) {
+    if ('profile' in network) {
+      networkProfiles[name] = network.profile
+      continue
+    }
+
+    networkProfiles[name] = name
+  }
+
+  if (
+    !raw.networks?.local
+    && normalized.defaultProfile
+    && normalized.networks.local
+    && normalized.profiles[normalized.defaultProfile]
+  ) {
+    networkProfiles.local = normalized.defaultProfile
+  }
+
+  return networkProfiles
+}
+
+function readRawProjectConfig(searchDir: string, fsImpl: ConfigFileSystem): RawConfig {
+  const configPath = findConfig(searchDir, fsImpl)
+
+  if (!configPath) {
+    throw new CantonctlError(ErrorCode.CONFIG_NOT_FOUND, {
+      suggestion: 'Run "cantonctl init" to create a project.',
+    })
+  }
+
+  const parsed = parseYaml(fsImpl.readFileSync(configPath, 'utf8'))
+  const result = RawConfigSchema.safeParse(parsed)
   if (!result.success) {
     const issues = result.error.issues.map(issue => {
       const path = issue.path.length > 0 ? issue.path.join('.') : '(root)'
@@ -350,4 +546,61 @@ function parseAndValidate(raw: string): CantonctlConfig {
   }
 
   return result.data
+}
+
+function mergeConfigLayers(base: RawPartialConfig, overrides: RawConfig): RawPartialConfig {
+  const result: Record<string, unknown> = {...base}
+
+  result.project = {...(base.project ?? {}), ...overrides.project}
+
+  if (overrides.networks || base.networks) {
+    const baseNetworks = (base.networks ?? {}) as unknown as Record<string, Record<string, unknown>>
+    const overrideNetworks = (overrides.networks ?? {}) as unknown as Record<string, Record<string, unknown>>
+    const mergedNetworks: Record<string, Record<string, unknown>> = {}
+    const allKeys = new Set([...Object.keys(baseNetworks), ...Object.keys(overrideNetworks)])
+    for (const key of allKeys) {
+      mergedNetworks[key] = {...baseNetworks[key], ...overrideNetworks[key]}
+    }
+
+    result.networks = mergedNetworks
+  }
+
+  if (overrides.parties) {
+    result.parties = [...(base.parties ?? []), ...overrides.parties]
+  }
+
+  if (overrides.plugins) {
+    const all = [...(base.plugins ?? []), ...overrides.plugins]
+    result.plugins = [...new Set(all)]
+  }
+
+  if (overrides.profiles || base.profiles) {
+    const baseProfiles = (base.profiles ?? {}) as unknown as Record<string, Record<string, unknown>>
+    const overrideProfiles = (overrides.profiles ?? {}) as unknown as Record<string, Record<string, unknown>>
+    const mergedProfiles: Record<string, Record<string, unknown>> = {}
+    const allKeys = new Set([...Object.keys(baseProfiles), ...Object.keys(overrideProfiles)])
+    for (const key of allKeys) {
+      const baseProfile = baseProfiles[key] ?? {}
+      const overrideProfile = overrideProfiles[key] ?? {}
+      mergedProfiles[key] = {...baseProfile, ...overrideProfile}
+
+      for (const serviceKey of ['ans', 'auth', 'ledger', 'localnet', 'scan', 'scanProxy', 'tokenStandard', 'validator']) {
+        if (!baseProfile[serviceKey] && !overrideProfile[serviceKey]) continue
+        mergedProfiles[key][serviceKey] = {
+          ...(baseProfile[serviceKey] as Record<string, unknown> | undefined),
+          ...(overrideProfile[serviceKey] as Record<string, unknown> | undefined),
+        }
+      }
+    }
+
+    result.profiles = mergedProfiles
+  }
+
+  if (overrides['default-profile'] !== undefined) {
+    result['default-profile'] = overrides['default-profile']
+  }
+
+  result.version = overrides.version
+
+  return result as RawPartialConfig
 }
