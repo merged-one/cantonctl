@@ -418,6 +418,14 @@ export default class Status extends Command {
     config: CantonctlConfig,
     networkName: string,
   ): {profile: NonNullable<CantonctlConfig['profiles']>[string]} | undefined {
+    const explicitProfileName = config.networkProfiles?.[networkName]
+    if (explicitProfileName) {
+      const explicitProfile = config.profiles?.[explicitProfileName]
+      if (explicitProfile) {
+        return {profile: explicitProfile}
+      }
+    }
+
     const sameNameProfile = config.profiles?.[networkName]
     if (sameNameProfile) {
       return {profile: sameNameProfile}

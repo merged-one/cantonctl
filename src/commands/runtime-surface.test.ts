@@ -610,6 +610,64 @@ describe('runtime command surface', () => {
     }))
   })
 
+  it('uses network profile mappings when reporting single-node status by network', async () => {
+    class TestStatus extends Status {
+      protected override async detectProjectTopology(): Promise<GeneratedTopology | null> {
+        return null
+      }
+
+      protected override async loadProjectConfig(): Promise<CantonctlConfig> {
+        return {
+          ...createConfig(),
+          networkProfiles: {
+            devnet: 'splice-devnet',
+          },
+          networks: {
+            ...createConfig().networks,
+            devnet: {
+              type: 'remote',
+              url: 'https://devnet-ledger.example.com',
+            },
+          },
+        }
+      }
+
+      protected override createStatusLedgerClient(baseUrl?: string): LedgerClient {
+        expect(baseUrl).toBe('https://devnet-ledger.example.com')
+        return {
+          allocateParty: vi.fn(),
+          getActiveContracts: vi.fn(),
+          getLedgerEnd: vi.fn(),
+          getParties: vi.fn(async () => ({partyDetails: []})),
+          getVersion: vi.fn(async () => ({version: '3.4.11'})),
+          submitAndWait: vi.fn(),
+          uploadDar: vi.fn(),
+        } as never
+      }
+
+      protected override async createStatusToken(): Promise<string> {
+        return 'token'
+      }
+    }
+
+    const result = await captureOutput(() => TestStatus.run(['--network', 'devnet', '--json'], {root: CLI_ROOT}))
+    expect(result.error).toBeUndefined()
+
+    const json = parseJson(result.stdout)
+    expect(json.success).toBe(true)
+    expect(json.data).toEqual(expect.objectContaining({
+      healthy: true,
+      mode: 'single-node',
+      network: 'devnet',
+      profile: expect.objectContaining({kind: 'remote-validator', name: 'splice-devnet'}),
+      services: expect.arrayContaining([
+        expect.objectContaining({name: 'ledger', status: 'healthy'}),
+        expect.objectContaining({name: 'validator', status: 'configured'}),
+      ]),
+      version: '3.4.11',
+    }))
+  })
+
   it('renders profile summaries without probing remote ledgers in human mode', async () => {
     const config = createConfig()
 
