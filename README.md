@@ -106,9 +106,18 @@ The profile model is the product backbone. It is what lets `cantonctl` stay focu
 | `cantonctl test` | Run Daml Script tests with structured output | Delegates to DPM/daml |
 | `cantonctl deploy <network>` | Run the advisory DAR deploy wrapper for ledger-capable targets | Not a validator control plane |
 | `cantonctl status` | Show profile-aware service health and ledger status | Support and diagnostics surface |
+| `cantonctl diagnostics bundle` | Export a support-friendly diagnostics bundle | Support and diagnostics surface |
 | `cantonctl profiles list/show/validate` | Inspect and validate resolved runtime profiles | Core control-plane wedge |
+| `cantonctl profiles import-scan` | Synthesize profile blocks from stable/public scan discovery | Stable/public discovery helper |
 | `cantonctl compat check [profile]` | Check stable/public compatibility for a profile | Stable/public guardrail |
+| `cantonctl preflight --profile <name>` | Run read-only remote readiness checks | Promotion-friendly readiness gate |
+| `cantonctl promote diff --from <a> --to <b>` | Compare source and target profiles before promotion | Advisory lifecycle helper |
+| `cantonctl upgrade check --profile <name>` | Run advisory upgrade checks | Advisory lifecycle helper |
+| `cantonctl reset checklist --network <tier>` | Show reset-sensitive runbook reminders | Advisory lifecycle helper |
 | `cantonctl auth login/logout/status` | Manage profile-oriented auth and stored bearer credentials | Remote environment helper |
+| `cantonctl discover network --scan-url <url>` | Discover network metadata from stable/public scan surfaces | Stable/public discovery helper |
+| `cantonctl canary stable-public` | Run stable/public remote canaries | CI and promotion gate |
+| `cantonctl export sdk-config` | Export resolved config for official SDK consumers | SDK wiring helper |
 | `cantonctl scan updates/acs/current-state` | Query stable/public Scan surfaces | Stable/public only |
 | `cantonctl token holdings/transfer` | Use stable holdings and transfer-factory flows | Stable/public only |
 | `cantonctl ans list/create` | Read or create ANS entries through stable/public flows | Stable/public only |
@@ -180,6 +189,14 @@ Examples:
 - [docs/reference/localnet.md](docs/reference/localnet.md)
 - [docs/reference/compatibility.md](docs/reference/compatibility.md)
 - [docs/reference/preflight.md](docs/reference/preflight.md)
+- [docs/reference/promotion.md](docs/reference/promotion.md)
+- [docs/reference/upgrade.md](docs/reference/upgrade.md)
+- [docs/reference/reset.md](docs/reference/reset.md)
+- [docs/reference/diagnostics.md](docs/reference/diagnostics.md)
+- [docs/reference/discovery.md](docs/reference/discovery.md)
+- [docs/reference/canary.md](docs/reference/canary.md)
+- [docs/reference/sdk-config-export.md](docs/reference/sdk-config-export.md)
+- [docs/tasks/ci-gates.md](docs/tasks/ci-gates.md)
 
 ## Release And Migration Notes
 

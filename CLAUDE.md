@@ -142,6 +142,10 @@ The GitHub Actions workflow (`.github/workflows/ci.yml`) is generated from the s
 | `lifecycle/reset.ts` | `createResetHelper()` | Reset checklist generation for DevNet, TestNet, and MainNet advisory workflows |
 | `diagnostics/collect.ts` | `createDiagnosticsCollector(deps)` | Collects profile, compatibility, health, metrics, and validator-liveness diagnostics |
 | `diagnostics/bundle.ts` | `createDiagnosticsBundleWriter()` | Writes support-friendly diagnostics snapshots into a portable bundle directory |
+| `discovery/fetch.ts` | `createNetworkDiscoveryFetcher()` | Reads stable/public scan discovery surfaces for scans and sequencers |
+| `discovery/synthesize.ts` | `synthesizeProfileFromDiscovery()` | Converts scan discovery data into profile blocks and config merges |
+| `canary/run.ts` | `createCanaryRunner(deps)` | Runs stable/public scan, ANS, token-standard, and validator-user canaries |
+| `export/sdk-config.ts` | `createSdkConfigExporter(deps)` | Exports resolved profile data for official SDK and dApp API consumers |
 
 ## Playground (`playground/`)
 

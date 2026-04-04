@@ -19,6 +19,13 @@ Start here if you need to understand where `cantonctl` fits in the Canton and Sp
 - [Status](reference/status.md)
 - [LocalNet wrapper](reference/localnet.md)
 - [Preflight](reference/preflight.md)
+- [Promotion diff](reference/promotion.md)
+- [Upgrade checks](reference/upgrade.md)
+- [Reset checklist](reference/reset.md)
+- [Diagnostics bundle](reference/diagnostics.md)
+- [Discovery and profile import](reference/discovery.md)
+- [Stable/public canaries](reference/canary.md)
+- [SDK config export](reference/sdk-config-export.md)
 
 ## Adjunct Workbench Surfaces
 
@@ -31,6 +38,7 @@ Use Daml Studio for the canonical IDE workflow. Use these surfaces when you want
 
 - [Scan](reference/scan.md)
 - [Token standard](reference/token-standard.md)
+- [CI gates](tasks/ci-gates.md)
 - [API stability](reference/api-stability.md)
 - [Upstream sources](reference/upstream-sources.md)
 - [Examples](examples/README.md)

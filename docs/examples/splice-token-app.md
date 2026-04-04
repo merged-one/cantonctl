@@ -19,6 +19,10 @@ Stable-surface policy:
 - Does not wire validator-internal flows into the default scaffold
 - Does not treat burn/mint as part of the base token-standard starter
 
+SDK wiring:
+
+- `cantonctl export sdk-config --profile splice-devnet --target wallet-sdk --format env` emits resolved endpoints and auth placeholders for official SDK consumers
+
 Suggested next steps:
 
 ```bash

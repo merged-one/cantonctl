@@ -48,6 +48,7 @@ export interface ScanAdapter {
   ): Promise<ScanAcsSnapshotTimestampResponse>
   getClosedRounds(signal?: AbortSignal): Promise<ScanGetClosedRoundsResponse>
   getDsoInfo(signal?: AbortSignal): Promise<ScanGetDsoInfoResponse>
+  listDsoSequencers(signal?: AbortSignal): Promise<ScanListDsoSequencersResponse>
   getOpenAndIssuingMiningRounds(
     request: ScanGetOpenAndIssuingMiningRoundsRequest,
     signal?: AbortSignal,
@@ -82,6 +83,8 @@ export type ScanGetDsoInfoResponse =
   SpliceScanExternalOperations['getDsoInfo']['responses'][200]['content']['application/json']
 export type ScanListDsoScansResponse =
   SpliceScanExternalOperations['listDsoScans']['responses'][200]['content']['application/json']
+export type ScanListDsoSequencersResponse =
+  SpliceScanExternalOperations['listDsoSequencers']['responses'][200]['content']['application/json']
 export type ScanListValidatorLicensesResponse =
   SpliceScanExternalOperations['listValidatorLicenses']['responses'][200]['content']['application/json']
 export type ScanGetClosedRoundsResponse =
@@ -197,6 +200,14 @@ export function createScanAdapter(options: ScanAdapterOptions): ScanAdapter {
       return transport.requestJson<ScanListDsoScansResponse>({
         method: 'GET',
         path: '/v0/scans',
+        signal,
+      })
+    },
+
+    async listDsoSequencers(signal) {
+      return transport.requestJson<ScanListDsoSequencersResponse>({
+        method: 'GET',
+        path: '/v0/dso-sequencers',
         signal,
       })
     },
