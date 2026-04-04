@@ -143,11 +143,15 @@ export default class Status extends Command {
       })
     }
 
+    const allHealthy = nodeStatuses.every(node => node.healthy)
+    const ledgerServiceStatus: ServiceStatusEntry['status'] = allHealthy ? 'healthy' : 'unreachable'
     const inferredProfile = this.tryResolveNetworkProfile(config, flags.network)
     const services: ServiceStatusEntry[] = inferredProfile
       ? summarizeProfileServices(inferredProfile.profile).map(service => ({
         ...service,
-        status: (service.name === 'ledger' ? 'healthy' : 'configured') as ServiceStatusEntry['status'],
+        status: (service.name === 'ledger'
+          ? ledgerServiceStatus
+          : 'configured') as ServiceStatusEntry['status'],
       }))
       : [
         {
@@ -156,7 +160,7 @@ export default class Status extends Command {
           name: 'ledger' as const,
           sourceIds: ['canton-json-ledger-api-openapi'] as const,
           stability: 'stable-external' as const,
-          status: 'healthy' as const,
+          status: ledgerServiceStatus,
         },
       ]
 
@@ -182,7 +186,6 @@ export default class Status extends Command {
       this.printServiceTable(out, services)
     }
 
-    const allHealthy = nodeStatuses.every(node => node.healthy)
     if (flags.json) {
       out.result({
         data: {

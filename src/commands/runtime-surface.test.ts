@@ -565,6 +565,77 @@ describe('runtime command surface', () => {
     }))
   })
 
+  it('marks the multi-node ledger service unreachable when any participant is unhealthy', async () => {
+    class TestStatus extends Status {
+      protected override async detectProjectTopology(): Promise<GeneratedTopology | null> {
+        return {
+          bootstrapScript: '',
+          cantonConf: '',
+          dockerCompose: '',
+          participants: [
+            {
+              name: 'participant1',
+              parties: ['Alice'],
+              ports: {admin: 2001, jsonApi: 7575, ledgerApi: 6865},
+            },
+            {
+              name: 'participant2',
+              parties: ['Bob'],
+              ports: {admin: 2002, jsonApi: 7576, ledgerApi: 6866},
+            },
+          ],
+          synchronizer: {admin: 10001, publicApi: 10002},
+        }
+      }
+
+      protected override async loadProjectConfig(): Promise<CantonctlConfig> {
+        return {
+          ...createConfig(),
+          'default-profile': 'splice-devnet',
+        }
+      }
+
+      protected override createStatusLedgerClient(baseUrl?: string): LedgerClient {
+        return {
+          allocateParty: vi.fn(),
+          getActiveContracts: vi.fn(),
+          getLedgerEnd: vi.fn(),
+          getParties: vi.fn(async () => ({partyDetails: []})),
+          getVersion: vi.fn(async () => {
+            if (baseUrl?.endsWith('7576')) {
+              throw new Error('offline')
+            }
+
+            return {version: '3.4.11'}
+          }),
+          submitAndWait: vi.fn(),
+          uploadDar: vi.fn(),
+        } as never
+      }
+
+      protected override async createStatusToken(): Promise<string> {
+        return 'token'
+      }
+    }
+
+    const result = await captureOutput(() => TestStatus.run(['--json'], {root: CLI_ROOT}))
+    expect(result.error).toBeDefined()
+
+    const json = parseJson(result.stdout)
+    expect(json.success).toBe(false)
+    expect(json.data).toEqual(expect.objectContaining({
+      mode: 'multi-node',
+      nodes: [
+        expect.objectContaining({healthy: true, name: 'participant1'}),
+        expect.objectContaining({healthy: false, name: 'participant2'}),
+      ],
+      services: expect.arrayContaining([
+        expect.objectContaining({name: 'ledger', status: 'unreachable'}),
+        expect.objectContaining({name: 'validator', status: 'configured'}),
+      ]),
+    }))
+  })
+
   it('reports single-node ledger status in json mode', async () => {
     class TestStatus extends Status {
       protected override async detectProjectTopology(): Promise<GeneratedTopology | null> {
