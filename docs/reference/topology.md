@@ -51,6 +51,8 @@ topologies:
 
 `serve` and `playground` read `.cantonctl/topology.json` first when attaching to a local net runtime. That manifest is the canonical runtime description for arbitrary participant counts.
 
+Named topologies with 3+ participants are supported in `dev --net` and are exposed unchanged through `/api/topology` and `/api/topology/status`.
+
 ## Source
 
 - Commands: [`src/commands/topology/show.ts`](../../src/commands/topology/show.ts), [`src/commands/topology/export.ts`](../../src/commands/topology/export.ts)
