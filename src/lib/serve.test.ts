@@ -876,6 +876,12 @@ describe('createServeServer', () => {
     const partialAfter = await request(context.port, '/api/splice/scan/updates?afterMigrationId=7')
     expect(partialAfter.status).toBe(400)
 
+    const invalidAfterMigrationId = await request(
+      context.port,
+      '/api/splice/scan/updates?afterMigrationId=abc&afterRecordTime=2026-04-02T20:00:00Z',
+    )
+    expect(invalidAfterMigrationId.status).toBe(400)
+
     const missingContractsParty = await request(context.port, '/api/contracts')
     expect(missingContractsParty.status).toBe(400)
 

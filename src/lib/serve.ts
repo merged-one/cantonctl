@@ -636,12 +636,22 @@ export function createServeServer(deps: ServeServerDeps): ServeServer {
       })
 
       app.get('/api/splice/scan/updates', async (req: Request, res: Response) => {
-        const afterMigrationId = typeof req.query.afterMigrationId === 'string'
-          ? Number.parseInt(req.query.afterMigrationId, 10)
+        const afterMigrationIdParam = typeof req.query.afterMigrationId === 'string'
+          ? req.query.afterMigrationId.trim()
           : undefined
+        const afterMigrationId = afterMigrationIdParam !== undefined && /^-?\d+$/.test(afterMigrationIdParam)
+          ? Number.parseInt(afterMigrationIdParam, 10)
+          : afterMigrationIdParam === undefined
+            ? undefined
+            : Number.NaN
         const afterRecordTime = typeof req.query.afterRecordTime === 'string'
           ? req.query.afterRecordTime
           : undefined
+
+        if (Number.isNaN(afterMigrationId)) {
+          res.status(400).json({error: 'afterMigrationId must be an integer'})
+          return
+        }
 
         if ((afterMigrationId === undefined) !== (afterRecordTime === undefined)) {
           res.status(400).json({error: 'afterMigrationId and afterRecordTime must be provided together'})

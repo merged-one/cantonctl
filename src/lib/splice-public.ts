@@ -752,13 +752,14 @@ function pickAnsSource(options: {
   scanBaseUrl?: string
   scanProxyBaseUrl?: string
   source?: 'ans' | 'auto' | 'scan' | 'scanProxy'
+  token?: string
 }): 'ans' | 'scan' | 'scanProxy' {
   if (options.source && options.source !== 'auto') {
     return options.source
   }
 
   const hasAns = !!(options.ansBaseUrl || options.profile?.services.ans?.url)
-  if (hasAns && !options.party) {
+  if (hasAns && !options.party && hasUsableToken(options.token)) {
     return 'ans'
   }
 
@@ -795,7 +796,7 @@ function normalizeDisclosedContracts(contracts: unknown[] | undefined): LedgerDi
 }
 
 function requireToken(token: string | undefined, service: string): string {
-  if (token && token.trim().length > 0) {
+  if (hasUsableToken(token)) {
     return token
   }
 
@@ -803,6 +804,10 @@ function requireToken(token: string | undefined, service: string): string {
     context: {service},
     suggestion: `Pass --token <jwt> to authenticate against the ${service} surface.`,
   })
+}
+
+function hasUsableToken(token: string | undefined): token is string {
+  return !!token && token.trim().length > 0
 }
 
 function toRecord(value: unknown): Record<string, unknown> {

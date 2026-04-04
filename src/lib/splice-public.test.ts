@@ -1210,6 +1210,62 @@ describe('createStableSplice', () => {
     })
   })
 
+  it('falls back to scan for public ans reads when owned ans lacks a token in auto mode', async () => {
+    const ansAdapter = {
+      listEntries: vi.fn(),
+      metadata: {
+        baseUrl: 'https://ans.example.com',
+        service: 'ans',
+        upstream: [],
+        upstreamSourceIds: ['splice-ans-external-openapi'],
+        warnings: ['owned'],
+      },
+    }
+    const scanAdapter = {
+      listAnsEntries: vi.fn().mockResolvedValue({
+        entries: [{
+          contract_id: 'ans-public-1',
+          name: 'alice.unverified.ans',
+          user: 'Alice',
+        }],
+      }),
+      lookupAnsEntryByName: vi.fn(),
+      lookupAnsEntryByParty: vi.fn(),
+      metadata: {
+        baseUrl: 'https://scan.example.com',
+        service: 'scan',
+        upstream: [],
+        upstreamSourceIds: ['splice-scan-external-openapi'],
+        warnings: ['public'],
+      },
+    }
+
+    const splice = createStableSplice({
+      createAnsAdapter: vi.fn().mockReturnValue(ansAdapter),
+      createScanAdapter: vi.fn().mockReturnValue(scanAdapter),
+    })
+
+    const result = await splice.listAnsEntries({
+      ansBaseUrl: 'https://ans.example.com',
+      namePrefix: 'alice',
+      scanBaseUrl: 'https://scan.example.com',
+    })
+
+    expect(ansAdapter.listEntries).not.toHaveBeenCalled()
+    expect(scanAdapter.listAnsEntries).toHaveBeenCalledWith({
+      namePrefix: 'alice',
+      pageSize: 20,
+    }, undefined)
+    expect(result).toEqual({
+      endpoint: 'https://scan.example.com',
+      entries: [
+        expect.objectContaining({contractId: 'ans-public-1', name: 'alice.unverified.ans'}),
+      ],
+      source: 'scan',
+      warnings: ['public'],
+    })
+  })
+
   it('preserves populated owned ans entry fields when they are already strings', async () => {
     const ansAdapter = {
       listEntries: vi.fn().mockResolvedValue({
