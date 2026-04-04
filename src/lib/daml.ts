@@ -251,7 +251,9 @@ export function createDamlSdk(options: DamlSdkOptions): DamlSdk {
       const port = opts.port ?? 5001
       const jsonApiPort = opts.jsonApiPort ?? 7575
 
-      const args = ['sandbox', '--port', String(port), '--json-api-port', String(jsonApiPort)]
+      const args = tool === 'dpm'
+        ? ['sandbox', '--ledger-api-port', String(port), '--json-api-port', String(jsonApiPort)]
+        : ['sandbox', '--port', String(port), '--json-api-port', String(jsonApiPort)]
       if (opts.extraArgs) {
         args.push(...opts.extraArgs)
       }
