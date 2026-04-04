@@ -140,6 +140,8 @@ The GitHub Actions workflow (`.github/workflows/ci.yml`) is generated from the s
 | `lifecycle/diff.ts` | `createLifecycleDiff(deps)` | Advisory profile-to-profile promotion diffing with reset and auth guidance |
 | `lifecycle/upgrade.ts` | `createUpgradeChecker(deps)` | Read-only upgrade checks: compatibility, auth readiness, and scan-backed migration hints |
 | `lifecycle/reset.ts` | `createResetHelper()` | Reset checklist generation for DevNet, TestNet, and MainNet advisory workflows |
+| `diagnostics/collect.ts` | `createDiagnosticsCollector(deps)` | Collects profile, compatibility, health, metrics, and validator-liveness diagnostics |
+| `diagnostics/bundle.ts` | `createDiagnosticsBundleWriter()` | Writes support-friendly diagnostics snapshots into a portable bundle directory |
 
 ## Playground (`playground/`)
 

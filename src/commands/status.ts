@@ -23,6 +23,12 @@ interface ServiceStatusEntry extends ProfileServiceSummary {
   status: 'configured' | 'healthy' | 'unreachable'
 }
 
+interface StatusSummary {
+  configuredServices: number
+  healthyServices: number
+  unreachableServices: number
+}
+
 interface StatusFlags {
   json: boolean
   network: string
@@ -204,6 +210,7 @@ export default class Status extends Command {
             name: inferredProfile.profile.name,
           } : undefined,
           services,
+          summary: this.buildSummary(services),
         },
         success: allHealthy,
       })
@@ -272,6 +279,7 @@ export default class Status extends Command {
             name: profile.name,
           },
           services,
+          summary: this.buildSummary(services),
           version,
         },
         success: healthy === undefined ? true : healthy,
@@ -354,6 +362,7 @@ export default class Status extends Command {
             name: inferredProfile.profile.name,
           } : undefined,
           services,
+          summary: this.buildSummary(services),
           version: ledgerStatus.version,
         },
         success: ledgerStatus.healthy,
@@ -407,6 +416,14 @@ export default class Status extends Command {
         service.stability,
       ]),
     )
+  }
+
+  private buildSummary(services: ServiceStatusEntry[]): StatusSummary {
+    return {
+      configuredServices: services.length,
+      healthyServices: services.filter(service => service.status === 'healthy').length,
+      unreachableServices: services.filter(service => service.status === 'unreachable').length,
+    }
   }
 
   private shouldCheckLedgerHealth(profile: NonNullable<CantonctlConfig['profiles']>[string]): boolean {
