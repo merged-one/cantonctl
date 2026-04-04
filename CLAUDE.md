@@ -137,6 +137,9 @@ The GitHub Actions workflow (`.github/workflows/ci.yml`) is generated from the s
 | `splice-public.ts` | `createStableSplice(deps)` | Stable public Splice surface orchestration for scan, token-standard, ANS, and validator-user flows |
 | `profile-runtime.ts` | `createProfileRuntimeResolver(deps)` | Shared profile/network/auth/token resolution for companion runtime commands |
 | `preflight/checks.ts` | `createPreflightChecks(deps)` | Read-only remote readiness checks: profile, auth, scan, egress, and optional health probes |
+| `lifecycle/diff.ts` | `createLifecycleDiff(deps)` | Advisory profile-to-profile promotion diffing with reset and auth guidance |
+| `lifecycle/upgrade.ts` | `createUpgradeChecker(deps)` | Read-only upgrade checks: compatibility, auth readiness, and scan-backed migration hints |
+| `lifecycle/reset.ts` | `createResetHelper()` | Reset checklist generation for DevNet, TestNet, and MainNet advisory workflows |
 
 ## Playground (`playground/`)
 

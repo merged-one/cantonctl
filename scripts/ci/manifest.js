@@ -57,6 +57,7 @@ export const VITEST_PROJECTS = Object.freeze({
       'test/e2e/scan-validator.e2e.test.ts',
       'test/e2e/compat.e2e.test.ts',
       'test/e2e/preflight.e2e.test.ts',
+      'test/e2e/lifecycle.e2e.test.ts',
     ],
     name: 'e2e-stable-public',
     testTimeout: 120_000,
