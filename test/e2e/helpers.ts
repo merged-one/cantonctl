@@ -5,6 +5,7 @@
  * detection so that E2E tests work identically on macOS and Linux CI runners.
  */
 
+import * as fs from 'node:fs'
 import * as os from 'node:os'
 import * as path from 'node:path'
 import {execSync} from 'node:child_process'
@@ -139,4 +140,23 @@ export function hasCantonImage(): boolean {
   } catch {
     return false
   }
+}
+
+/**
+ * Create an E2E temp directory.
+ *
+ * `dev --full` writes Docker bind-mounted config files into this directory.
+ * When local CI parity runs inside a container with the host Docker socket,
+ * those bind mounts must point at a host-backed path rather than container-
+ * private `/tmp`, so the Docker daemon can see the generated files.
+ */
+export function createE2eTempDir(prefix: string): string {
+  const tempRoot = process.env.CANTONCTL_E2E_TMPDIR
+
+  if (tempRoot) {
+    fs.mkdirSync(tempRoot, {recursive: true})
+    return fs.mkdtempSync(path.join(tempRoot, prefix))
+  }
+
+  return fs.mkdtempSync(path.join(os.tmpdir(), prefix))
 }

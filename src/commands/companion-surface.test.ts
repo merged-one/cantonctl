@@ -1,0 +1,651 @@
+import {captureOutput} from '@oclif/test'
+import {mkdtempSync, readFileSync, rmSync, writeFileSync} from 'node:fs'
+import {tmpdir} from 'node:os'
+import {join} from 'node:path'
+import {afterEach, describe, expect, it, vi} from 'vitest'
+
+import * as canaryReportModule from '../lib/canary/report.js'
+import * as canaryRunModule from '../lib/canary/run.js'
+import * as configModule from '../lib/config.js'
+import type {CantonctlConfig} from '../lib/config.js'
+import * as diagnosticsBundleModule from '../lib/diagnostics/bundle.js'
+import * as diagnosticsCollectModule from '../lib/diagnostics/collect.js'
+import * as discoveryFetchModule from '../lib/discovery/fetch.js'
+import * as exportFormattersModule from '../lib/export/formatters.js'
+import * as exportSdkConfigModule from '../lib/export/sdk-config.js'
+import {CantonctlError, ErrorCode} from '../lib/errors.js'
+import * as lifecycleDiffModule from '../lib/lifecycle/diff.js'
+import * as lifecycleResetModule from '../lib/lifecycle/reset.js'
+import * as lifecycleUpgradeModule from '../lib/lifecycle/upgrade.js'
+import * as preflightChecksModule from '../lib/preflight/checks.js'
+import CanaryStablePublic from './canary/stable-public.js'
+import DiagnosticsBundle from './diagnostics/bundle.js'
+import DiscoverNetwork from './discover/network.js'
+import ExportSdkConfig from './export/sdk-config.js'
+import Init from './init.js'
+import Preflight from './preflight.js'
+import ProfilesImportScan from './profiles/import-scan.js'
+import PromoteDiff from './promote/diff.js'
+import ResetChecklist from './reset/checklist.js'
+import UpgradeCheck from './upgrade/check.js'
+
+const CLI_ROOT = process.cwd()
+const ORIGINAL_CWD = process.cwd()
+const TEMP_DIRS: string[] = []
+
+afterEach(() => {
+  vi.restoreAllMocks()
+  process.chdir(ORIGINAL_CWD)
+  for (const dir of TEMP_DIRS.splice(0)) {
+    rmSync(dir, {force: true, recursive: true})
+  }
+})
+
+function createTempDir(prefix: string): string {
+  const dir = mkdtempSync(join(tmpdir(), prefix))
+  TEMP_DIRS.push(dir)
+  return dir
+}
+
+function createConfig(): CantonctlConfig {
+  return {
+    'default-profile': 'splice-devnet',
+    networks: {
+      local: {port: 5001, 'json-api-port': 7575, type: 'sandbox'},
+    },
+    profiles: {
+      sandbox: {
+        experimental: false,
+        kind: 'sandbox',
+        name: 'sandbox',
+        services: {
+          ledger: {port: 5001, 'json-api-port': 7575},
+        },
+      },
+      'splice-devnet': {
+        experimental: false,
+        kind: 'remote-validator',
+        name: 'splice-devnet',
+        services: {
+          ans: {url: 'https://ans.example.com'},
+          auth: {issuer: 'https://login.example.com', kind: 'jwt', url: 'https://auth.example.com'},
+          ledger: {url: 'https://ledger.example.com'},
+          scan: {url: 'https://scan.example.com'},
+          tokenStandard: {url: 'https://tokens.example.com'},
+          validator: {url: 'https://validator.example.com'},
+        },
+      },
+    },
+    project: {name: 'demo', 'sdk-version': '3.4.11'},
+    version: 1,
+  }
+}
+
+function createPreflightReport(success: boolean) {
+  return {
+    auth: {
+      credentialSource: 'stored',
+      envVarName: 'CANTONCTL_JWT_SPLICE_DEVNET',
+      mode: 'env-or-keychain-jwt',
+      warnings: success ? ['Keychain token is near expiry.'] : [],
+    },
+    checks: [
+      {
+        category: 'scan',
+        detail: success ? 'Scan reachable.' : 'Scan failed.',
+        endpoint: 'https://scan.example.com',
+        name: 'scan',
+        status: success ? 'pass' : 'fail',
+      },
+    ],
+    compatibility: {failed: success ? 0 : 1, passed: 3, warned: 1},
+    egressIp: success ? '203.0.113.10' : undefined,
+    network: {
+      checklist: ['Confirm egress IP'],
+      name: 'splice-devnet',
+      reminders: success ? ['DevNet may reset periodically.'] : [],
+      resetExpectation: 'resets-expected',
+      tier: 'devnet',
+    },
+    profile: {
+      experimental: success,
+      kind: 'remote-validator',
+      name: 'splice-devnet',
+    },
+    success,
+  } as const
+}
+
+function createCanaryReport(success: boolean) {
+  return {
+    checks: [
+      {
+        detail: success ? 'Reachable.' : 'Request failed.',
+        endpoint: 'https://scan.example.com',
+        status: success ? 'pass' : 'fail',
+        suite: 'scan',
+        warnings: [],
+      },
+    ],
+    profile: {kind: 'remote-validator', name: 'splice-devnet'},
+    success,
+  } as const
+}
+
+function createDiagnosticsSnapshot() {
+  return {
+    auth: {envVarName: 'CANTONCTL_JWT_SPLICE_DEVNET', mode: 'env-or-keychain-jwt', source: 'stored'},
+    compatibility: {failed: 0, passed: 3, warned: 1},
+    health: [{detail: 'Healthy.', endpoint: 'https://scan.example.com/readyz', name: 'scan-readyz', status: 'healthy'}],
+    metrics: [{detail: 'Metrics endpoint reachable.', endpoint: 'https://scan.example.com/metrics', service: 'scan', status: 'available'}],
+    profile: {experimental: false, kind: 'remote-validator', name: 'splice-devnet', network: 'splice-devnet'},
+    services: [{endpoint: 'https://scan.example.com', name: 'scan', stability: 'stable-public'}],
+    validatorLiveness: {approvedValidatorCount: 1, endpoint: 'https://scan.example.com', sampleSize: 1},
+  } as const
+}
+
+function createDiscoverySnapshot() {
+  return {
+    dsoInfo: {auth_url: 'https://auth.example.com', validator_url: 'https://validator.example.com'},
+    scanUrl: 'https://scan.example.com',
+    scans: [{url: 'https://scan.example.com'}],
+    sequencers: [{id: 'sequencer::1'}],
+  } as const
+}
+
+function createPromoteReport(success: boolean) {
+  return {
+    advisories: success
+      ? [{code: 'network-tier', message: 'tier changed', severity: 'warn'}]
+      : [{code: 'scan-missing', message: 'scan missing', severity: 'fail'}],
+    from: {experimental: false, kind: 'remote-validator', name: 'splice-devnet', network: 'splice-devnet', tier: 'devnet'},
+    services: [{change: 'changed', from: 'https://scan.devnet.example.com', name: 'scan', to: 'https://scan.testnet.example.com'}],
+    success,
+    summary: {failed: success ? 0 : 1, info: 0, warned: 0},
+    to: {experimental: false, kind: 'remote-validator', name: 'splice-testnet', network: 'splice-testnet', tier: 'testnet'},
+  } as const
+}
+
+function createUpgradeReport(success: boolean) {
+  return {
+    advisories: success ? [{code: 'sponsor-reminder', message: 'confirm secrets', severity: 'warn'}] : [{code: 'auth-material', message: 'missing auth', severity: 'fail'}],
+    auth: {envVarName: 'CANTONCTL_JWT_SPLICE_DEVNET', mode: 'env-or-keychain-jwt', source: success ? 'stored' : 'missing'},
+    compatibility: {failed: success ? 0 : 1, warned: 1},
+    migration: {previousMigrationId: 4, source: 'https://scan.example.com'},
+    profile: {kind: 'remote-validator', name: 'splice-devnet', network: 'splice-devnet', tier: 'devnet'},
+    success,
+  } as const
+}
+
+function createExportedSdkConfig() {
+  return {
+    auth: {
+      envVarName: 'CANTONCTL_JWT_SPLICE_DEVNET',
+      mode: 'env-or-keychain-jwt',
+      tokenPlaceholder: '${CANTONCTL_JWT_SPLICE_DEVNET}',
+    },
+    cip: 'CIP-0103',
+    endpoints: {
+      authUrl: 'https://auth.example.com',
+      dappApiUrl: 'https://validator.example.com',
+      ledgerUrl: 'https://ledger.example.com',
+      scanUrl: 'https://scan.example.com',
+      tokenStandardUrl: 'https://tokens.example.com',
+      validatorUrl: 'https://validator.example.com',
+      walletGatewayUrl: 'https://validator.example.com',
+    },
+    notes: ['Use official SDKs.'],
+    profile: {kind: 'remote-validator', name: 'splice-devnet', network: 'splice-devnet'},
+    target: 'dapp-sdk',
+  } as const
+}
+
+function parseJson(stdout: string): Record<string, unknown> {
+  return JSON.parse(stdout.trim()) as Record<string, unknown>
+}
+
+describe('companion command surface', () => {
+  it('prints splice template next steps for init in human mode', async () => {
+    class TestInit extends Init {
+      protected override resolveProjectDir(projectName: string): string {
+        return `/tmp/${projectName}`
+      }
+
+      protected override scaffoldProject(options: {dir: string; name: string; template: 'basic' | 'token' | 'defi-amm' | 'api-service' | 'zenith-evm' | 'splice-token-app' | 'splice-scan-reader' | 'splice-dapp-sdk'}) {
+        return {
+          files: ['cantonctl.yaml'],
+          projectDir: options.dir,
+          template: options.template,
+        }
+      }
+    }
+
+    const result = await captureOutput(() => TestInit.run(['demo-app', '--template', 'splice-token-app'], {root: CLI_ROOT}))
+    expect(result.error).toBeUndefined()
+    expect(result.stdout).toContain('cantonctl compat check splice-devnet')
+  })
+
+  it('runs preflight in human mode and serializes failures in json mode', async () => {
+    vi.spyOn(configModule, 'loadConfig').mockResolvedValue(createConfig())
+    const run = vi.fn()
+      .mockResolvedValueOnce(createPreflightReport(true))
+      .mockResolvedValueOnce(createPreflightReport(false))
+    vi.spyOn(preflightChecksModule, 'createPreflightChecks').mockReturnValue({run})
+
+    const human = await captureOutput(() => Preflight.run([], {root: CLI_ROOT}))
+    expect(human.error).toBeUndefined()
+    expect(human.stdout).toContain('Profile: splice-devnet')
+    expect(human.stdout).toContain('Egress IP: 203.0.113.10')
+
+    const jsonFailure = await captureOutput(() => Preflight.run(['--json'], {root: CLI_ROOT}))
+    expect(jsonFailure.error).toBeDefined()
+    expect(parseJson(jsonFailure.stdout)).toEqual(expect.objectContaining({
+      data: expect.objectContaining({success: false}),
+      success: false,
+    }))
+  })
+
+  it('serializes CantonctlError preflight failures and rethrows unexpected ones', async () => {
+    vi.spyOn(configModule, 'loadConfig').mockResolvedValue(createConfig())
+    const createPreflightChecksSpy = vi.spyOn(preflightChecksModule, 'createPreflightChecks')
+
+    createPreflightChecksSpy.mockReturnValueOnce({
+      run: vi.fn().mockRejectedValue(new CantonctlError(ErrorCode.CONFIG_NOT_FOUND, {suggestion: 'create config'})),
+    })
+
+    const handled = await captureOutput(() => Preflight.run(['--json'], {root: CLI_ROOT}))
+    expect(handled.error).toBeDefined()
+    expect(parseJson(handled.stdout)).toEqual(expect.objectContaining({
+      error: expect.objectContaining({code: ErrorCode.CONFIG_NOT_FOUND, suggestion: 'create config'}),
+      success: false,
+    }))
+
+    createPreflightChecksSpy.mockReturnValueOnce({run: vi.fn().mockRejectedValue(new Error('preflight boom'))})
+    await expect(Preflight.run(['--json'], {root: CLI_ROOT})).rejects.toThrow('preflight boom')
+  })
+
+  it('runs stable-public canaries in human mode and json mode', async () => {
+    vi.spyOn(configModule, 'loadConfig').mockResolvedValue(createConfig())
+    const run = vi.fn()
+      .mockResolvedValueOnce(createCanaryReport(true))
+      .mockResolvedValueOnce(createCanaryReport(false))
+    vi.spyOn(canaryRunModule, 'createCanaryRunner').mockReturnValue({run})
+
+    const human = await captureOutput(() => CanaryStablePublic.run(['--suite', 'scan'], {root: CLI_ROOT}))
+    expect(human.error).toBeUndefined()
+    expect(human.stdout).toContain('Profile: splice-devnet')
+    expect(human.stdout).toContain('scan')
+
+    const jsonFailure = await captureOutput(() => CanaryStablePublic.run(['--suite', 'scan', '--json'], {root: CLI_ROOT}))
+    expect(jsonFailure.error).toBeDefined()
+    expect(parseJson(jsonFailure.stdout)).toEqual(expect.objectContaining({
+      data: expect.objectContaining({success: false}),
+      success: false,
+    }))
+  })
+
+  it('serializes canary command failures and rethrows unexpected ones', async () => {
+    vi.spyOn(configModule, 'loadConfig').mockResolvedValue(createConfig())
+    const createRunnerSpy = vi.spyOn(canaryRunModule, 'createCanaryRunner')
+
+    createRunnerSpy.mockReturnValueOnce({
+      run: vi.fn().mockRejectedValue(new CantonctlError(ErrorCode.CONFIG_NOT_FOUND, {suggestion: 'set profile'})),
+    })
+    const handled = await captureOutput(() => CanaryStablePublic.run(['--json'], {root: CLI_ROOT}))
+    expect(handled.error).toBeDefined()
+    expect(parseJson(handled.stdout)).toEqual(expect.objectContaining({
+      error: expect.objectContaining({code: ErrorCode.CONFIG_NOT_FOUND}),
+      success: false,
+    }))
+
+    createRunnerSpy.mockReturnValueOnce({run: vi.fn().mockRejectedValue(new Error('canary boom'))})
+    await expect(CanaryStablePublic.run(['--json'], {root: CLI_ROOT})).rejects.toThrow('canary boom')
+  })
+
+  it('writes diagnostics bundles in human and json modes', async () => {
+    const projectDir = createTempDir('cantonctl-diagnostics-')
+    process.chdir(projectDir)
+    vi.spyOn(configModule, 'loadConfig').mockResolvedValue(createConfig())
+    const snapshot = createDiagnosticsSnapshot()
+    const collect = vi.fn().mockResolvedValue(snapshot)
+    const write = vi.fn()
+      .mockResolvedValueOnce({files: [join(projectDir, 'profile.json')], outputDir: join(projectDir, '.cantonctl', 'diagnostics', 'splice-devnet')})
+      .mockResolvedValueOnce({files: [join(projectDir, 'bundle.json')], outputDir: join(projectDir, 'artifacts')})
+    vi.spyOn(diagnosticsCollectModule, 'createDiagnosticsCollector').mockReturnValue({collect})
+    vi.spyOn(diagnosticsBundleModule, 'createDiagnosticsBundleWriter').mockReturnValue({write})
+
+    const human = await captureOutput(() => DiagnosticsBundle.run([], {root: CLI_ROOT}))
+    expect(human.error).toBeUndefined()
+    expect(human.stdout).toContain('Diagnostics bundle written to')
+
+    const json = await captureOutput(() => DiagnosticsBundle.run(['--json', '--output', join(projectDir, 'artifacts')], {root: CLI_ROOT}))
+    expect(json.error).toBeUndefined()
+    expect(parseJson(json.stdout)).toEqual(expect.objectContaining({
+      data: expect.objectContaining({
+        bundle: expect.objectContaining({outputDir: join(projectDir, 'artifacts')}),
+        snapshot: expect.objectContaining({profile: expect.objectContaining({name: 'splice-devnet'})}),
+      }),
+      success: true,
+    }))
+  })
+
+  it('serializes diagnostics command failures and rethrows unexpected ones', async () => {
+    vi.spyOn(configModule, 'loadConfig').mockResolvedValue(createConfig())
+    const createCollectorSpy = vi.spyOn(diagnosticsCollectModule, 'createDiagnosticsCollector')
+    vi.spyOn(diagnosticsBundleModule, 'createDiagnosticsBundleWriter').mockReturnValue({
+      write: vi.fn(),
+    })
+
+    createCollectorSpy.mockReturnValueOnce({
+      collect: vi.fn().mockRejectedValue(new CantonctlError(ErrorCode.CONFIG_NOT_FOUND, {suggestion: 'fix config'})),
+    })
+    const handled = await captureOutput(() => DiagnosticsBundle.run(['--json'], {root: CLI_ROOT}))
+    expect(handled.error).toBeDefined()
+    expect(parseJson(handled.stdout)).toEqual(expect.objectContaining({
+      error: expect.objectContaining({code: ErrorCode.CONFIG_NOT_FOUND}),
+      success: false,
+    }))
+
+    createCollectorSpy.mockReturnValueOnce({
+      collect: vi.fn().mockRejectedValue(new Error('diagnostics boom')),
+    })
+    await expect(DiagnosticsBundle.run(['--json'], {root: CLI_ROOT})).rejects.toThrow('diagnostics boom')
+  })
+
+  it('discovers network metadata in human and json modes', async () => {
+    const fetch = vi.fn()
+      .mockResolvedValueOnce(createDiscoverySnapshot())
+      .mockResolvedValueOnce(createDiscoverySnapshot())
+    vi.spyOn(discoveryFetchModule, 'createNetworkDiscoveryFetcher').mockReturnValue({fetch})
+
+    const human = await captureOutput(() => DiscoverNetwork.run(['--scan-url', 'https://scan.example.com'], {root: CLI_ROOT}))
+    expect(human.error).toBeUndefined()
+    expect(human.stdout).toContain('Connected scans: 1')
+
+    const json = await captureOutput(() => DiscoverNetwork.run(['--scan-url', 'https://scan.example.com', '--json'], {root: CLI_ROOT}))
+    expect(json.error).toBeUndefined()
+    expect(parseJson(json.stdout)).toEqual(expect.objectContaining({
+      data: expect.objectContaining({scanUrl: 'https://scan.example.com'}),
+      success: true,
+    }))
+  })
+
+  it('serializes discovery command failures and rethrows unexpected ones', async () => {
+    const createFetcherSpy = vi.spyOn(discoveryFetchModule, 'createNetworkDiscoveryFetcher')
+
+    createFetcherSpy.mockReturnValueOnce({
+      fetch: vi.fn().mockRejectedValue(new CantonctlError(ErrorCode.CONFIG_NOT_FOUND, {suggestion: 'set scan url'})),
+    })
+    const handled = await captureOutput(() => DiscoverNetwork.run(['--scan-url', 'https://scan.example.com', '--json'], {root: CLI_ROOT}))
+    expect(handled.error).toBeDefined()
+    expect(parseJson(handled.stdout)).toEqual(expect.objectContaining({
+      error: expect.objectContaining({code: ErrorCode.CONFIG_NOT_FOUND}),
+      success: false,
+    }))
+
+    createFetcherSpy.mockReturnValueOnce({
+      fetch: vi.fn().mockRejectedValue(new Error('discover boom')),
+    })
+    await expect(DiscoverNetwork.run(['--scan-url', 'https://scan.example.com', '--json'], {root: CLI_ROOT})).rejects.toThrow('discover boom')
+  })
+
+  it('exports SDK config in env and wrapped json modes', async () => {
+    vi.spyOn(configModule, 'loadConfig').mockResolvedValue(createConfig())
+    const exported = createExportedSdkConfig()
+    const exportConfig = vi.fn()
+      .mockResolvedValueOnce(exported)
+      .mockResolvedValueOnce(exported)
+    vi.spyOn(exportSdkConfigModule, 'createSdkConfigExporter').mockReturnValue({exportConfig})
+    vi.spyOn(exportFormattersModule, 'renderSdkConfigEnv').mockReturnValue('SPLICE_AUTH_MODE=env-or-keychain-jwt\n')
+    vi.spyOn(exportFormattersModule, 'renderSdkConfigJson').mockReturnValue('{"cip":"CIP-0103"}\n')
+
+    const human = await captureOutput(() => ExportSdkConfig.run(['--target', 'dapp-sdk', '--format', 'env'], {root: CLI_ROOT}))
+    expect(human.error).toBeUndefined()
+    expect(human.stdout).toContain('SPLICE_AUTH_MODE=env-or-keychain-jwt')
+
+    const json = await captureOutput(() => ExportSdkConfig.run(['--target', 'dapp-sdk', '--format', 'json', '--json'], {root: CLI_ROOT}))
+    expect(json.error).toBeUndefined()
+    expect(parseJson(json.stdout)).toEqual(expect.objectContaining({
+      data: expect.objectContaining({
+        config: expect.objectContaining({cip: 'CIP-0103'}),
+        format: 'json',
+        rendered: '{"cip":"CIP-0103"}\n',
+      }),
+      success: true,
+    }))
+  })
+
+  it('serializes SDK export failures and rethrows unexpected ones', async () => {
+    vi.spyOn(configModule, 'loadConfig').mockResolvedValue(createConfig())
+    const createExporterSpy = vi.spyOn(exportSdkConfigModule, 'createSdkConfigExporter')
+
+    createExporterSpy.mockReturnValueOnce({
+      exportConfig: vi.fn().mockRejectedValue(new CantonctlError(ErrorCode.CONFIG_NOT_FOUND, {suggestion: 'configure profile'})),
+    })
+    const handled = await captureOutput(() => ExportSdkConfig.run(['--target', 'dapp-sdk', '--json'], {root: CLI_ROOT}))
+    expect(handled.error).toBeDefined()
+    expect(parseJson(handled.stdout)).toEqual(expect.objectContaining({
+      error: expect.objectContaining({code: ErrorCode.CONFIG_NOT_FOUND}),
+      success: false,
+    }))
+
+    createExporterSpy.mockReturnValueOnce({
+      exportConfig: vi.fn().mockRejectedValue(new Error('export boom')),
+    })
+    await expect(ExportSdkConfig.run(['--target', 'dapp-sdk', '--json'], {root: CLI_ROOT})).rejects.toThrow('export boom')
+  })
+
+  it('imports scan-derived profiles in human mode and writes config in json mode', async () => {
+    const fetch = vi.fn()
+      .mockResolvedValueOnce(createDiscoverySnapshot())
+      .mockResolvedValueOnce(createDiscoverySnapshot())
+      .mockResolvedValueOnce(createDiscoverySnapshot())
+    vi.spyOn(discoveryFetchModule, 'createNetworkDiscoveryFetcher').mockReturnValue({fetch})
+
+    const human = await captureOutput(() => ProfilesImportScan.run([
+      '--scan-url',
+      'https://scan.example.com',
+      '--kind',
+      'remote-validator',
+      '--name',
+      'imported-validator',
+    ], {root: CLI_ROOT}))
+    expect(human.error).toBeUndefined()
+    expect(human.stdout).toContain('imported-validator')
+
+    const projectDir = createTempDir('cantonctl-import-scan-')
+    writeFileSync(join(projectDir, 'cantonctl.yaml'), 'version: 1\nprofiles:\n  sandbox:\n    kind: sandbox\n', 'utf8')
+    process.chdir(projectDir)
+
+    const humanWrite = await captureOutput(() => ProfilesImportScan.run([
+      '--scan-url',
+      'https://scan.example.com',
+      '--kind',
+      'remote-sv-network',
+      '--name',
+      'written-human',
+      '--write',
+    ], {root: CLI_ROOT}))
+    expect(humanWrite.error).toBeUndefined()
+    expect(humanWrite.stdout).toContain('Wrote written-human to')
+
+    const json = await captureOutput(() => ProfilesImportScan.run([
+      '--json',
+      '--scan-url',
+      'https://scan.example.com',
+      '--kind',
+      'remote-sv-network',
+      '--name',
+      'imported-sv',
+      '--write',
+    ], {root: CLI_ROOT}))
+    expect(json.error).toBeUndefined()
+    expect(parseJson(json.stdout)).toEqual(expect.objectContaining({
+      data: expect.objectContaining({
+        configPath: expect.stringMatching(/cantonctl\.yaml$/),
+        profileName: 'imported-sv',
+        write: true,
+      }),
+      success: true,
+    }))
+    expect(readFileSync(join(projectDir, 'cantonctl.yaml'), 'utf8')).toContain('imported-sv')
+  })
+
+  it('serializes import-scan config errors and rethrows unexpected ones', async () => {
+    const projectDir = createTempDir('cantonctl-import-scan-missing-')
+    process.chdir(projectDir)
+    vi.spyOn(discoveryFetchModule, 'createNetworkDiscoveryFetcher').mockReturnValue({
+      fetch: vi.fn().mockResolvedValue(createDiscoverySnapshot()),
+    })
+
+    const handled = await captureOutput(() => ProfilesImportScan.run([
+      '--json',
+      '--scan-url',
+      'https://scan.example.com',
+      '--kind',
+      'remote-validator',
+      '--write',
+    ], {root: CLI_ROOT}))
+    expect(handled.error).toBeDefined()
+    expect(parseJson(handled.stdout)).toEqual(expect.objectContaining({
+      error: expect.objectContaining({code: ErrorCode.CONFIG_NOT_FOUND}),
+      success: false,
+    }))
+
+    vi.restoreAllMocks()
+    vi.spyOn(discoveryFetchModule, 'createNetworkDiscoveryFetcher').mockReturnValue({
+      fetch: vi.fn().mockRejectedValue(new Error('import boom')),
+    })
+    await expect(ProfilesImportScan.run([
+      '--json',
+      '--scan-url',
+      'https://scan.example.com',
+      '--kind',
+      'remote-validator',
+    ], {root: CLI_ROOT})).rejects.toThrow('import boom')
+  })
+
+  it('renders promotion diffs in human mode and fails in json mode', async () => {
+    vi.spyOn(configModule, 'loadConfig').mockResolvedValue(createConfig())
+    const compare = vi.fn()
+      .mockResolvedValueOnce(createPromoteReport(true))
+      .mockResolvedValueOnce(createPromoteReport(false))
+    vi.spyOn(lifecycleDiffModule, 'createLifecycleDiff').mockReturnValue({compare})
+
+    const human = await captureOutput(() => PromoteDiff.run(['--from', 'splice-devnet', '--to', 'splice-testnet'], {root: CLI_ROOT}))
+    expect(human.error).toBeUndefined()
+    expect(human.stdout).toContain('From: splice-devnet (devnet)')
+    expect(human.stdout).toContain('network-tier')
+
+    const json = await captureOutput(() => PromoteDiff.run(['--from', 'splice-devnet', '--to', 'splice-testnet', '--json'], {root: CLI_ROOT}))
+    expect(json.error).toBeDefined()
+    expect(parseJson(json.stdout)).toEqual(expect.objectContaining({
+      data: expect.objectContaining({success: false}),
+      success: false,
+    }))
+  })
+
+  it('renders placeholder service values when promotion diffs omit before/after endpoints', async () => {
+    vi.spyOn(configModule, 'loadConfig').mockResolvedValue(createConfig())
+    vi.spyOn(lifecycleDiffModule, 'createLifecycleDiff').mockReturnValue({
+      compare: vi.fn().mockResolvedValue({
+        advisories: [],
+        from: {experimental: false, kind: 'remote-validator', name: 'splice-devnet', network: 'splice-devnet', tier: 'devnet'},
+        services: [{change: 'added', name: 'scan'}],
+        success: true,
+        summary: {failed: 0, info: 0, warned: 0},
+        to: {experimental: false, kind: 'remote-validator', name: 'splice-devnet-2', network: 'team-devnet', tier: 'devnet'},
+      }),
+    })
+
+    const result = await captureOutput(() => PromoteDiff.run(['--from', 'splice-devnet', '--to', 'team-devnet'], {root: CLI_ROOT}))
+    expect(result.error).toBeUndefined()
+    expect(result.stdout).toContain('-')
+    expect(result.stdout).not.toContain('Severity')
+  })
+
+  it('serializes promote diff failures and rethrows unexpected ones', async () => {
+    vi.spyOn(configModule, 'loadConfig').mockResolvedValue(createConfig())
+    const createDiffSpy = vi.spyOn(lifecycleDiffModule, 'createLifecycleDiff')
+
+    createDiffSpy.mockReturnValueOnce({
+      compare: vi.fn().mockRejectedValue(new CantonctlError(ErrorCode.CONFIG_NOT_FOUND, {suggestion: 'add profiles'})),
+    })
+    const handled = await captureOutput(() => PromoteDiff.run(['--from', 'a', '--to', 'b', '--json'], {root: CLI_ROOT}))
+    expect(handled.error).toBeDefined()
+    expect(parseJson(handled.stdout)).toEqual(expect.objectContaining({
+      error: expect.objectContaining({code: ErrorCode.CONFIG_NOT_FOUND}),
+      success: false,
+    }))
+
+    createDiffSpy.mockReturnValueOnce({
+      compare: vi.fn().mockRejectedValue(new Error('promote boom')),
+    })
+    await expect(PromoteDiff.run(['--from', 'a', '--to', 'b', '--json'], {root: CLI_ROOT})).rejects.toThrow('promote boom')
+  })
+
+  it('renders reset checklists in human and json modes', async () => {
+    const createChecklist = vi.fn()
+      .mockReturnValueOnce({
+        checklist: [{severity: 'warn', text: 'Confirm reset schedule.'}],
+        network: 'devnet',
+        resetExpectation: 'resets-expected',
+      })
+      .mockReturnValueOnce({
+        checklist: [{severity: 'info', text: 'No reset expected.'}],
+        network: 'mainnet',
+        resetExpectation: 'no-resets-expected',
+      })
+    vi.spyOn(lifecycleResetModule, 'createResetHelper').mockReturnValue({createChecklist})
+
+    const human = await captureOutput(() => ResetChecklist.run(['--network', 'devnet'], {root: CLI_ROOT}))
+    expect(human.error).toBeUndefined()
+    expect(human.stdout).toContain('Reset expectation: resets-expected')
+
+    const json = await captureOutput(() => ResetChecklist.run(['--network', 'mainnet', '--json'], {root: CLI_ROOT}))
+    expect(json.error).toBeUndefined()
+    expect(parseJson(json.stdout)).toEqual(expect.objectContaining({
+      data: expect.objectContaining({network: 'mainnet'}),
+      success: true,
+    }))
+  })
+
+  it('renders upgrade checks in human mode and serializes failures in json mode', async () => {
+    vi.spyOn(configModule, 'loadConfig').mockResolvedValue(createConfig())
+    const check = vi.fn()
+      .mockResolvedValueOnce(createUpgradeReport(true))
+      .mockResolvedValueOnce(createUpgradeReport(false))
+    vi.spyOn(lifecycleUpgradeModule, 'createUpgradeChecker').mockReturnValue({check})
+
+    const human = await captureOutput(() => UpgradeCheck.run([], {root: CLI_ROOT}))
+    expect(human.error).toBeUndefined()
+    expect(human.stdout).toContain('Profile: splice-devnet (devnet)')
+
+    const json = await captureOutput(() => UpgradeCheck.run(['--json'], {root: CLI_ROOT}))
+    expect(json.error).toBeDefined()
+    expect(parseJson(json.stdout)).toEqual(expect.objectContaining({
+      data: expect.objectContaining({success: false}),
+      success: false,
+    }))
+  })
+
+  it('serializes upgrade command failures and rethrows unexpected ones', async () => {
+    vi.spyOn(configModule, 'loadConfig').mockResolvedValue(createConfig())
+    const createCheckerSpy = vi.spyOn(lifecycleUpgradeModule, 'createUpgradeChecker')
+
+    createCheckerSpy.mockReturnValueOnce({
+      check: vi.fn().mockRejectedValue(new CantonctlError(ErrorCode.CONFIG_NOT_FOUND, {suggestion: 'set auth'})),
+    })
+    const handled = await captureOutput(() => UpgradeCheck.run(['--json'], {root: CLI_ROOT}))
+    expect(handled.error).toBeDefined()
+    expect(parseJson(handled.stdout)).toEqual(expect.objectContaining({
+      error: expect.objectContaining({code: ErrorCode.CONFIG_NOT_FOUND}),
+      success: false,
+    }))
+
+    createCheckerSpy.mockReturnValueOnce({
+      check: vi.fn().mockRejectedValue(new Error('upgrade boom')),
+    })
+    await expect(UpgradeCheck.run(['--json'], {root: CLI_ROOT})).rejects.toThrow('upgrade boom')
+  })
+})

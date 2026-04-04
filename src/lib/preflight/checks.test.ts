@@ -1,8 +1,16 @@
-import {describe, expect, it, vi} from 'vitest'
+import {afterEach, describe, expect, it, vi} from 'vitest'
 
 import type {CantonctlConfig} from '../config.js'
+import {CantonctlError, ErrorCode} from '../errors.js'
 import type {ProfileRuntimeResolver} from '../profile-runtime.js'
+import * as profileRuntimeModule from '../profile-runtime.js'
+import * as scanAdapterModule from '../adapters/scan.js'
 import {createPreflightChecks} from './checks.js'
+
+afterEach(() => {
+  vi.restoreAllMocks()
+  vi.unstubAllGlobals()
+})
 
 function createConfig(): CantonctlConfig {
   return {
@@ -148,6 +156,36 @@ describe('preflight checks', () => {
     ]))
   })
 
+  it('warns when compatibility has warnings but no failures', async () => {
+    const runner = createPreflightChecks({
+      createProfileRuntimeResolver: createRuntimeResolver({
+        compatibility: {
+          checks: [],
+          failed: 0,
+          passed: 1,
+          profile: {experimental: false, kind: 'remote-validator', name: 'splice-devnet'},
+          services: [],
+          warned: 2,
+        },
+      }),
+      createScanAdapter: vi.fn().mockReturnValue({
+        getDsoInfo: vi.fn().mockResolvedValue({}),
+        metadata: {baseUrl: 'https://scan.devnet.example.com'},
+      }),
+      fetch: vi.fn().mockResolvedValue(new Response('', {status: 404})),
+      lookupEgressIp: vi.fn().mockResolvedValue('203.0.113.10'),
+    })
+
+    const report = await runner.run({config: createConfig(), profileName: 'splice-devnet'})
+    expect(report.checks).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        detail: 'Compatibility baseline passed with 2 warning(s).',
+        name: 'Compatibility baseline',
+        status: 'warn',
+      }),
+    ]))
+  })
+
   it('fails when the scan endpoint cannot be reached', async () => {
     const runner = createPreflightChecks({
       createProfileRuntimeResolver: createRuntimeResolver(),
@@ -232,5 +270,259 @@ describe('preflight checks', () => {
     expect(devnet.network.resetExpectation).toBe('resets-expected')
     expect(testnet.network.resetExpectation).toBe('resets-expected')
     expect(mainnet.network.resetExpectation).toBe('no-resets-expected')
+  })
+
+  it('uses default runtime, scan, and egress helpers when deps are omitted', async () => {
+    vi.spyOn(profileRuntimeModule, 'createProfileRuntimeResolver').mockReturnValue(createRuntimeResolver()())
+    vi.spyOn(scanAdapterModule, 'createScanAdapter').mockReturnValue({
+      getDsoInfo: vi.fn().mockResolvedValue({sv_party_id: 'sv::1'}),
+      metadata: {baseUrl: 'https://scan.devnet.example.com'},
+    } as never)
+
+    const fetch = vi.fn().mockImplementation(async (input: string) => {
+      if (input.startsWith('https://api.ipify.org')) {
+        return new Response(JSON.stringify({ip: '203.0.113.10'}), {status: 200})
+      }
+
+      return new Response('', {status: 404})
+    })
+
+    const report = await createPreflightChecks({fetch}).run({config: createConfig(), profileName: 'splice-devnet'})
+    expect(report.egressIp).toBe('203.0.113.10')
+    expect(report.checks).toEqual(expect.arrayContaining([
+      expect.objectContaining({name: 'Scan reachability', status: 'pass'}),
+    ]))
+  })
+
+  it('covers missing scan, local-only health skips, and scan auth failures', async () => {
+    const missingScan = await createPreflightChecks({
+      createProfileRuntimeResolver: createRuntimeResolver({
+        profile: {
+          ...createConfig().profiles!['splice-devnet'],
+          services: {
+            auth: {kind: 'jwt', url: 'https://auth.devnet.example.com'},
+            ledger: {url: 'https://ledger.devnet.example.com'},
+          },
+        },
+        profileContext: {
+          experimental: false,
+          kind: 'remote-validator',
+          name: 'splice-devnet',
+          services: {
+            auth: {kind: 'jwt', url: 'https://auth.devnet.example.com'},
+            ledger: {url: 'https://ledger.devnet.example.com'},
+          },
+        },
+      }),
+      fetch: vi.fn().mockResolvedValue(new Response('', {status: 404})),
+      lookupEgressIp: vi.fn().mockResolvedValue(undefined),
+    }).run({config: createConfig(), profileName: 'splice-devnet'})
+
+    expect(missingScan.checks).toEqual(expect.arrayContaining([
+      expect.objectContaining({name: 'Scan reachability', status: 'fail'}),
+    ]))
+
+    const localFetch = vi.fn().mockResolvedValue(new Response('', {status: 200}))
+    const sandboxProfile = {
+      experimental: false,
+      kind: 'sandbox' as const,
+      name: 'sandbox',
+      services: {
+        auth: {kind: 'shared-secret' as const},
+        ledger: {'json-api-port': 7575, port: 5001},
+      },
+    }
+    const localReport = await createPreflightChecks({
+      createProfileRuntimeResolver: createRuntimeResolver({
+        auth: {
+          description: 'Use a local-only unsafe HMAC/shared-secret flow for sandbox or LocalNet-style development.',
+          envVarName: 'CANTONCTL_JWT_LOCAL',
+          experimental: true,
+          mode: 'localnet-unsafe-hmac',
+          network: 'local',
+          requiresExplicitExperimental: true,
+          warnings: [],
+        },
+        credential: {
+          mode: 'localnet-unsafe-hmac',
+          network: 'local',
+          source: 'fallback',
+          token: 'sandbox-token',
+        },
+        networkName: 'local',
+        profile: sandboxProfile,
+        profileContext: {
+          experimental: false,
+          kind: 'sandbox',
+          name: 'sandbox',
+          services: sandboxProfile.services,
+        },
+      }),
+      createScanAdapter: vi.fn().mockReturnValue({
+        getDsoInfo: vi.fn().mockResolvedValue({}),
+        metadata: {baseUrl: 'https://scan.local.example.com'},
+      }),
+      fetch: localFetch,
+      lookupEgressIp: vi.fn().mockResolvedValue('203.0.113.11'),
+    }).run({config: createConfig(), profileName: 'sandbox'})
+
+    expect(localReport.network.tier).toBe('local')
+    expect(localReport.checks.some(check => check.category === 'health')).toBe(false)
+    expect(localFetch).not.toHaveBeenCalled()
+
+    const scanAuthFailure = await createPreflightChecks({
+      createProfileRuntimeResolver: createRuntimeResolver(),
+      createScanAdapter: vi.fn().mockReturnValue({
+        getDsoInfo: vi.fn().mockRejectedValue(new CantonctlError(ErrorCode.SERVICE_AUTH_FAILED, {suggestion: 'login'})),
+        metadata: {baseUrl: 'https://scan.devnet.example.com'},
+      }),
+      fetch: vi.fn().mockResolvedValue(new Response('', {status: 404})),
+      lookupEgressIp: vi.fn().mockResolvedValue('203.0.113.10'),
+    }).run({config: createConfig(), profileName: 'splice-devnet'})
+
+    expect(scanAuthFailure.checks).toEqual(expect.arrayContaining([
+      expect.objectContaining({name: 'Scan reachability', detail: 'Authentication failed for the configured service endpoint.', status: 'fail'}),
+    ]))
+  })
+
+  it('covers health probe warning branches and default egress lookup fallbacks', async () => {
+    const fetch = vi.fn().mockImplementation(async (input: string) => {
+      if (input.startsWith('https://api.ipify.org')) {
+        return new Response(JSON.stringify({ip: 12}), {status: 200})
+      }
+
+      if (input.endsWith('/readyz')) {
+        return new Response('', {status: input.includes('auth.') ? 401 : 503})
+      }
+
+      if (input.endsWith('/livez')) {
+        if (input.includes('validator.')) {
+          throw new Error('socket hang up')
+        }
+
+        return new Response('', {status: 200})
+      }
+
+      return new Response('', {status: 404})
+    })
+
+    const report = await createPreflightChecks({
+      createProfileRuntimeResolver: createRuntimeResolver(),
+      createScanAdapter: vi.fn().mockReturnValue({
+        getDsoInfo: vi.fn().mockResolvedValue({}),
+        metadata: {baseUrl: 'https://scan.devnet.example.com'},
+      }),
+      fetch,
+    }).run({config: createConfig(), profileName: 'splice-devnet'})
+
+    expect(report.egressIp).toBeUndefined()
+    expect(report.checks).toEqual(expect.arrayContaining([
+      expect.objectContaining({name: 'Auth readyz', status: 'warn'}),
+      expect.objectContaining({name: 'Auth livez', status: 'pass'}),
+      expect.objectContaining({name: 'Scan readyz', detail: 'HTTP 503', status: 'warn'}),
+      expect.objectContaining({name: 'Validator livez', detail: 'socket hang up', status: 'warn'}),
+    ]))
+
+    const ipifyFailure = await createPreflightChecks({
+      createProfileRuntimeResolver: createRuntimeResolver(),
+      createScanAdapter: vi.fn().mockReturnValue({
+        getDsoInfo: vi.fn().mockResolvedValue({}),
+        metadata: {baseUrl: 'https://scan.devnet.example.com'},
+      }),
+      fetch: vi.fn().mockImplementation(async (input: string) => {
+        if (input.startsWith('https://api.ipify.org')) {
+          throw new Error('ipify down')
+        }
+
+        return new Response('', {status: 404})
+      }),
+    }).run({config: createConfig(), profileName: 'splice-devnet'})
+
+    expect(ipifyFailure.egressIp).toBeUndefined()
+
+    const ipifyNonOk = await createPreflightChecks({
+      createProfileRuntimeResolver: createRuntimeResolver(),
+      createScanAdapter: vi.fn().mockReturnValue({
+        getDsoInfo: vi.fn().mockResolvedValue({}),
+        metadata: {baseUrl: 'https://scan.devnet.example.com'},
+      }),
+      fetch: vi.fn().mockImplementation(async (input: string) => {
+        if (input.startsWith('https://api.ipify.org')) {
+          return new Response('', {status: 500})
+        }
+
+        return new Response('', {status: 404})
+      }),
+    }).run({config: createConfig(), profileName: 'splice-devnet'})
+
+    expect(ipifyNonOk.egressIp).toBeUndefined()
+  })
+
+  it('covers omitted deps, experimental profile warnings, and additional scan/health error branches', async () => {
+    vi.spyOn(profileRuntimeModule, 'createProfileRuntimeResolver').mockReturnValue(createRuntimeResolver({
+      auth: {
+        description: 'Use an externally minted OIDC access token.',
+        envVarName: 'CANTONCTL_JWT_DEVNET',
+        experimental: true,
+        mode: 'oidc-client-credentials',
+        network: 'devnet',
+        requiresExplicitExperimental: true,
+        warnings: ['oidc warning'],
+      },
+      compatibility: {
+        checks: [],
+        failed: 1,
+        passed: 1,
+        profile: {experimental: true, kind: 'remote-validator', name: 'splice-devnet'},
+        services: [],
+        warned: 2,
+      },
+      profile: {
+        ...createConfig().profiles!['splice-devnet'],
+        experimental: true,
+      },
+      profileContext: {
+        experimental: true,
+        kind: 'remote-validator',
+        name: 'splice-devnet',
+        services: createConfig().profiles!['splice-devnet'].services,
+      },
+    })())
+    vi.spyOn(scanAdapterModule, 'createScanAdapter')
+      .mockReturnValueOnce({
+        getDsoInfo: vi.fn().mockRejectedValue(new CantonctlError(ErrorCode.SERVICE_REQUEST_FAILED, {suggestion: 'retry'})),
+        metadata: {baseUrl: 'https://scan.devnet.example.com'},
+      } as never)
+      .mockReturnValueOnce({
+        getDsoInfo: vi.fn().mockResolvedValue({}),
+        metadata: {baseUrl: 'https://scan.devnet.example.com'},
+      } as never)
+
+    const globalFetch = vi.fn().mockImplementation(async (input: string) => {
+      if (input.startsWith('https://api.ipify.org')) {
+        return new Response(JSON.stringify({ip: '198.51.100.42'}), {status: 200})
+      }
+
+      if (input.endsWith('/readyz')) {
+        return new Response('', {status: 418})
+      }
+
+      throw 'string failure'
+    })
+    vi.stubGlobal('fetch', globalFetch)
+
+    const authFailureReport = await createPreflightChecks().run({config: createConfig(), profileName: 'splice-devnet'})
+    expect(authFailureReport.checks).toEqual(expect.arrayContaining([
+      expect.objectContaining({name: 'Profile resolution', status: 'warn'}),
+      expect.objectContaining({name: 'Compatibility baseline', detail: '1 compatibility check(s) failed.', status: 'fail'}),
+      expect.objectContaining({name: 'Auth mode', status: 'warn'}),
+      expect.objectContaining({name: 'Scan reachability', detail: 'The configured service rejected the request.', status: 'fail'}),
+    ]))
+
+    const probeReport = await createPreflightChecks().run({config: createConfig(), profileName: 'splice-devnet'})
+    expect(probeReport.checks).toEqual(expect.arrayContaining([
+      expect.objectContaining({name: 'Auth readyz', detail: 'HTTP 418', status: 'warn'}),
+      expect.objectContaining({name: 'Auth livez', detail: 'Request failed', status: 'warn'}),
+    ]))
   })
 })

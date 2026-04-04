@@ -28,7 +28,6 @@
  */
 
 import * as fs from 'node:fs'
-import * as os from 'node:os'
 import * as path from 'node:path'
 import {afterAll, beforeAll, describe, expect, it} from 'vitest'
 import {watch} from 'chokidar'
@@ -41,7 +40,7 @@ import {createLedgerClient} from '../../src/lib/ledger-client.js'
 import type {OutputWriter} from '../../src/lib/output.js'
 import {createProcessRunner} from '../../src/lib/process-runner.js'
 import {scaffoldProject} from '../../src/lib/scaffold.js'
-import {CANTON_IMAGE, hasCantonImage, hasDocker, hasSdk, SDK_VERSION} from './helpers.js'
+import {CANTON_IMAGE, createE2eTempDir, hasCantonImage, hasDocker, hasSdk, SDK_VERSION} from './helpers.js'
 
 // ---------------------------------------------------------------------------
 // Skip guards — layered detection
@@ -84,6 +83,8 @@ function createTestOutput(): OutputWriter & {messages: string[]} {
 const BASE_PORT = 20_000
 const PARTICIPANT1_JSON_API = 20_013
 const PARTICIPANT2_JSON_API = 20_023
+const DOCKER_TEST_HOST = process.env.CANTONCTL_E2E_DOCKER_HOST ?? 'localhost'
+const TOPOLOGY_CONTAINER_NAME = 'fulldev-test-canton-1'
 
 // ---------------------------------------------------------------------------
 // Test suite
@@ -97,7 +98,7 @@ describeIfReady('dev --full E2E: multi-node Docker topology', () => {
 
   beforeAll(async () => {
     // Create temp workspace
-    workDir = fs.mkdtempSync(path.join(os.tmpdir(), 'cantonctl-e2e-dev-full-'))
+    workDir = createE2eTempDir('cantonctl-e2e-dev-full-')
     projectDir = path.join(workDir, 'fulldev-test')
 
     // Scaffold a project with two parties on different roles
@@ -179,7 +180,10 @@ describeIfReady('dev --full E2E: multi-node Docker topology', () => {
       build: async (dir: string) => { await sdk.build({projectDir: dir}) },
       cantonImage: CANTON_IMAGE,
       config,
-      createClient: createLedgerClient,
+      createClient: (options) => createLedgerClient({
+        ...options,
+        baseUrl: options.baseUrl.replace('localhost', DOCKER_TEST_HOST),
+      }),
       createToken: createSandboxToken,
       docker,
       findDarFile: async (dir: string) => {
@@ -246,14 +250,14 @@ describeIfReady('dev --full E2E: multi-node Docker topology', () => {
       readAs: ['Alice', 'Bob'],
     })
 
-    const response1 = await fetch(`http://localhost:${PARTICIPANT1_JSON_API}/v2/version`, {
+    const response1 = await fetch(`http://${DOCKER_TEST_HOST}:${PARTICIPANT1_JSON_API}/v2/version`, {
       headers: {Authorization: `Bearer ${token}`},
     })
     expect(response1.ok).toBe(true)
     const body1 = await response1.json() as Record<string, unknown>
     expect(body1.version).toBeDefined()
 
-    const response2 = await fetch(`http://localhost:${PARTICIPANT2_JSON_API}/v2/version`, {
+    const response2 = await fetch(`http://${DOCKER_TEST_HOST}:${PARTICIPANT2_JSON_API}/v2/version`, {
       headers: {Authorization: `Bearer ${token}`},
     })
     expect(response2.ok).toBe(true)
@@ -277,7 +281,7 @@ describeIfReady('dev --full E2E: multi-node Docker topology', () => {
     // -----------------------------------------------------------------------
     const {execSync} = await import('node:child_process')
     const psOutput = execSync('docker ps --format "{{.Names}}"', {stdio: 'pipe'}).toString()
-    expect(psOutput).not.toContain('canton')
+    expect(psOutput).not.toContain(TOPOLOGY_CONTAINER_NAME)
 
     // -----------------------------------------------------------------------
     // Verify: ports are freed (fetch should fail with connection refused)
@@ -285,7 +289,7 @@ describeIfReady('dev --full E2E: multi-node Docker topology', () => {
     for (const port of [PARTICIPANT1_JSON_API, PARTICIPANT2_JSON_API]) {
       let reachable = true
       try {
-        await fetch(`http://localhost:${port}/v2/version`, {
+        await fetch(`http://${DOCKER_TEST_HOST}:${port}/v2/version`, {
           signal: AbortSignal.timeout(2_000),
         })
       } catch {

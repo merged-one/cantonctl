@@ -27,5 +27,14 @@ services:
     tmpfs:
       # Sandbox writes temp files — tmpfs avoids slow overlay writes
       - /tmp:exec,size=2G
+    environment:
+      # `dev --full` writes bind-mounted topology files here so the host Docker
+      # daemon sees a real host path even when the tests run inside this CI
+      # container with the host Docker socket mounted through.
+      CANTONCTL_E2E_DOCKER_HOST: host.docker.internal
+      CANTONCTL_E2E_TMPDIR: ${HOST_E2E_TMPDIR}
+    extra_hosts:
+      - host.docker.internal:host-gateway
     volumes:
+      - ${HOST_E2E_TMPDIR}:${HOST_E2E_TMPDIR}
       - /var/run/docker.sock:/var/run/docker.sock
