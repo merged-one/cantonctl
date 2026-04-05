@@ -76,7 +76,9 @@ describe('synthesizeProfileFromLocalnetWorkspace', () => {
       ledger: {url: 'http://canton.localhost:4000/v2'},
       localnet: {
         distribution: 'splice-localnet',
+        'source-profile': 'sv',
         version: '0.5.3',
+        workspace: '/workspace',
       },
       scan: {url: 'http://scan.localhost:4000/api/scan'},
       validator: {url: 'http://wallet.localhost:4000/api/validator'},
@@ -103,7 +105,9 @@ describe('synthesizeProfileFromLocalnetWorkspace', () => {
       ledger: {url: 'http://canton.localhost:2000/v2'},
       localnet: {
         distribution: 'splice-localnet',
+        'source-profile': 'app-user',
         version: undefined,
+        workspace: '/workspace',
       },
       validator: {url: 'http://wallet.localhost:2000/api/validator'},
     })
@@ -165,7 +169,9 @@ describe('mergeLocalnetProfileIntoConfigYaml', () => {
       ledger: {url: 'http://canton.localhost:4000/v2'},
       localnet: {
         distribution: 'splice-localnet',
+        'source-profile': 'sv',
         version: '0.5.4',
+        workspace: '/workspace',
       },
       scan: {url: 'http://scan.localhost:4000/api/scan'},
       validator: {url: 'http://wallet.localhost:4000/api/validator'},

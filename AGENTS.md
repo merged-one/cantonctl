@@ -19,7 +19,7 @@ Do not revive roadmap, phase, funding, or worklog docs. Active work belongs in G
 - `cantonctl dev` for sandbox-first local iteration
 - `cantonctl dev --net` for the Canton-only local multi-node Docker runtime
 - `cantonctl localnet ...` for the official Splice LocalNet wrapper
-- `cantonctl serve` and `cantonctl playground` as adjunct workbench surfaces
+- `cantonctl ui` for the localhost profile-centric control center
 
 Named local Canton topologies live in the top-level `topologies:` section of `cantonctl.yaml`.
 
@@ -42,14 +42,14 @@ src/lib/
   dev-server.ts       ← Sandbox lifecycle + hot-reload
   dev-server-full.ts  ← `dev --net` local multi-node Docker runtime
   docker.ts           ← Docker Compose lifecycle management
-  serve.ts            ← Profile-aware REST/WebSocket workbench backend
+  ui/*.ts             ← Private UI controller, job store, and localhost bridge
   builder.ts          ← Build orchestration + DAR caching + watch
   test-runner.ts      ← Test execution
   deployer.ts         ← Advisory DAR deploy wrapper
   doctor.ts           ← Environment diagnostics
 
 src/commands/
-  dev.ts, playground.ts, serve.ts, status.ts, deploy.ts
+  dev.ts, ui.ts, status.ts, deploy.ts
   topology/show.ts, topology/export.ts
   auth/*, localnet/*, profiles/*, compat/*
 

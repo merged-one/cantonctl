@@ -83,6 +83,7 @@ cantonctl build
 cantonctl test
 cantonctl profiles list
 cantonctl compat check splice-devnet
+cantonctl ui --profile sandbox
 ```
 
 ## Profiles And Environments
@@ -104,6 +105,7 @@ The profile model is the product backbone. It is what lets `cantonctl` stay focu
 | `cantonctl dev` | Start the local sandbox wrapper with hot reload | Delegates to DPM/daml |
 | `cantonctl dev --net` | Start the Canton-only multi-node Docker topology | Canton-only local realism |
 | `cantonctl localnet up/down/status` | Wrap the official Splice LocalNet workspace | Quickstart-aware wrapper |
+| `cantonctl ui` | Start the localhost profile-centric control center | Human-only control-plane UI |
 | `cantonctl build` | Compile Daml and optionally codegen bindings | Delegates to DPM/daml |
 | `cantonctl test` | Run Daml Script tests with structured output | Delegates to DPM/daml |
 | `cantonctl deploy <network>` | Run the advisory DAR deploy wrapper for ledger-capable targets | Not a validator control plane |
@@ -130,7 +132,7 @@ The profile model is the product backbone. It is what lets `cantonctl` stay focu
 | `cantonctl doctor` | Check prerequisites and profile-aware environment readiness | Support and diagnostics surface |
 | `cantonctl topology show/export` | Preview or export the local Canton-only topology | Local topology builder |
 
-All public commands support `--json`.
+All public commands support `--json` except the intentionally human-only `cantonctl ui`.
 
 ## Stable/Public Vs Experimental
 
@@ -179,6 +181,7 @@ Examples:
 - [docs/reference/configuration.md](docs/reference/configuration.md)
 - [docs/reference/topology.md](docs/reference/topology.md)
 - [docs/reference/localnet.md](docs/reference/localnet.md)
+- [docs/reference/ui.md](docs/reference/ui.md)
 - [docs/reference/compatibility.md](docs/reference/compatibility.md)
 - [docs/reference/preflight.md](docs/reference/preflight.md)
 - [docs/reference/promotion.md](docs/reference/promotion.md)

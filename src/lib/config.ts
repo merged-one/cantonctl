@@ -169,7 +169,9 @@ const LocalnetServiceSchema = z.object({
   'base-port': z.number().optional(),
   'canton-image': z.string().optional(),
   distribution: z.string().optional(),
+  'source-profile': z.enum(['app-provider', 'app-user', 'sv']).optional(),
   version: z.string().optional(),
+  workspace: z.string().optional(),
 })
 
 const ProfileSchema = z.object({
@@ -278,7 +280,7 @@ export interface LoadConfigOptions {
 export async function loadConfig(options: LoadConfigOptions = {}): Promise<CantonctlConfig> {
   const fsImpl = options.fs ?? nodeFs
   const searchDir = options.dir ?? process.cwd()
-  const configPath = findConfig(searchDir, fsImpl)
+  const configPath = findConfigPath(searchDir, fsImpl)
 
   if (!configPath) {
     throw new CantonctlError(ErrorCode.CONFIG_NOT_FOUND, {
@@ -637,7 +639,7 @@ function collectNetworkProfiles(
 }
 
 function readRawProjectConfig(searchDir: string, fsImpl: ConfigFileSystem): RawConfig {
-  const configPath = findConfig(searchDir, fsImpl)
+  const configPath = findConfigPath(searchDir, fsImpl)
 
   if (!configPath) {
     throw new CantonctlError(ErrorCode.CONFIG_NOT_FOUND, {
@@ -722,4 +724,11 @@ function mergeConfigLayers(base: RawPartialConfig, overrides: RawConfig): RawPar
   result.version = overrides.version
 
   return result as RawPartialConfig
+}
+
+export function findConfigPath(
+  startDir: string,
+  fsImpl: ConfigFileSystem = nodeFs,
+): string | undefined {
+  return findConfig(startDir, fsImpl)
 }

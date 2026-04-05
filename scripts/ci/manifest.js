@@ -36,6 +36,13 @@ export const VITEST_PROJECTS = Object.freeze({
     poolOptions: {forks: {singleFork: true}},
     testTimeout: 10_000,
   }),
+  ui: Object.freeze({
+    ...PROJECT_DEFAULTS,
+    environment: 'jsdom',
+    include: ['ui/src/**/*.test.ts', 'ui/src/**/*.test.tsx'],
+    name: 'ui',
+    testTimeout: 10_000,
+  }),
   'e2e-sdk': Object.freeze({
     ...PROJECT_DEFAULTS,
     include: [

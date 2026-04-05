@@ -56,7 +56,9 @@ export interface LocalnetServiceConfig {
   'base-port'?: number
   'canton-image'?: string
   distribution?: string
+  'source-profile'?: 'app-provider' | 'app-user' | 'sv'
   version?: string
+  workspace?: string
 }
 
 export interface RawProfileConfig {

@@ -24,6 +24,7 @@ cantonctl profiles import-localnet --workspace <path> [--write]
 - Reports discovered ledger, wallet, validator, and scan URLs
 - Keeps validator `readyz` as the default health probe
 - Can materialize the detected workspace as a canonical `splice-localnet` profile plus `networks.<name>.profile` wiring
+- Persists the upstream workspace path and source profile inside `profiles.<name>.localnet` when imported with `profiles import-localnet --write`
 
 ## JSON Support
 

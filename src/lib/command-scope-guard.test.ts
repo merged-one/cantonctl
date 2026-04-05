@@ -33,8 +33,10 @@ const REMOVED_FILES = [
 const REQUIRED_FILES = [
   'src/commands/profiles/import-localnet.ts',
   'src/commands/readiness.ts',
+  'src/commands/ui.ts',
   'src/lib/localnet-import.ts',
   'src/lib/readiness.ts',
+  'docs/reference/ui.md',
   'docs/reference/readiness.md',
 ]
 
@@ -46,6 +48,7 @@ const ACTIVE_SURFACES = [
   'docs/reference/auth.md',
   'docs/reference/localnet.md',
   'docs/reference/readiness.md',
+  'docs/reference/ui.md',
   'docs/concepts/authentication.md',
   'docs/troubleshooting/errors.md',
 ]

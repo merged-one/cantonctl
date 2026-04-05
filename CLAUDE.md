@@ -39,8 +39,7 @@ Use [`scripts/ci/manifest.js`](scripts/ci/manifest.js) as the source of truth fo
 - `cantonctl dev`: sandbox-first local iteration
 - `cantonctl dev --net`: local Canton-only multi-node Docker runtime
 - `cantonctl localnet ...`: wrapper over the official Splice LocalNet workspace
-- `cantonctl serve`: profile-aware backend for local workbenches and editor integrations
-- `cantonctl playground`: browser workbench on top of `serve`
+- `cantonctl ui`: localhost control center for profiles, runtime visibility, checks, and support actions
 
 Named local Canton topologies are defined under `topologies:` in `cantonctl.yaml`.
 
@@ -54,7 +53,7 @@ Named local Canton topologies are defined under `topologies:` in `cantonctl.yaml
 | `src/lib/dev-server.ts` | Sandbox lifecycle and hot reload |
 | `src/lib/dev-server-full.ts` | `dev --net` Docker runtime orchestration |
 | `src/lib/docker.ts` | Docker Compose lifecycle |
-| `src/lib/serve.ts` | REST + WebSocket workbench backend |
+| `src/lib/ui/*.ts` | Private UI controller, job store, and localhost bridge |
 | `src/lib/splice-public.ts` | Stable/public Splice surface orchestration |
 | `src/lib/preflight/checks.ts` | Profile-first remote readiness checks |
 | `src/lib/lifecycle/*.ts` | Advisory promotion, reset, and upgrade helpers |

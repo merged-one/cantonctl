@@ -30,7 +30,9 @@ export function synthesizeProfileFromLocalnetWorkspace(options: {
     ledger: {url: selected.urls.ledger},
     localnet: {
       distribution: 'splice-localnet',
+      'source-profile': sourceProfile,
       version: options.workspace.env.SPLICE_VERSION,
+      workspace: options.workspace.root,
     },
     validator: {url: selected.urls.validator},
   }

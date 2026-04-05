@@ -1,0 +1,89 @@
+@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Space+Grotesk:wght@400;500;600;700&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --bg-shell: #0b1320;
+  --bg-panel: rgba(15, 23, 36, 0.84);
+  --bg-panel-strong: rgba(11, 19, 32, 0.94);
+  --bg-panel-soft: rgba(27, 39, 58, 0.78);
+  --border-strong: rgba(110, 165, 196, 0.35);
+  --border-soft: rgba(255, 255, 255, 0.08);
+  --text-strong: #f6f7f2;
+  --text-muted: #95a5b8;
+  --text-soft: #6b7a8f;
+  --accent: #ffa552;
+  --accent-soft: rgba(255, 165, 82, 0.12);
+  --signal: #7ee4d2;
+  --signal-soft: rgba(126, 228, 210, 0.12);
+  --warn: #f6cb6b;
+  --fail: #ff7a70;
+  --pass: #87e87d;
+  --skip: #70839b;
+  --info: #6ec3ff;
+}
+
+@layer base {
+  * {
+    @apply border-[var(--border-soft)];
+  }
+
+  html {
+    @apply min-h-full;
+  }
+
+  body {
+    @apply min-h-screen text-[var(--text-strong)] antialiased;
+    font-family: 'Space Grotesk', 'Avenir Next', 'Segoe UI', sans-serif;
+    background:
+      radial-gradient(circle at top left, rgba(255, 165, 82, 0.18), transparent 24rem),
+      radial-gradient(circle at top right, rgba(110, 195, 255, 0.16), transparent 28rem),
+      linear-gradient(145deg, #09111d 0%, #101a2a 48%, #060b13 100%);
+  }
+
+  code,
+  pre,
+  kbd {
+    font-family: 'IBM Plex Mono', 'SFMono-Regular', monospace;
+  }
+}
+
+@layer components {
+  .ui-shell {
+    @apply min-h-screen;
+    background:
+      radial-gradient(circle at 15% 20%, rgba(255, 165, 82, 0.06), transparent 20rem),
+      radial-gradient(circle at 85% 15%, rgba(126, 228, 210, 0.08), transparent 22rem);
+  }
+
+  .ui-card {
+    @apply rounded-3xl border shadow-2xl shadow-black/20 backdrop-blur-xl;
+    background: linear-gradient(180deg, var(--bg-panel) 0%, var(--bg-panel-strong) 100%);
+  }
+
+  .ui-card-soft {
+    @apply rounded-2xl border;
+    background: linear-gradient(180deg, var(--bg-panel-soft) 0%, rgba(11, 19, 32, 0.88) 100%);
+  }
+
+  .ui-grid {
+    @apply grid gap-4 lg:grid-cols-[17rem_minmax(0,1fr)_22rem];
+  }
+
+  .ui-pill {
+    @apply inline-flex items-center gap-2 rounded-full border px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em];
+  }
+
+  .ui-nav-button {
+    @apply flex w-full items-center justify-between rounded-2xl border px-4 py-3 text-left transition duration-200;
+    background: rgba(255, 255, 255, 0.02);
+  }
+
+  .ui-nav-button[data-active='true'] {
+    border-color: rgba(255, 165, 82, 0.36);
+    background: linear-gradient(135deg, rgba(255, 165, 82, 0.18), rgba(126, 228, 210, 0.08));
+    box-shadow: inset 0 0 0 1px rgba(255, 165, 82, 0.08);
+  }
+}

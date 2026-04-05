@@ -8,6 +8,7 @@ import Doctor from './doctor.js'
 import Init from './init.js'
 import Readiness from './readiness.js'
 import Status from './status.js'
+import Ui from './ui.js'
 
 const packageJson = JSON.parse(
   fs.readFileSync(path.join(process.cwd(), 'package.json'), 'utf8'),
@@ -21,6 +22,7 @@ describe('help positioning', () => {
     expect(Init.description).toContain('companion-ready Canton project')
     expect(Status.description).toContain('profile-aware service health')
     expect(Deploy.description).toContain('advisory DAR deploy wrapper')
+    expect(Ui.description).toContain('local control-center UI')
   })
 
   it('keeps retired umbrella language out of key command descriptions', () => {
@@ -30,6 +32,7 @@ describe('help positioning', () => {
       Init.description,
       Status.description,
       Deploy.description,
+      Ui.description,
       packageJson.description,
     ]
 

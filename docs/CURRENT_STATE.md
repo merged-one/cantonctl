@@ -24,6 +24,7 @@ It wraps, not replaces, those tools.
 - `cantonctl localnet ...`: wrapper over the official Splice LocalNet workspace
 - `cantonctl profiles import-localnet`: LocalNet-to-profile bootstrap
 - `cantonctl readiness`: composed readiness gate over auth, compatibility, preflight, and canaries
+- `cantonctl ui`: localhost control center over profiles, runtime visibility, checks, and support actions
 
 Named local Canton topologies are defined under `topologies:` in `cantonctl.yaml`.
 
@@ -46,6 +47,7 @@ Local topology design for `dev --net` is separate and lives under the top-level 
 Stable/public companion surfaces include:
 
 - profile-based config and validation
+- the profile-centric `cantonctl ui` control center
 - auth, compatibility, readiness, preflight, and status checks
 - LocalNet wrapping
 - LocalNet profile import
