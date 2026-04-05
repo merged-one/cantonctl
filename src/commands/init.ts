@@ -1,17 +1,15 @@
 /**
  * @module commands/init
  *
- * Scaffolds a new companion-ready Canton project from a built-in or community
- * template.
- * Thin oclif wrapper over {@link scaffoldProject} and {@link scaffoldFromUrl}.
+ * Scaffolds a new companion-ready Canton project from a built-in template.
+ * Thin oclif wrapper over {@link scaffoldProject}.
  *
  * When called without arguments, launches an interactive wizard using inquirer.
  *
  * @example
  * ```bash
  * cantonctl init my-app
- * cantonctl init my-defi-app --template token
- * cantonctl init my-app --from https://github.com/user/template
+ * cantonctl init my-splice-app --template splice-token-app
  * cantonctl init                # Interactive mode
  * ```
  */
@@ -19,14 +17,12 @@
 import {Args, Command, Flags} from '@oclif/core'
 import * as path from 'node:path'
 
-import {CantonctlError, ErrorCode} from '../lib/errors.js'
+import {CantonctlError} from '../lib/errors.js'
 import {createOutput} from '../lib/output.js'
-import {createProcessRunner, type ProcessRunner} from '../lib/process-runner.js'
 import {
   TEMPLATES,
   TEMPLATE_CHOICES,
   type Template,
-  scaffoldFromUrl,
   scaffoldProject,
 } from '../lib/scaffold.js'
 
@@ -46,7 +42,6 @@ interface InitArgs {
 }
 
 interface InitFlags {
-  from?: string
   json: boolean
   template: Template
 }
@@ -94,25 +89,18 @@ export default class Init extends Command {
 
   static override examples = [
     '<%= config.bin %> init my-app',
-    '<%= config.bin %> init my-defi-app --template token',
     '<%= config.bin %> init my-splice-app --template splice-token-app',
-    '<%= config.bin %> init my-app --from https://github.com/user/template',
     '<%= config.bin %> init',
   ]
 
   static override flags = {
-    from: Flags.string({
-      char: 'f',
-      description: 'Create from a community template (GitHub URL)',
-      exclusive: ['template'],
-    }),
     json: Flags.boolean({
       default: false,
       description: 'Output result as JSON',
     }),
     template: Flags.string({
       char: 't',
-      default: 'basic',
+      default: 'splice-dapp-sdk',
       description: `Project template (${TEMPLATES.join(', ')})`,
       options: [...TEMPLATES],
     }),
@@ -123,7 +111,6 @@ export default class Init extends Command {
     const out = createOutput({json: flags.json})
 
     await runInitCommand({
-      createRunner: () => this.createRunner(),
       handleCommandError: (error: unknown) => {
         if (error instanceof CantonctlError) {
           out.result({
@@ -138,13 +125,8 @@ export default class Init extends Command {
       out,
       promptInteractive: () => this.promptInteractive(),
       resolveProjectDir: (projectName) => this.resolveProjectDir(projectName),
-      scaffoldFromUrl: (options) => this.scaffoldFromUrl(options),
       scaffoldProject: (options) => this.scaffoldProject(options),
     }, args, {...flags, template: flags.template as Template})
-  }
-
-  protected createRunner(): ProcessRunner {
-    return createProcessRunner()
   }
 
   protected async loadInteractivePrompts(): Promise<InteractivePromptModule> {
@@ -159,10 +141,6 @@ export default class Init extends Command {
     return path.resolve(projectName)
   }
 
-  protected scaffoldFromUrl(options: {dir: string; runner: ProcessRunner; url: string}): Promise<void> {
-    return scaffoldFromUrl(options)
-  }
-
   protected scaffoldProject(options: {dir: string; name: string; template: Template}) {
     return scaffoldProject(options)
   }
@@ -170,12 +148,10 @@ export default class Init extends Command {
 
 async function runInitCommand(
   command: {
-    createRunner: () => ProcessRunner
     handleCommandError: (error: unknown) => never
     out: ReturnType<typeof createOutput>
     promptInteractive: () => Promise<{name: string; template: Template}>
     resolveProjectDir: (projectName: string) => string
-    scaffoldFromUrl: (options: {dir: string; runner: ProcessRunner; url: string}) => Promise<void>
     scaffoldProject: (options: {dir: string; name: string; template: Template}) => {
       files: string[]
       projectDir: string
@@ -186,23 +162,6 @@ async function runInitCommand(
   flags: InitFlags,
 ): Promise<void> {
   try {
-    if (flags.from) {
-      const projectName = args.name
-      if (!projectName) {
-        throw new CantonctlError(ErrorCode.CONFIG_SCHEMA_VIOLATION, {
-          suggestion: 'Provide a project name: cantonctl init my-app --from <url>',
-        })
-      }
-
-      const projectDir = command.resolveProjectDir(projectName)
-      command.out.info(`Scaffolding from community template: ${flags.from}`)
-      const runner = command.createRunner()
-      await command.scaffoldFromUrl({dir: projectDir, runner, url: flags.from})
-      command.out.success(`Project created from ${flags.from}`)
-      command.out.result({data: {from: flags.from, projectDir}, success: true})
-      return
-    }
-
     let projectName: string
     let template: Template
 

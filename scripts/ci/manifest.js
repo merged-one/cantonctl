@@ -91,17 +91,6 @@ export const VITEST_PROJECTS = Object.freeze({
     retry: 1,
     testTimeout: 300_000,
   }),
-  'e2e-playground': Object.freeze({
-    ...PROJECT_DEFAULTS,
-    include: [
-      'test/e2e/playground.e2e.test.ts',
-    ],
-    name: 'e2e-playground',
-    pool: 'forks',
-    poolOptions: {forks: {singleFork: true}},
-    retry: 1,
-    testTimeout: 120_000,
-  }),
   'e2e-experimental': Object.freeze({
     ...PROJECT_DEFAULTS,
     include: [
@@ -167,15 +156,6 @@ export const CI_SUITES = Object.freeze({
     timeoutMinutes: 10,
     type: 'suite',
   }),
-  'e2e-playground': Object.freeze({
-    id: 'e2e-playground',
-    label: 'e2e-playground',
-    npmScript: 'test:e2e:playground',
-    prerequisites: ['daml', 'java'],
-    scopes: ['pr', 'main', 'release'],
-    timeoutMinutes: 10,
-    type: 'suite',
-  }),
   'e2e-docker': Object.freeze({
     id: 'e2e-docker',
     label: 'e2e-docker',
@@ -203,7 +183,6 @@ export const CI_MODES = Object.freeze({
     'e2e-sdk',
     'e2e-stable-public',
     'e2e-sandbox',
-    'e2e-playground',
     'e2e-docker',
     'e2e-experimental',
   ]),
@@ -213,7 +192,6 @@ export const CI_MODES = Object.freeze({
     'e2e-sdk',
     'e2e-stable-public',
     'e2e-sandbox',
-    'e2e-playground',
     'e2e-docker',
   ]),
 })

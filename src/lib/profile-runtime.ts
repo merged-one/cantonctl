@@ -172,7 +172,6 @@ function shouldUseFallbackToken(profile: NormalizedProfile, mode: AuthProfileMod
     profile.kind === 'sandbox'
     || profile.kind === 'canton-multi'
     || profile.kind === 'splice-localnet'
-    || mode === 'localnet-unsafe-hmac'
     || profile.services.auth?.kind === 'shared-secret'
     || profile.services.auth?.kind === 'none'
   )
@@ -211,4 +210,3 @@ export function toResolvedCredential(record: RuntimeCredential): ResolvedCredent
     token: record.token,
   }
 }
-

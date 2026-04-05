@@ -69,7 +69,7 @@ describeWithSdk('dev E2E: sandbox lifecycle', () => {
   beforeAll(() => {
     // Create a project to work with
     projectDir = path.join(workDir, 'dev-test-project')
-    scaffoldProject({dir: projectDir, name: 'dev-test-project', template: 'basic'})
+    scaffoldProject({dir: projectDir, name: 'dev-test-project', template: 'splice-dapp-sdk'})
 
     // Fix sdk-version
     const damlYaml = fs.readFileSync(path.join(projectDir, 'daml.yaml'), 'utf8')

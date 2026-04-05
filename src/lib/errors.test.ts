@@ -20,8 +20,6 @@ describe('ErrorCode', () => {
     expect(ErrorCode.DEPLOY_AUTH_FAILED).toBe('E6001')
     // Ledger
     expect(ErrorCode.LEDGER_CONNECTION_FAILED).toBe('E7001')
-    // Console
-    expect(ErrorCode.CONSOLE_PARSE_ERROR).toBe('E8001')
   })
 })
 

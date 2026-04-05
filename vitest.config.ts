@@ -14,8 +14,8 @@ const coverageProvider = process.env.COVERAGE_PROVIDER ?? 'istanbul'
  *   execution to avoid resource contention from concurrent JVM processes.
  * - e2e-docker: Requires Docker + Canton image + Daml SDK + Java. Sequential
  *   execution for Docker resource isolation. Tests `dev --full` topology.
- * - e2e-experimental: Experimental or operator-only surfaces kept separate
- *   from the GA required matrix.
+ * - e2e-experimental: Narrow non-GA compatibility surfaces kept separate
+ *   from the required matrix.
  */
 export default defineConfig({
   test: {

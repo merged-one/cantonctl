@@ -3,6 +3,7 @@ import {createScanAdapter, type ScanAdapter} from '../adapters/scan.js'
 import {createTokenStandardAdapter, type TokenStandardAdapter} from '../adapters/token-standard.js'
 import {createValidatorUserAdapter, type ValidatorUserAdapter} from '../adapters/validator-user.js'
 import type {CantonctlConfig} from '../config.js'
+import type {NormalizedProfile} from '../config-profile.js'
 import {CantonctlError} from '../errors.js'
 import {type ProfileRuntimeResolver, createProfileRuntimeResolver} from '../profile-runtime.js'
 
@@ -39,6 +40,28 @@ export interface CanaryRunner {
     signal?: AbortSignal
     suites?: StablePublicCanarySuite[]
   }): Promise<CanaryReport>
+}
+
+export function selectStablePublicCanarySuites(profile: Pick<NormalizedProfile, 'services'>): StablePublicCanarySuite[] {
+  const suites: StablePublicCanarySuite[] = []
+
+  if (profile.services.scan?.url) {
+    suites.push('scan')
+  }
+
+  if (profile.services.ans?.url || profile.services.scan?.url) {
+    suites.push('ans')
+  }
+
+  if (profile.services.tokenStandard?.url) {
+    suites.push('token-standard')
+  }
+
+  if (profile.services.validator?.url) {
+    suites.push('validator-user')
+  }
+
+  return suites
 }
 
 export function createCanaryRunner(
@@ -253,4 +276,3 @@ function failCheck(
     warnings: [...warnings],
   }
 }
-

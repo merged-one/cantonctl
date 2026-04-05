@@ -36,7 +36,7 @@ describe('resolveAuthProfile', () => {
     expect(profile.warnings).toEqual([])
   })
 
-  it('resolves oidc-backed profiles to experimental client-credentials mode', () => {
+  it('resolves oidc-backed profiles to env-or-keychain-jwt mode', () => {
     const config: CantonctlConfig = {
       networks: {
         validator: {type: 'remote', url: 'https://ledger.example.com'},
@@ -62,13 +62,13 @@ describe('resolveAuthProfile', () => {
 
     const profile = resolveAuthProfile({config, network: 'validator'})
 
-    expect(profile.mode).toBe('oidc-client-credentials')
+    expect(profile.mode).toBe('env-or-keychain-jwt')
     expect(profile.profileName).toBe('splice-devnet')
-    expect(profile.requiresExplicitExperimental).toBe(true)
-    expect(profile.warnings.join(' ')).toContain('operator-only')
+    expect(profile.requiresExplicitExperimental).toBe(false)
+    expect(profile.warnings).toEqual([])
   })
 
-  it('treats sandbox and localnet-style profiles as local-only unsafe hmac auth', () => {
+  it('treats sandbox and localnet-style profiles as bearer-token with local fallback', () => {
     const config: CantonctlConfig = {
       'default-profile': 'splice-localnet',
       networks: {
@@ -94,9 +94,9 @@ describe('resolveAuthProfile', () => {
 
     const profile = resolveAuthProfile({config, network: 'local'})
 
-    expect(profile.mode).toBe('localnet-unsafe-hmac')
-    expect(profile.experimental).toBe(true)
-    expect(profile.warnings.join(' ')).toContain('local-only')
+    expect(profile.mode).toBe('bearer-token')
+    expect(profile.experimental).toBe(false)
+    expect(profile.warnings.join(' ')).toContain('local fallback token')
   })
 
   it('allows an explicit bearer-token override when the operator wants caller-managed auth', () => {
@@ -143,7 +143,7 @@ describe('resolveAuthProfile', () => {
     expect(profile.mode).toBe('bearer-token')
     expect(profile.profileName).toBe('ops')
     expect(profile.description).toContain('explicitly supplied bearer token')
-    expect(profile.warnings[0]).toContain('operator-managed')
+    expect(profile.warnings[0]).toContain('local fallback token')
   })
 
   it('falls back to the default profile for local when no explicit local profile exists', () => {
@@ -169,7 +169,7 @@ describe('resolveAuthProfile', () => {
 
     const profile = resolveAuthProfile({config, network: 'local'})
 
-    expect(profile.mode).toBe('oidc-client-credentials')
+    expect(profile.mode).toBe('env-or-keychain-jwt')
     expect(profile.profileName).toBe('splice-devnet')
     expect(profile.profileKind).toBe('remote-validator')
   })

@@ -27,6 +27,7 @@ The docs policy is simple:
 - [Compatibility](reference/compatibility.md)
 - [Status](reference/status.md)
 - [LocalNet wrapper](reference/localnet.md)
+- [Readiness gate](reference/readiness.md)
 - [Preflight](reference/preflight.md)
 - [Promotion diff](reference/promotion.md)
 - [Upgrade checks](reference/upgrade.md)
@@ -35,13 +36,6 @@ The docs policy is simple:
 - [Discovery and profile import](reference/discovery.md)
 - [Stable/public canaries](reference/canary.md)
 - [SDK config export](reference/sdk-config-export.md)
-
-## Adjunct Workbench Surfaces
-
-- [Serve](reference/serve.md)
-- [Playground](reference/playground.md)
-
-Use Daml Studio for the canonical IDE workflow. Use these surfaces when you want a local demo, inspection surface, or profile-aware backend around the same project.
 
 ## Stable/Public Splice Workflows
 

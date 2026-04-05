@@ -17,15 +17,19 @@ import {CantonctlError, ErrorCode} from '../lib/errors.js'
 import * as lifecycleDiffModule from '../lib/lifecycle/diff.js'
 import * as lifecycleResetModule from '../lib/lifecycle/reset.js'
 import * as lifecycleUpgradeModule from '../lib/lifecycle/upgrade.js'
+import * as localnetImportModule from '../lib/localnet-import.js'
 import * as preflightChecksModule from '../lib/preflight/checks.js'
+import * as readinessModule from '../lib/readiness.js'
 import CanaryStablePublic from './canary/stable-public.js'
 import DiagnosticsBundle from './diagnostics/bundle.js'
 import DiscoverNetwork from './discover/network.js'
 import ExportSdkConfig from './export/sdk-config.js'
 import Init from './init.js'
 import Preflight from './preflight.js'
+import ProfilesImportLocalnet from './profiles/import-localnet.js'
 import ProfilesImportScan from './profiles/import-scan.js'
 import PromoteDiff from './promote/diff.js'
+import Readiness from './readiness.js'
 import ResetChecklist from './reset/checklist.js'
 import UpgradeCheck from './upgrade/check.js'
 
@@ -200,6 +204,94 @@ function createExportedSdkConfig() {
   } as const
 }
 
+function createLocalnetWorkspace() {
+  return {
+    composeFilePath: '/tmp/quickstart/compose.yaml',
+    configDir: '/tmp/quickstart/config',
+    env: {SPLICE_VERSION: '0.5.3'},
+    envFilePaths: ['/tmp/quickstart/.env'],
+    localnetDir: '/tmp/quickstart/docker/modules/localnet',
+    makeTargets: {down: 'stop', status: 'status', up: 'start'},
+    makefilePath: '/tmp/quickstart/Makefile',
+    profiles: {
+      'app-provider': {
+        health: {validatorReadyz: 'http://127.0.0.1:3903/api/validator/readyz'},
+        name: 'app-provider',
+        urls: {
+          ledger: 'http://canton.localhost:3000/v2',
+          validator: 'http://wallet.localhost:3000/api/validator',
+          wallet: 'http://wallet.localhost:3000',
+        },
+      },
+      'app-user': {
+        health: {validatorReadyz: 'http://127.0.0.1:2903/api/validator/readyz'},
+        name: 'app-user',
+        urls: {
+          ledger: 'http://canton.localhost:2000/v2',
+          validator: 'http://wallet.localhost:2000/api/validator',
+          wallet: 'http://wallet.localhost:2000',
+        },
+      },
+      sv: {
+        health: {validatorReadyz: 'http://127.0.0.1:4903/api/validator/readyz'},
+        name: 'sv',
+        urls: {
+          ledger: 'http://canton.localhost:4000/v2',
+          scan: 'http://scan.localhost:4000/api/scan',
+          validator: 'http://wallet.localhost:4000/api/validator',
+          wallet: 'http://wallet.localhost:4000',
+        },
+      },
+    },
+    root: '/tmp/quickstart',
+    services: {
+      ledger: 'http://canton.localhost:4000/v2',
+      scan: 'http://scan.localhost:4000/api/scan',
+      validator: 'http://wallet.localhost:4000/api/validator',
+      wallet: 'http://wallet.localhost:4000',
+    },
+  } as const
+}
+
+function createReadinessReport(success: boolean) {
+  return {
+    auth: {
+      credentialSource: success ? 'stored' : 'missing',
+      envVarName: 'CANTONCTL_JWT_SPLICE_DEVNET',
+      mode: 'env-or-keychain-jwt',
+      warnings: success ? ['Refresh auth before promotion.'] : [],
+    },
+    canary: {
+      checks: [
+        {
+          detail: success ? 'Stable/public scan endpoint reachable.' : 'Stable/public scan endpoint failed.',
+          endpoint: 'https://scan.example.com',
+          status: success ? 'pass' : 'fail',
+          suite: 'scan',
+          warnings: success ? [] : ['Scan returned HTTP 500.'],
+        },
+      ],
+      selectedSuites: ['scan', 'ans'],
+      skippedSuites: ['token-standard', 'validator-user'],
+      success,
+    },
+    compatibility: {failed: success ? 0 : 1, passed: 3, warned: 1},
+    preflight: createPreflightReport(success),
+    profile: {
+      experimental: false,
+      kind: 'remote-validator',
+      name: 'splice-devnet',
+    },
+    success,
+    summary: {
+      failed: success ? 0 : 2,
+      passed: success ? 3 : 1,
+      skipped: 2,
+      warned: success ? 1 : 0,
+    },
+  } as const
+}
+
 function parseJson(stdout: string): Record<string, unknown> {
   return JSON.parse(stdout.trim()) as Record<string, unknown>
 }
@@ -211,7 +303,7 @@ describe('companion command surface', () => {
         return `/tmp/${projectName}`
       }
 
-      protected override scaffoldProject(options: {dir: string; name: string; template: 'basic' | 'token' | 'defi-amm' | 'api-service' | 'zenith-evm' | 'splice-token-app' | 'splice-scan-reader' | 'splice-dapp-sdk'}) {
+      protected override scaffoldProject(options: {dir: string; name: string; template: 'splice-token-app' | 'splice-scan-reader' | 'splice-dapp-sdk'}) {
         return {
           files: ['cantonctl.yaml'],
           projectDir: options.dir,
@@ -523,6 +615,147 @@ describe('companion command surface', () => {
       '--kind',
       'remote-validator',
     ], {root: CLI_ROOT})).rejects.toThrow('import boom')
+  })
+
+  it('imports LocalNet workspaces in human mode and writes config in json mode', async () => {
+    const workspace = createLocalnetWorkspace()
+
+    class TestProfilesImportLocalnet extends ProfilesImportLocalnet {
+      protected override createDetector() {
+        return {
+          detect: vi.fn().mockResolvedValue(workspace),
+        }
+      }
+    }
+
+    const human = await captureOutput(() => TestProfilesImportLocalnet.run([
+      '--workspace',
+      '../quickstart',
+    ], {root: CLI_ROOT}))
+    expect(human.error).toBeUndefined()
+    expect(human.stdout).toContain('Workspace: /tmp/quickstart')
+    expect(human.stdout).toContain('Imported sv as profile "splice-localnet" and network "localnet"')
+    expect(human.stdout).toContain('kind: splice-localnet')
+
+    const projectDir = createTempDir('cantonctl-import-localnet-')
+    writeFileSync(join(projectDir, 'cantonctl.yaml'), [
+      'version: 1',
+      'project:',
+      '  name: demo',
+      '  sdk-version: "3.4.11"',
+      'profiles:',
+      '  sandbox:',
+      '    kind: sandbox',
+      '    ledger:',
+      '      port: 5001',
+    ].join('\n'), 'utf8')
+    process.chdir(projectDir)
+
+    const json = await captureOutput(() => TestProfilesImportLocalnet.run([
+      '--workspace',
+      '../quickstart',
+      '--write',
+      '--json',
+    ], {root: CLI_ROOT}))
+    expect(json.error).toBeUndefined()
+    expect(parseJson(json.stdout)).toEqual(expect.objectContaining({
+      data: expect.objectContaining({
+        configPath: expect.stringMatching(/cantonctl\.yaml$/),
+        networkName: 'localnet',
+        profileName: 'splice-localnet',
+        sourceProfile: 'sv',
+        workspace: '/tmp/quickstart',
+        write: true,
+      }),
+      success: true,
+    }))
+    expect(readFileSync(join(projectDir, 'cantonctl.yaml'), 'utf8')).toContain('splice-localnet')
+    expect(readFileSync(join(projectDir, 'cantonctl.yaml'), 'utf8')).toContain('localnet:')
+  })
+
+  it('serializes import-localnet config errors and rethrows unexpected ones', async () => {
+    const workspace = createLocalnetWorkspace()
+
+    class TestProfilesImportLocalnet extends ProfilesImportLocalnet {
+      protected override createDetector() {
+        return {
+          detect: vi.fn().mockResolvedValue(workspace),
+        }
+      }
+    }
+
+    const projectDir = createTempDir('cantonctl-import-localnet-missing-')
+    process.chdir(projectDir)
+
+    const handled = await captureOutput(() => TestProfilesImportLocalnet.run([
+      '--workspace',
+      '../quickstart',
+      '--write',
+      '--json',
+    ], {root: CLI_ROOT}))
+    expect(handled.error).toBeDefined()
+    expect(parseJson(handled.stdout)).toEqual(expect.objectContaining({
+      error: expect.objectContaining({code: ErrorCode.CONFIG_NOT_FOUND}),
+      success: false,
+    }))
+
+    vi.restoreAllMocks()
+    vi.spyOn(localnetImportModule, 'synthesizeProfileFromLocalnetWorkspace').mockImplementation(() => {
+      throw new Error('import-localnet boom')
+    })
+
+    class BrokenProfilesImportLocalnet extends ProfilesImportLocalnet {
+      protected override createDetector() {
+        return {
+          detect: vi.fn().mockResolvedValue(workspace),
+        }
+      }
+    }
+
+    await expect(BrokenProfilesImportLocalnet.run([
+      '--workspace',
+      '../quickstart',
+      '--json',
+    ], {root: CLI_ROOT})).rejects.toThrow('import-localnet boom')
+  })
+
+  it('runs readiness in human mode and serializes failures in json mode', async () => {
+    vi.spyOn(configModule, 'loadConfig').mockResolvedValue(createConfig())
+    const run = vi.fn()
+      .mockResolvedValueOnce(createReadinessReport(true))
+      .mockResolvedValueOnce(createReadinessReport(false))
+    vi.spyOn(readinessModule, 'createReadinessRunner').mockReturnValue({run})
+
+    const human = await captureOutput(() => Readiness.run([], {root: CLI_ROOT}))
+    expect(human.error).toBeUndefined()
+    expect(human.stdout).toContain('Profile: splice-devnet')
+    expect(human.stdout).toContain('Canary suites: scan, ans')
+    expect(human.stdout).toContain('Readiness passed')
+
+    const jsonFailure = await captureOutput(() => Readiness.run(['--json'], {root: CLI_ROOT}))
+    expect(jsonFailure.error).toBeDefined()
+    expect(parseJson(jsonFailure.stdout)).toEqual(expect.objectContaining({
+      data: expect.objectContaining({success: false}),
+      success: false,
+    }))
+  })
+
+  it('serializes readiness command failures and rethrows unexpected ones', async () => {
+    vi.spyOn(configModule, 'loadConfig').mockResolvedValue(createConfig())
+    const createRunnerSpy = vi.spyOn(readinessModule, 'createReadinessRunner')
+
+    createRunnerSpy.mockReturnValueOnce({
+      run: vi.fn().mockRejectedValue(new CantonctlError(ErrorCode.CONFIG_NOT_FOUND, {suggestion: 'set profile'})),
+    })
+    const handled = await captureOutput(() => Readiness.run(['--json'], {root: CLI_ROOT}))
+    expect(handled.error).toBeDefined()
+    expect(parseJson(handled.stdout)).toEqual(expect.objectContaining({
+      error: expect.objectContaining({code: ErrorCode.CONFIG_NOT_FOUND}),
+      success: false,
+    }))
+
+    createRunnerSpy.mockReturnValueOnce({run: vi.fn().mockRejectedValue(new Error('readiness boom'))})
+    await expect(Readiness.run(['--json'], {root: CLI_ROOT})).rejects.toThrow('readiness boom')
   })
 
   it('renders promotion diffs in human mode and fails in json mode', async () => {

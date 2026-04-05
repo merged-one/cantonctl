@@ -43,14 +43,13 @@ describe('CI parity manifest', () => {
     }
   })
 
-  it('defines a deterministic required gate with playground and docker included', () => {
+  it('defines a deterministic required gate with docker included', () => {
     expect(CI_MODES.required).toEqual([
       'unit-coverage',
       'generated-specs',
       'e2e-sdk',
       'e2e-stable-public',
       'e2e-sandbox',
-      'e2e-playground',
       'e2e-docker',
     ])
     expect(CI_MODES.all).toContain('e2e-experimental')
@@ -85,7 +84,7 @@ describe('CI parity manifest', () => {
       'node scripts/verify-coverage-exclusions.mjs && COVERAGE_STRICT=1 vitest run --project unit --project unit-commands --coverage',
     )
     expect(packageJson.scripts['test:e2e']).toBe(
-      'vitest run --project e2e-sdk --project e2e-stable-public --project e2e-sandbox --project e2e-playground --project e2e-docker',
+      'vitest run --project e2e-sdk --project e2e-stable-public --project e2e-sandbox --project e2e-docker',
     )
 
     for (const suite of Object.values(CI_SUITES)) {

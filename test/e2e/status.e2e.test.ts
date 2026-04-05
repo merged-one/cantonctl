@@ -48,7 +48,7 @@ describeWithSdk('status E2E', () => {
   beforeAll(async () => {
     workDir = fs.mkdtempSync(path.join(os.tmpdir(), 'cantonctl-e2e-status-'))
     const projectDir = path.join(workDir, 'project')
-    await scaffoldProject({dir: projectDir, name: 'status-e2e', sdkVersion: SDK_VERSION, template: 'basic'})
+    await scaffoldProject({dir: projectDir, name: 'status-e2e', template: 'splice-dapp-sdk'})
     fs.writeFileSync(
       path.join(projectDir, 'cantonctl.yaml'),
       `version: 1

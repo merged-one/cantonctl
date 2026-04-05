@@ -335,16 +335,16 @@ describe('preflight checks', () => {
     const localReport = await createPreflightChecks({
       createProfileRuntimeResolver: createRuntimeResolver({
         auth: {
-          description: 'Use a local-only unsafe HMAC/shared-secret flow for sandbox or LocalNet-style development.',
+          description: 'Use an explicitly supplied bearer token or a local fallback token.',
           envVarName: 'CANTONCTL_JWT_LOCAL',
-          experimental: true,
-          mode: 'localnet-unsafe-hmac',
+          experimental: false,
+          mode: 'bearer-token',
           network: 'local',
-          requiresExplicitExperimental: true,
+          requiresExplicitExperimental: false,
           warnings: [],
         },
         credential: {
-          mode: 'localnet-unsafe-hmac',
+          mode: 'bearer-token',
           network: 'local',
           source: 'fallback',
           token: 'sandbox-token',
@@ -367,6 +367,9 @@ describe('preflight checks', () => {
     }).run({config: createConfig(), profileName: 'sandbox'})
 
     expect(localReport.network.tier).toBe('local')
+    expect(localReport.checks).toEqual(expect.arrayContaining([
+      expect.objectContaining({name: 'Scan reachability', status: 'skip'}),
+    ]))
     expect(localReport.checks.some(check => check.category === 'health')).toBe(false)
     expect(localFetch).not.toHaveBeenCalled()
 
@@ -461,13 +464,13 @@ describe('preflight checks', () => {
   it('covers omitted deps, experimental profile warnings, and additional scan/health error branches', async () => {
     vi.spyOn(profileRuntimeModule, 'createProfileRuntimeResolver').mockReturnValue(createRuntimeResolver({
       auth: {
-        description: 'Use an externally minted OIDC access token.',
+        description: 'Resolve a JWT from the environment first, then the OS keychain.',
         envVarName: 'CANTONCTL_JWT_DEVNET',
-        experimental: true,
-        mode: 'oidc-client-credentials',
+        experimental: false,
+        mode: 'env-or-keychain-jwt',
         network: 'devnet',
-        requiresExplicitExperimental: true,
-        warnings: ['oidc warning'],
+        requiresExplicitExperimental: false,
+        warnings: [],
       },
       compatibility: {
         checks: [],
@@ -515,7 +518,7 @@ describe('preflight checks', () => {
     expect(authFailureReport.checks).toEqual(expect.arrayContaining([
       expect.objectContaining({name: 'Profile resolution', status: 'warn'}),
       expect.objectContaining({name: 'Compatibility baseline', detail: '1 compatibility check(s) failed.', status: 'fail'}),
-      expect.objectContaining({name: 'Auth mode', status: 'warn'}),
+      expect.objectContaining({name: 'Auth mode', status: 'pass'}),
       expect.objectContaining({name: 'Scan reachability', detail: 'The configured service rejected the request.', status: 'fail'}),
     ]))
 

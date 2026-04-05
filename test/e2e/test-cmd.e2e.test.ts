@@ -30,9 +30,9 @@ describeWithSdk('test E2E', () => {
   let projectDir: string
 
   beforeAll(() => {
-    // Scaffold and build a token project (has 4 tests)
+    // Scaffold and build a token-style companion project
     projectDir = path.join(workDir, 'test-token')
-    scaffoldProject({dir: projectDir, name: 'test-token', template: 'token'})
+    scaffoldProject({dir: projectDir, name: 'test-token', template: 'splice-token-app'})
 
     const damlYaml = fs.readFileSync(path.join(projectDir, 'daml.yaml'), 'utf8')
     fs.writeFileSync(path.join(projectDir, 'daml.yaml'), damlYaml.replace(/sdk-version: .*/, `sdk-version: ${SDK_VERSION}`))

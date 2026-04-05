@@ -93,7 +93,7 @@ describeWithSdk('deploy E2E', () => {
   beforeAll(async () => {
     workDir = fs.mkdtempSync(path.join(os.tmpdir(), 'cantonctl-e2e-deploy-'))
     projectDir = path.join(workDir, 'project')
-    await scaffoldProject({dir: projectDir, name: 'deploy-e2e', sdkVersion: SDK_VERSION, template: 'basic'})
+    await scaffoldProject({dir: projectDir, name: 'deploy-e2e', template: 'splice-dapp-sdk'})
 
     devServer = createDevServer({
       config: CONFIG,

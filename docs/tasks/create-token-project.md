@@ -12,7 +12,7 @@ Create a Canton token contract with Mint, Transfer, and Burn operations, then st
 
 <!-- doctest:begin -->
 ```bash
-cantonctl init my-token --template token
+cantonctl init my-token --template splice-token-app
 ```
 <!-- doctest:expect:stdout "Project created" -->
 <!-- doctest:end -->

@@ -22,8 +22,8 @@ It wraps, not replaces, those tools.
 - `cantonctl dev`: sandbox-first local development
 - `cantonctl dev --net`: Canton-only local multi-node Docker runtime
 - `cantonctl localnet ...`: wrapper over the official Splice LocalNet workspace
-- `cantonctl serve`: profile-aware IDE/workbench backend
-- `cantonctl playground`: adjunct browser workbench on top of `serve`
+- `cantonctl profiles import-localnet`: LocalNet-to-profile bootstrap
+- `cantonctl readiness`: composed readiness gate over auth, compatibility, preflight, and canaries
 
 Named local Canton topologies are defined under `topologies:` in `cantonctl.yaml`.
 
@@ -46,16 +46,16 @@ Local topology design for `dev --net` is separate and lives under the top-level 
 Stable/public companion surfaces include:
 
 - profile-based config and validation
-- auth, compatibility, and status checks
+- auth, compatibility, readiness, preflight, and status checks
 - LocalNet wrapping
+- LocalNet profile import
 - preflight, lifecycle, and diagnostics helpers
 - stable/public Scan, token-standard, ANS, and validator-user flows
 - stable/public discovery, canaries, and SDK config export
 
-Experimental surfaces remain explicit opt-in. The source of truth is:
+Non-GA surfaces remain explicit and narrow. The source of truth is:
 
 - [reference/api-stability.md](reference/api-stability.md)
-- [reference/experimental.md](reference/experimental.md)
 - [`scripts/ci/manifest.js`](../scripts/ci/manifest.js)
 
 ## Canonical CI And Toolchain Sources
@@ -74,14 +74,12 @@ These names are current and must be used consistently:
 
 - `CIP-0103`
 - `dev --net`
-- `playground --net`
 - "Splice-aware orchestration companion"
 - "wrap, do not replace"
 
 These older phrases are retired from active product/help copy:
 
 - `dev --full`
-- `playground --full`
 - "Hardhat for Canton"
 - "complete developer toolchain for Canton"
 - "Remix-like browser IDE"

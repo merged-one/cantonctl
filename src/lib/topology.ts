@@ -8,8 +8,8 @@
  * - a named topology under the top-level `topologies:` config section
  *
  * The generated `.cantonctl/topology.json` manifest is the canonical runtime
- * description for `serve` and `playground`. Legacy compose parsing remains as
- * a fallback for already-generated worktrees.
+ * description for the `dev --net` control-plane surface. Legacy compose
+ * parsing remains as a fallback for already-generated worktrees.
  */
 
 import * as fs from 'node:fs'

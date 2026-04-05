@@ -1,12 +1,10 @@
 import type {CantonctlConfig} from './config.js'
-import type {NormalizedProfile, ProfileKind} from './config-profile.js'
+import type {LegacyNetworkConfig, NormalizedProfile, ProfileKind} from './config-profile.js'
 import {CantonctlError, ErrorCode} from './errors.js'
 
 export const AUTH_PROFILE_MODES = [
   'bearer-token',
   'env-or-keychain-jwt',
-  'oidc-client-credentials',
-  'localnet-unsafe-hmac',
 ] as const
 
 export type AuthProfileMode = typeof AUTH_PROFILE_MODES[number]
@@ -62,14 +60,27 @@ export function resolveAuthProfile(options: ResolveAuthProfileOptions): Resolved
   return {
     description: describeMode(mode),
     envVarName: toJwtEnvVarName(options.network),
-    experimental: mode === 'localnet-unsafe-hmac' || mode === 'oidc-client-credentials',
+    experimental: false,
     mode,
     network: options.network,
     profileKind: profile?.kind,
     profileName: profile?.name,
-    requiresExplicitExperimental: mode === 'localnet-unsafe-hmac' || mode === 'oidc-client-credentials',
+    requiresExplicitExperimental: false,
     warnings,
   }
+}
+
+export function authProfileUsesLocalFallback(
+  authProfile: Pick<ResolvedAuthProfile, 'profileKind'>,
+  network?: LegacyNetworkConfig,
+): boolean {
+  return (
+    authProfile.profileKind === 'sandbox'
+    || authProfile.profileKind === 'canton-multi'
+    || authProfile.profileKind === 'splice-localnet'
+    || network?.type === 'sandbox'
+    || network?.type === 'docker'
+  )
 }
 
 function resolveProfileForNetwork(config: CantonctlConfig, network: string): NormalizedProfile | undefined {
@@ -93,8 +104,6 @@ function inferAuthProfileMode(
   network: NonNullable<CantonctlConfig['networks']>[string],
   profile: NormalizedProfile | undefined,
 ): AuthProfileMode {
-  const authKind = profile?.services.auth?.kind ?? network.auth
-
   if (
     profile?.kind === 'sandbox'
     || profile?.kind === 'canton-multi'
@@ -102,13 +111,10 @@ function inferAuthProfileMode(
     || network.type === 'sandbox'
     || network.type === 'docker'
   ) {
-    return 'localnet-unsafe-hmac'
+    return 'bearer-token'
   }
 
-  if (authKind === 'oidc') {
-    return 'oidc-client-credentials'
-  }
-
+  const authKind = profile?.services.auth?.kind ?? network.auth
   if (authKind === 'shared-secret' || authKind === 'none') {
     return 'bearer-token'
   }
@@ -120,35 +126,19 @@ function buildWarnings(mode: AuthProfileMode): string[] {
   switch (mode) {
     case 'bearer-token':
       return [
-        'Bearer-token mode is operator-managed. cantonctl will use the token you supply but will not acquire or refresh it for you.',
+        'Bearer-token mode uses an explicitly supplied token for remote targets and a local fallback token for sandbox or LocalNet-style profiles.',
       ]
 
     case 'env-or-keychain-jwt':
       return []
-
-    case 'localnet-unsafe-hmac':
-      return [
-        'EXPERIMENTAL: localnet-unsafe-hmac is a local-only auth shortcut with no production guarantees.',
-        'Never reuse a localnet or sandbox HMAC/shared-secret token outside a throwaway local environment.',
-      ]
-
-    case 'oidc-client-credentials':
-      return [
-        'EXPERIMENTAL: oidc-client-credentials is operator-only and upstream auth contracts may change without notice.',
-        'cantonctl does not negotiate OIDC client credentials for you. Mint the access token externally, then pass or store it explicitly.',
-      ]
   }
 }
 
 function describeMode(mode: AuthProfileMode): string {
   switch (mode) {
     case 'bearer-token':
-      return 'Use an explicitly supplied bearer token.'
+      return 'Use an explicitly supplied bearer token or a local fallback token.'
     case 'env-or-keychain-jwt':
       return 'Resolve a JWT from the environment first, then the OS keychain.'
-    case 'localnet-unsafe-hmac':
-      return 'Use a local-only unsafe HMAC/shared-secret flow for sandbox or LocalNet-style development.'
-    case 'oidc-client-credentials':
-      return 'Use an externally minted OIDC client-credentials access token.'
   }
 }

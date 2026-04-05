@@ -8,7 +8,6 @@
  * - `cantonctl topology show`
  * - `cantonctl topology export`
  * - `cantonctl dev --net --topology <name>`
- * - `cantonctl playground --net --topology <name>`
  */
 
 import * as fs from 'node:fs'
@@ -19,10 +18,8 @@ import {watch} from 'chokidar'
 import {afterAll, beforeAll, describe, expect, it} from 'vitest'
 
 import Dev from '../../src/commands/dev.js'
-import Playground from '../../src/commands/playground.js'
 import TopologyExport from '../../src/commands/topology/export.js'
 import TopologyShow from '../../src/commands/topology/show.js'
-import type {Builder} from '../../src/lib/builder.js'
 import {loadConfig, type CantonctlConfig} from '../../src/lib/config.js'
 import type {DamlSdk} from '../../src/lib/daml.js'
 import {createFullDevServer, type FullDevServer} from '../../src/lib/dev-server-full.js'
@@ -32,8 +29,6 @@ import {createLedgerClient} from '../../src/lib/ledger-client.js'
 import type {OutputWriter} from '../../src/lib/output.js'
 import {findDarFile} from '../../src/lib/runtime-support.js'
 import {scaffoldProject} from '../../src/lib/scaffold.js'
-import {createServeServer, type ServeServer} from '../../src/lib/serve.js'
-import type {TestRunner} from '../../src/lib/test-runner.js'
 import {createE2eTempDir, CANTON_IMAGE, hasCantonImage, hasDocker, hasSdk, SDK_VERSION} from './helpers.js'
 
 const DOCKER_AVAILABLE = hasDocker()
@@ -51,7 +46,6 @@ const CLI_ROOT = process.cwd()
 const DOCKER_TEST_HOST = process.env.CANTONCTL_E2E_DOCKER_HOST ?? 'localhost'
 const TOPOLOGY_NAME = 'triad'
 const BASE_PORT = 21_000
-const PLAYGROUND_PORT = 4_301
 const PROJECT_NAME = 'topology-net-test'
 
 const PARTICIPANTS = [
@@ -65,7 +59,7 @@ function withDockerHost(baseUrl: string): string {
 }
 
 function writeTopologyFixture(projectDir: string): void {
-  scaffoldProject({dir: projectDir, name: PROJECT_NAME, template: 'basic'})
+  scaffoldProject({dir: projectDir, name: PROJECT_NAME, template: 'splice-dapp-sdk'})
 
   const damlYamlPath = path.join(projectDir, 'daml.yaml')
   const damlYaml = fs.readFileSync(damlYamlPath, 'utf8')
@@ -79,7 +73,7 @@ function writeTopologyFixture(projectDir: string): void {
     'project:',
     `  name: ${PROJECT_NAME}`,
     `  sdk-version: "${SDK_VERSION}"`,
-    '  template: basic',
+    '  template: splice-dapp-sdk',
     'parties:',
     '  - name: Alice',
     '    role: operator',
@@ -286,93 +280,4 @@ describeIfReady('topology net E2E: named and varied local topologies', () => {
     expect(fs.existsSync(path.join(projectDir, '.cantonctl'))).toBe(false)
   }, 240_000)
 
-  it('playground --net --topology exposes the selected manifest and three participant statuses', async () => {
-    class TestPlayground extends Playground {
-      protected override createFullServer(deps: {
-        cantonImage: string
-        config: CantonctlConfig
-        docker: DockerManager
-        output: OutputWriter
-        sdk: DamlSdk
-      }): FullDevServer {
-        return createNamedTopologyFullServer(deps.config, deps)
-      }
-
-      protected override createServeServer(deps: {
-        builder: Builder
-        output: OutputWriter
-        testRunner: TestRunner
-      }): ServeServer {
-        return createServeServer({
-          builder: deps.builder,
-          createLedgerClient: (options) => createLedgerClient({
-            ...options,
-            baseUrl: withDockerHost(options.baseUrl),
-          }),
-          createToken: createSandboxToken,
-          output: deps.output,
-          testRunner: deps.testRunner,
-        })
-      }
-
-      protected override getProjectDir(): string {
-        return projectDir
-      }
-
-      protected override async loadProjectConfig(): Promise<CantonctlConfig> {
-        return loadConfig({dir: projectDir})
-      }
-
-      protected override openBrowser(_url: string): void {
-        // No-op in E2E; browser launch is not part of the runtime contract.
-      }
-
-      protected override resolveStaticDir(): string | undefined {
-        return undefined
-      }
-
-      protected override async waitForShutdown(shutdown: () => Promise<void>): Promise<void> {
-        try {
-          const topology = await fetchJsonWithRetry<{
-            mode: string
-            selection: {selectedBy: string; topologyName: string} | null
-            topology: {
-              participants: Array<{name: string; parties: string[]; ports: {jsonApi: number}}>
-            } | null
-          }>(`http://localhost:${PLAYGROUND_PORT}/api/topology`)
-
-          expect(topology.mode).toBe('net')
-          expect(topology.selection).toEqual(expect.objectContaining({
-            selectedBy: 'named',
-            topologyName: TOPOLOGY_NAME,
-          }))
-          expect(topology.topology?.participants.map(participant => participant.name)).toEqual(['alpha', 'beta', 'gamma'])
-
-          const status = await fetchJsonWithRetry<{
-            participants: Array<{healthy: boolean; name: string; port: number}>
-          }>(`http://localhost:${PLAYGROUND_PORT}/api/topology/status`)
-
-          expect(status.participants).toHaveLength(3)
-          expect(status.participants.map(participant => participant.name)).toEqual(['alpha', 'beta', 'gamma'])
-          expect(status.participants.every(participant => participant.healthy)).toBe(true)
-        } finally {
-          await shutdown()
-        }
-      }
-    }
-
-    const result = await captureOutput(() => TestPlayground.run([
-      '--net',
-      '--topology',
-      TOPOLOGY_NAME,
-      '--no-open',
-      '--port',
-      String(PLAYGROUND_PORT),
-    ], {root: CLI_ROOT}))
-
-    expect(result.error).toBeUndefined()
-    expect(result.stdout).toContain(`Local Canton net topology ready (${TOPOLOGY_NAME})`)
-    expect(result.stdout).toContain(`Playground:  http://localhost:${PLAYGROUND_PORT}`)
-    expect(fs.existsSync(path.join(projectDir, '.cantonctl'))).toBe(false)
-  }, 240_000)
 })

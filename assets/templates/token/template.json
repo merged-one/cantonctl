@@ -1,7 +1,0 @@
-{
-  "description": "Token with Mint/Transfer/Burn choices",
-  "extraDirectories": [
-    "frontend",
-    "frontend/src"
-  ]
-}

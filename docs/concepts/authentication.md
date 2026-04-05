@@ -14,24 +14,25 @@ The sandbox decodes but does not validate token signatures. Production participa
 
 ## Local Development (Automatic)
 
-When targeting `local` or any `type: sandbox` network, cantonctl generates a JWT automatically using a well-known HS256 secret. No manual auth setup needed.
+When targeting sandbox, `canton-multi`, or `splice-localnet` profiles, cantonctl generates or resolves the built-in local fallback token automatically. No manual auth setup is needed for those local workflows.
 
 ```bash
 cantonctl dev       # Auto-generates JWT for party provisioning
 cantonctl deploy    # Auto-generates JWT for DAR upload
-cantonctl console   # Auto-generates JWT for queries and commands
 cantonctl status    # Auto-generates JWT for health checks
+cantonctl readiness # Reuses the local fallback path in the composed gate
 ```
 
 The sandbox secret is intentionally public: `canton-sandbox-secret-do-not-use-in-production`.
 
 ## Remote Networks (Credential Store)
 
-For `type: remote` networks, you store a JWT token via the credential store:
+For remote profiles and networks, you store a JWT token via the credential store:
 
 ```bash
 cantonctl auth login devnet --token eyJhbGci...
-cantonctl deploy devnet     # Uses stored credential
+cantonctl readiness --profile splice-devnet
+cantonctl deploy devnet
 ```
 
 ### Resolution Order
@@ -39,7 +40,8 @@ cantonctl deploy devnet     # Uses stored credential
 When cantonctl needs a token for a network, it checks:
 1. **Environment variable** — `CANTONCTL_JWT_<NETWORK>` (recommended for CI)
 2. **OS keychain** — stored via `cantonctl auth login`
-3. **Prompt / error** — if neither is available
+3. **Local fallback** — for sandbox, `canton-multi`, and `splice-localnet`
+4. **Prompt / error** — if neither is available for a remote target
 
 ### Environment Variables for CI
 

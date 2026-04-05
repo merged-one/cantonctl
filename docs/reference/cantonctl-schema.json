@@ -28,7 +28,7 @@
         "template": {
           "type": "string",
           "description": "Template used during scaffolding",
-          "enum": ["basic", "token", "defi-amm", "api-service", "zenith-evm"]
+          "enum": ["splice-dapp-sdk", "splice-scan-reader", "splice-token-app"]
         }
       },
       "additionalProperties": false

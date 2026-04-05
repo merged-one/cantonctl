@@ -58,12 +58,12 @@ describe('CredentialStore', () => {
 
     it('stores the auth mode alongside the token', async () => {
       const {backend, store} = createTestStore()
-      await store.store('devnet', 'my-jwt-token', {mode: 'oidc-client-credentials'})
+      await store.store('devnet', 'my-jwt-token', {mode: 'env-or-keychain-jwt'})
 
       expect(backend.setPassword).toHaveBeenCalledWith(
         'cantonctl',
         'devnet',
-        expect.stringContaining('"mode":"oidc-client-credentials"'),
+        expect.stringContaining('"mode":"env-or-keychain-jwt"'),
       )
     })
   })
@@ -185,13 +185,13 @@ describe('CredentialStore', () => {
     it('returns stored credential metadata when no env override exists', async () => {
       const {backend, store} = createTestStore()
       backend.getPassword.mockResolvedValue(JSON.stringify({
-        mode: 'oidc-client-credentials',
+        mode: 'env-or-keychain-jwt',
         storedAt: '2026-04-02T20:00:00.000Z',
         token: 'stored-token',
       }))
 
       await expect(store.resolveRecord('devnet')).resolves.toEqual({
-        mode: 'oidc-client-credentials',
+        mode: 'env-or-keychain-jwt',
         source: 'stored',
         storedAt: '2026-04-02T20:00:00.000Z',
         token: 'stored-token',

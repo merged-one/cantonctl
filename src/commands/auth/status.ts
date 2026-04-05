@@ -7,7 +7,7 @@
 
 import {Command, Flags} from '@oclif/core'
 
-import {resolveAuthProfile} from '../../lib/auth-profile.js'
+import {authProfileUsesLocalFallback, resolveAuthProfile} from '../../lib/auth-profile.js'
 import {type CantonctlConfig, loadConfig} from '../../lib/config.js'
 import {createCredentialStore, type CredentialStore, type KeychainBackend} from '../../lib/credential-store.js'
 import {CantonctlError} from '../../lib/errors.js'
@@ -52,6 +52,7 @@ export default class AuthStatus extends Command {
 
       for (const network of networks) {
         const authProfile = resolveAuthProfile({config, network})
+        const networkConfig = config.networks?.[network]
         const resolved = await store.resolveRecord(network)
         const warnings = [...authProfile.warnings]
         const storedMode = resolved?.source === 'stored' ? resolved.mode : undefined
@@ -62,8 +63,9 @@ export default class AuthStatus extends Command {
           )
         }
 
-        const authenticated = mode === 'localnet-unsafe-hmac' ? true : !!resolved
-        const source = mode === 'localnet-unsafe-hmac'
+        const usesLocalFallback = authProfileUsesLocalFallback(authProfile, networkConfig)
+        const authenticated = usesLocalFallback ? true : !!resolved
+        const source = usesLocalFallback
           ? (resolved ? (resolved.source === 'env' ? 'env' : storedSource) : 'generated')
           : (resolved ? (resolved.source === 'env' ? 'env' : storedSource) : null)
 

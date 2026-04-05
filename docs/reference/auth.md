@@ -16,10 +16,11 @@ Resolved auth profile modes include:
 
 - `env-or-keychain-jwt`
 - `bearer-token`
-- `oidc-client-credentials`
-- `localnet-unsafe-hmac`
 
-Experimental and local-only modes stay explicit in human output.
+`bearer-token` covers two cases:
+
+- explicitly supplied remote bearer tokens
+- the built-in local fallback token path for sandbox, `canton-multi`, and `splice-localnet`
 
 ## CI Guidance
 

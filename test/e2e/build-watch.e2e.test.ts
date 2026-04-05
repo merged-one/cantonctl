@@ -94,7 +94,7 @@ afterAll(() => {
 describeWithSdk('build --watch E2E', () => {
   it('watches for .daml changes and rebuilds', async () => {
     const projectDir = path.join(workDir, 'watch-basic')
-    scaffoldProject({dir: projectDir, name: 'watch-basic', template: 'basic'})
+    scaffoldProject({dir: projectDir, name: 'watch-basic', template: 'splice-dapp-sdk'})
 
     // Fix SDK version
     const damlYaml = fs.readFileSync(path.join(projectDir, 'daml.yaml'), 'utf8')
@@ -142,7 +142,7 @@ describeWithSdk('build --watch E2E', () => {
 
   it('stop() terminates watch mode cleanly', async () => {
     const projectDir = path.join(workDir, 'watch-stop')
-    scaffoldProject({dir: projectDir, name: 'watch-stop', template: 'basic'})
+    scaffoldProject({dir: projectDir, name: 'watch-stop', template: 'splice-dapp-sdk'})
 
     // Fix SDK version
     const damlYaml = fs.readFileSync(path.join(projectDir, 'daml.yaml'), 'utf8')
@@ -174,7 +174,7 @@ describeWithSdk('build --watch E2E', () => {
 
   it('AbortSignal stops watch mode', async () => {
     const projectDir = path.join(workDir, 'watch-abort')
-    scaffoldProject({dir: projectDir, name: 'watch-abort', template: 'basic'})
+    scaffoldProject({dir: projectDir, name: 'watch-abort', template: 'splice-dapp-sdk'})
 
     const damlYaml = fs.readFileSync(path.join(projectDir, 'daml.yaml'), 'utf8')
     fs.writeFileSync(

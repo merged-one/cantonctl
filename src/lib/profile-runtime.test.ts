@@ -75,7 +75,7 @@ describe('profile runtime', () => {
   it('synthesizes auth resolution for profile-backed runtimes', () => {
     const config = createConfig()
     const auth = resolveProfileAuth(config, config.profiles!.sandbox, 'sandbox')
-    expect(auth.mode).toBe('localnet-unsafe-hmac')
+    expect(auth.mode).toBe('bearer-token')
     expect(auth.network).toBe('sandbox')
   })
 
@@ -132,7 +132,7 @@ describe('profile runtime', () => {
 
     const runtime = await resolver.resolve({config, profileName: 'sandbox'})
     expect(runtime.credential).toEqual({
-      mode: 'localnet-unsafe-hmac',
+      mode: 'bearer-token',
       network: 'local',
       source: 'fallback',
       token: 'sandbox-token',
@@ -221,14 +221,14 @@ describe('profile runtime', () => {
       },
     }, 'ops')
 
-    expect(cantonMultiAuth.mode).toBe('localnet-unsafe-hmac')
+    expect(cantonMultiAuth.mode).toBe('bearer-token')
     expect(bearerAuth.mode).toBe('bearer-token')
     expect(summarizeCredentialSource({mode: 'env-or-keychain-jwt', network: 'devnet', source: 'env', token: 'env-token'})).toBe('resolved from environment')
     expect(toResolvedCredential({mode: 'env-or-keychain-jwt', network: 'devnet', source: 'env', token: 'env-token'})).toEqual({
       source: 'env',
       token: 'env-token',
     })
-    expect(toResolvedCredential({mode: 'localnet-unsafe-hmac', network: 'local', source: 'fallback', token: 'sandbox-token'})).toBeNull()
+    expect(toResolvedCredential({mode: 'bearer-token', network: 'local', source: 'fallback', token: 'sandbox-token'})).toBeNull()
   })
 
   it('synthesizes missing legacy network maps and fallback auth details', async () => {

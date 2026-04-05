@@ -67,7 +67,7 @@ npx hardhat run scripts/deploy.ts --network goerli
 
 ### cantonctl
 ```bash
-cantonctl init my-app --template token
+cantonctl init my-app --template splice-token-app
 cantonctl dev             # Start local sandbox + hot-reload
 cantonctl build           # Compile Daml
 cantonctl test            # Run Daml Script tests
@@ -79,7 +79,7 @@ cantonctl deploy devnet   # Planned for Phase 4
 If you want to write Solidity but deploy on Canton Network, use Zenith:
 
 ```bash
-cantonctl init my-app --template zenith-evm
+cantonctl init my-app --template splice-dapp-sdk
 ```
 
 This gives you a Hardhat project structure with a Zenith network configuration. Your Solidity contracts run on the Zenith EVM execution layer, which bridges to Canton's privacy-preserving ledger.

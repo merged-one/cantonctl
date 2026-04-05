@@ -48,7 +48,7 @@ beforeAll(() => { workDir = fs.mkdtempSync(path.join(os.tmpdir(), 'cantonctl-e2e
 afterAll(() => { fs.rmSync(workDir, {recursive: true, force: true}) })
 
 describeWithSdk('build E2E', () => {
-  const templates: Template[] = ['basic', 'token', 'defi-amm', 'api-service', 'zenith-evm']
+  const templates: Template[] = ['splice-dapp-sdk', 'splice-scan-reader', 'splice-token-app']
 
   for (const template of templates) {
     it(`builds ${template} template and produces .dar`, async () => {
@@ -73,7 +73,7 @@ describeWithSdk('build E2E', () => {
   }
 
   it('cache hit on second build (no source changes)', async () => {
-    const projectDir = path.join(workDir, 'build-basic') // Already built above
+    const projectDir = path.join(workDir, 'build-splice-dapp-sdk') // Already built above
     const runner = createProcessRunner()
     const sdk = createDamlSdk({runner})
     const builder = createBuilder({findDarFile, getDamlSourceMtime, getFileMtime, sdk})
@@ -85,7 +85,7 @@ describeWithSdk('build E2E', () => {
   }, 30_000)
 
   it('rebuilds after source modification', async () => {
-    const projectDir = path.join(workDir, 'build-basic')
+    const projectDir = path.join(workDir, 'build-splice-dapp-sdk')
     // Touch a source file to make it newer
     const mainDaml = path.join(projectDir, 'daml', 'Main.daml')
     const content = fs.readFileSync(mainDaml, 'utf8')

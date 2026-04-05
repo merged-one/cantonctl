@@ -15,7 +15,6 @@
  * - E5xxx: Test errors
  * - E6xxx: Deploy errors
  * - E7xxx: Ledger and service API errors
- * - E8xxx: Console/REPL errors
  *
  * @example
  * ```ts
@@ -76,10 +75,6 @@ export enum ErrorCode {
   SERVICE_CONNECTION_FAILED = 'E7004',
   SERVICE_REQUEST_FAILED = 'E7005',
   SERVICE_AUTH_FAILED = 'E7006',
-
-  // E8xxx: Console/REPL
-  CONSOLE_PARSE_ERROR = 'E8001',
-  CONSOLE_UNKNOWN_COMMAND = 'E8002',
 }
 
 /** Human-readable descriptions for each error code. */
@@ -113,8 +108,6 @@ const ERROR_MESSAGES: Record<ErrorCode, string> = {
   [ErrorCode.SERVICE_CONNECTION_FAILED]: 'Cannot connect to the configured service endpoint.',
   [ErrorCode.SERVICE_REQUEST_FAILED]: 'The configured service rejected the request.',
   [ErrorCode.SERVICE_AUTH_FAILED]: 'Authentication failed for the configured service endpoint.',
-  [ErrorCode.CONSOLE_PARSE_ERROR]: 'Could not parse the console command.',
-  [ErrorCode.CONSOLE_UNKNOWN_COMMAND]: 'Unknown console command.',
 }
 
 export interface CantonctlErrorOptions {

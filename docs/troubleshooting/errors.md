@@ -103,12 +103,11 @@ Every cantonctl error includes a code, human-readable message, actionable sugges
 **Symptoms:**
 - A `dpm` subcommand (build, test, codegen) exited with an error
 - Or a legacy `daml` fallback subcommand exited with an error
-- Git clone failed when using `--from` flag
 
 **Resolution:**
 1. Check the stderr output in the error context for the specific failure
 2. For build errors, see E4001
-3. For git clone failures, verify the URL and network connectivity
+3. Re-run the underlying SDK command directly if you need deeper diagnostics
 
 ---
 
@@ -188,7 +187,36 @@ Every cantonctl error includes a code, human-readable message, actionable sugges
 1. Ensure Docker Desktop is running and `docker compose version` works
 2. Check for port conflicts on the base port range (default 10000+)
 3. Run `docker compose -f .cantonctl/docker-compose.yml logs` for details
-4. Try `cantonctl clean --force` to remove stale topology configs
+4. Stop any leaked `cantonctl dev --net` runtime and remove the `.cantonctl/` runtime directory if it was left behind
+
+---
+
+### E3006 — LocalNet Workspace Invalid
+
+**Message:** The LocalNet workspace does not match the expected upstream layout.
+
+**Symptoms:**
+- `cantonctl localnet ...` or `cantonctl profiles import-localnet` cannot detect a valid upstream workspace
+- Expected files such as `Makefile`, `.env`, `compose.yaml`, or `docker/modules/localnet/...` are missing
+
+**Resolution:**
+1. Point the command at the root of an official CN Quickstart or LocalNet workspace
+2. Verify the workspace still has `Makefile`, `.env`, a root compose file, `config/`, and the LocalNet module files
+3. Re-run `cantonctl profiles import-localnet --workspace <path> --json` to inspect the structured error context
+
+---
+
+### E3007 — LocalNet Command Failed
+
+**Message:** The upstream LocalNet workspace command failed.
+
+**Symptoms:**
+- `cantonctl localnet up`, `status`, or `down` invoked an upstream `make` target that exited non-zero
+
+**Resolution:**
+1. Re-run the suggested upstream `make` target directly inside the workspace for full output
+2. Check Docker health, image availability, and LocalNet workspace logs
+3. If the workspace was updated, refresh your project-local profile with `cantonctl profiles import-localnet --workspace <path> --write`
 
 ---
 
@@ -285,19 +313,3 @@ Every cantonctl error includes a code, human-readable message, actionable sugges
 **Message:** JWT token has expired or is invalid.
 
 **Resolution:** Generate a new token. For local development, `cantonctl dev` handles this automatically.
-
----
-
-## E8xxx: Console/REPL
-
-### E8001 — Console Parse Error
-
-**Message:** Could not parse the console command.
-
-**Resolution:** Check command syntax. Type `help` for available commands.
-
-### E8002 — Console Unknown Command
-
-**Message:** Unknown console command.
-
-**Resolution:** Type `help` to see available commands.

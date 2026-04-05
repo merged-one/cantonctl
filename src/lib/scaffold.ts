@@ -11,7 +11,6 @@ import * as path from 'node:path'
 import {fileURLToPath} from 'node:url'
 
 import {CantonctlError, ErrorCode} from './errors.js'
-import type {ProcessRunner} from './process-runner.js'
 import {
   getPinnedCantonSdkVersion,
   getPinnedPublicSdkVersion,
@@ -21,11 +20,6 @@ export const TEMPLATES = [
   'splice-dapp-sdk',
   'splice-scan-reader',
   'splice-token-app',
-  'basic',
-  'token',
-  'defi-amm',
-  'api-service',
-  'zenith-evm',
 ] as const
 
 export type Template = typeof TEMPLATES[number]
@@ -61,13 +55,6 @@ export interface ScaffoldResult {
   files: string[]
   projectDir: string
   template: Template
-}
-
-export interface ScaffoldFromUrlOptions {
-  dir: string
-  fs?: ScaffoldFileSystem
-  runner: ProcessRunner
-  url: string
 }
 
 interface TemplateRenderContext {
@@ -142,30 +129,6 @@ export function scaffoldProject(opts: ScaffoldOptions): ScaffoldResult {
   }
 
   return {files, projectDir: dir, template}
-}
-
-export async function scaffoldFromUrl(opts: ScaffoldFromUrlOptions): Promise<void> {
-  const fsImpl = opts.fs ?? nodeFs
-
-  const result = await opts.runner.run('git', ['clone', '--depth', '1', opts.url, opts.dir], {
-    ignoreExitCode: true,
-    timeout: 60_000,
-  })
-
-  if (result.exitCode !== 0) {
-    throw new CantonctlError(ErrorCode.SDK_COMMAND_FAILED, {
-      context: {stderr: result.stderr, url: opts.url},
-      suggestion: `Failed to clone template from ${opts.url}. Check the URL and your network connection.`,
-    })
-  }
-
-  const manifestPath = path.join(opts.dir, 'cantonctl-template.yaml')
-  if (!fsImpl.existsSync(manifestPath)) {
-    throw new CantonctlError(ErrorCode.CONFIG_SCHEMA_VIOLATION, {
-      context: {url: opts.url},
-      suggestion: `The repository at ${opts.url} does not contain a cantonctl-template.yaml manifest. Community templates must include this file.`,
-    })
-  }
 }
 
 export function generateConfig(name: string, template: Template): string {

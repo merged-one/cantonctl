@@ -6,8 +6,7 @@ import {describe, expect, it} from 'vitest'
 import Deploy from './deploy.js'
 import Doctor from './doctor.js'
 import Init from './init.js'
-import Playground from './playground.js'
-import Serve from './serve.js'
+import Readiness from './readiness.js'
 import Status from './status.js'
 
 const packageJson = JSON.parse(
@@ -18,8 +17,7 @@ describe('help positioning', () => {
   it('keeps companion language in package metadata and key command descriptions', () => {
     expect(packageJson.description).toBe('Splice-aware orchestration companion for the official Canton stack')
     expect(Doctor.description).toContain('profile-aware environment readiness')
-    expect(Serve.description).toContain('profile-aware Canton IDE Protocol backend')
-    expect(Playground.description).toContain('local browser workbench')
+    expect(Readiness.description).toContain('composed readiness gate')
     expect(Init.description).toContain('companion-ready Canton project')
     expect(Status.description).toContain('profile-aware service health')
     expect(Deploy.description).toContain('advisory DAR deploy wrapper')
@@ -28,8 +26,7 @@ describe('help positioning', () => {
   it('keeps retired umbrella language out of key command descriptions', () => {
     const descriptions = [
       Doctor.description,
-      Serve.description,
-      Playground.description,
+      Readiness.description,
       Init.description,
       Status.description,
       Deploy.description,

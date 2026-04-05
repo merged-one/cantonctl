@@ -22,8 +22,7 @@ const PRIMARY_SURFACES = [
   'docs/reference/compatibility.md',
   'docs/reference/auth.md',
   'docs/reference/status.md',
-  'docs/reference/serve.md',
-  'docs/reference/playground.md',
+  'docs/reference/readiness.md',
   'docs/reference/deploy.md',
   'proposals/cantonctl.md',
 ]

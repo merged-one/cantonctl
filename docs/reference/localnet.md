@@ -14,6 +14,7 @@
 cantonctl localnet up --workspace <path> [--profile <name>]
 cantonctl localnet down --workspace <path>
 cantonctl localnet status --workspace <path>
+cantonctl profiles import-localnet --workspace <path> [--write]
 ```
 
 ## Behavior
@@ -22,6 +23,7 @@ cantonctl localnet status --workspace <path>
 - Delegates to the workspace’s existing `make` targets
 - Reports discovered ledger, wallet, validator, and scan URLs
 - Keeps validator `readyz` as the default health probe
+- Can materialize the detected workspace as a canonical `splice-localnet` profile plus `networks.<name>.profile` wiring
 
 ## JSON Support
 

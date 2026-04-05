@@ -14,4 +14,4 @@ These boundaries are deliberate.
 - Daml Studio remains the canonical IDE.
 - Quickstart remains the official reference app and LocalNet launchpad.
 - Wallet and dApp integration flows remain owned by the official SDK and gateway stack.
-- Operator-only and internal surfaces remain explicit experimental opt-ins rather than the default story.
+- Operator-only and internal surfaces are outside the product scope rather than part of the default story.

@@ -129,6 +129,19 @@ async function scanReachabilityCheck(options: {
   signal?: AbortSignal
 }): Promise<PreflightCheck> {
   if (!options.runtime.profile.services.scan?.url) {
+    if (
+      options.runtime.profile.kind === 'sandbox'
+      || options.runtime.profile.kind === 'canton-multi'
+      || options.runtime.profile.kind === 'splice-localnet'
+    ) {
+      return {
+        category: 'scan',
+        detail: 'No stable/public scan endpoint configured for this local profile.',
+        name: 'Scan reachability',
+        status: 'skip',
+      }
+    }
+
     return {
       category: 'scan',
       detail: 'A stable/public scan endpoint is required for the default preflight path.',

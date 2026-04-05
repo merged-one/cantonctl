@@ -9,7 +9,7 @@ The rule is simple: wrap, do not replace.
 | Tool | Official role | Where it stops | What `cantonctl` adds |
 |---|---|---|---|
 | DPM | Canonical build, test, codegen, sandbox, and Studio launch | Not a profile-driven remote-operations companion | Profile resolution, compatibility checks, auth helpers, diagnostics, canaries |
-| Daml Studio | Canonical Daml IDE | Not an orchestration or support workflow tool | `serve` and `playground` as adjunct local workbench surfaces |
+| Daml Studio | Canonical Daml IDE | Not an orchestration or support workflow tool | Keep the canonical IDE workflow; use `cantonctl` around profiles and support checks |
 | CN Quickstart | Official reference app and LocalNet launchpad | Not a generic control plane for arbitrary projects and remote validators | LocalNet wrapping, profile progression, remote-environment readiness helpers |
 | dApp SDK / dApp API / Wallet Gateway | Canonical wallet-connected dApp path, including CIP-0103 | Not a profile-management or deployment-host diagnostics tool | Config export, stable/public smoke checks, profile-aware support flows |
 | Wallet SDK | Canonical wallet-provider, exchange, and custody toolkit | Not a general CLI for promotion hygiene and remote checks | Support-oriented config export and advisory validation |

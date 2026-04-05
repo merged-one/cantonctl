@@ -4,9 +4,9 @@
  * Regex-based parser for Daml source files. Extracts template definitions,
  * fields, choices, signatories, and controllers from .daml source code.
  *
- * This is a pragmatic "good enough" parser for the playground's dynamic
- * form generation. It handles all cantonctl scaffold templates and typical
- * Daml patterns. It does NOT handle:
+ * This is a pragmatic "good enough" parser for scaffold inspection and
+ * generated companion assets. It handles all cantonctl scaffold templates
+ * and typical Daml patterns. It does NOT handle:
  * - Multi-line signatory expressions (e.g., signatory [p1, p2])
  * - Key/maintainer declarations
  * - Interface implementations

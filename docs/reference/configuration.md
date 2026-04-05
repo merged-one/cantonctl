@@ -38,9 +38,15 @@ profiles:
 
   splice-local:
     kind: splice-localnet
+    ledger:
+      url: http://canton.localhost:4000/v2
+    scan:
+      url: http://scan.localhost:4000/api/scan
+    validator:
+      url: http://wallet.localhost:4000/api/validator
     localnet:
       distribution: splice-localnet
-      workspace: ../quickstart
+      version: "0.5.3"
 
   splice-devnet:
     kind: remote-validator
@@ -61,6 +67,8 @@ profiles:
 networks:
   local:
     profile: sandbox
+  localnet:
+    profile: splice-local
   devnet:
     profile: splice-devnet
 ```
@@ -82,3 +90,4 @@ networks:
 - [Auth](auth.md)
 - [Compatibility](compatibility.md)
 - [Preflight](preflight.md)
+- [Readiness](readiness.md)

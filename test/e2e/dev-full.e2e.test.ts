@@ -102,7 +102,7 @@ describeIfReady('dev --net E2E: multi-node Docker topology', () => {
     projectDir = path.join(workDir, 'fulldev-test')
 
     // Scaffold a project with two parties on different roles
-    scaffoldProject({dir: projectDir, name: 'fulldev-test', template: 'basic'})
+    scaffoldProject({dir: projectDir, name: 'fulldev-test', template: 'splice-dapp-sdk'})
 
     // Fix SDK version in daml.yaml
     const damlYaml = fs.readFileSync(path.join(projectDir, 'daml.yaml'), 'utf8')
@@ -117,7 +117,7 @@ describeIfReady('dev --net E2E: multi-node Docker topology', () => {
       'project:',
       '  name: fulldev-test',
       `  sdk-version: "${SDK_VERSION}"`,
-      '  template: basic',
+      '  template: splice-dapp-sdk',
       'parties:',
       '  - name: Alice',
       '    role: operator',

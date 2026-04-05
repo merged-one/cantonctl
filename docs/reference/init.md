@@ -17,11 +17,6 @@ Stable/public Splice workflows lead the default selection order:
 1. `splice-dapp-sdk`
 2. `splice-scan-reader`
 3. `splice-token-app`
-4. `basic`
-5. `token`
-6. `defi-amm`
-7. `api-service`
-8. `zenith-evm`
 
 ## Quickstart-Aware Guidance
 
@@ -35,7 +30,6 @@ Stable/public Splice workflows lead the default selection order:
 | Flag | Description |
 |---|---|
 | `--template`, `-t` | Built-in template |
-| `--from`, `-f` | Community template from GitHub |
 | `--json` | Output structured JSON |
 
 ## Source

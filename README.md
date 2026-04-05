@@ -4,9 +4,9 @@
   <img alt="cantonctl — Splice-aware orchestration companion for the official Canton stack" src="assets/banner.svg">
 </picture>
 
-`cantonctl` is the Splice-aware orchestration companion for teams moving Daml artifacts and app code across sandbox, LocalNet, and validator-backed Canton/Splice environments.
+`cantonctl` is the Splice-aware orchestration companion for teams moving the same project across sandbox, official LocalNet, and validator-backed Canton/Splice environments.
 
-It complements DPM, Daml Studio, Quickstart, and the official wallet and dApp SDKs. It wraps, not replaces, the official stack.
+It exists because the official tools are authoritative inside their own lanes, but no single official tool owns the project-local orchestration layer across local and remote environments. It wraps, not replaces, DPM, Daml Studio, Quickstart, and the official SDKs.
 
 ## What It Is Not
 
@@ -21,7 +21,7 @@ It complements DPM, Daml Studio, Quickstart, and the official wallet and dApp SD
 | Tool | Official role | Where `cantonctl` adds value |
 |---|---|---|
 | DPM | Build, test, codegen, sandbox, Studio launch | Profiles, auth, compatibility checks, diagnostics, remote-environment helpers |
-| Daml Studio | Canonical Daml IDE in VS Code | `serve` and `playground` as adjunct local workbench surfaces |
+| Daml Studio | Canonical Daml IDE in VS Code | Keep the canonical IDE workflow; use `cantonctl` around profiles, readiness, and diagnostics |
 | CN Quickstart | Official reference app and LocalNet launchpad | Profile-driven movement from LocalNet into remote validator-backed environments |
 | dApp SDK / dApp API / Wallet Gateway | Canonical wallet-connected dApp path, including CIP-0103 flows | Exported config, stable/public canaries, profile-aware diagnostics |
 | Wallet SDK | Canonical wallet-provider, exchange, and custody toolkit | Config export and support-oriented readiness checks |
@@ -111,8 +111,10 @@ The profile model is the product backbone. It is what lets `cantonctl` stay focu
 | `cantonctl diagnostics bundle` | Export a support-friendly diagnostics bundle | Support and diagnostics surface |
 | `cantonctl profiles list/show/validate` | Inspect and validate resolved runtime profiles | Core control-plane wedge |
 | `cantonctl profiles import-scan` | Synthesize profile blocks from stable/public scan discovery | Stable/public discovery helper |
+| `cantonctl profiles import-localnet` | Materialize a `splice-localnet` profile from an official LocalNet workspace | LocalNet-to-profile bootstrap |
 | `cantonctl compat check [profile]` | Check stable/public compatibility for a profile | Stable/public guardrail |
 | `cantonctl preflight --profile <name>` | Run read-only remote readiness checks | Promotion-friendly readiness gate |
+| `cantonctl readiness --profile <name>` | Run the composed readiness gate for a resolved profile | JSON-first control-plane gate |
 | `cantonctl promote diff --from <a> --to <b>` | Compare source and target profiles before promotion | Advisory lifecycle helper |
 | `cantonctl upgrade check --profile <name>` | Run advisory upgrade checks | Advisory lifecycle helper |
 | `cantonctl reset checklist --network <tier>` | Show reset-sensitive runbook reminders | Advisory lifecycle helper |
@@ -126,31 +128,27 @@ The profile model is the product backbone. It is what lets `cantonctl` stay focu
 | `cantonctl validator traffic-buy/traffic-status` | Use stable validator-user traffic flows | Stable/public only |
 | `cantonctl codegen sync` | Sync manifest-managed upstream specs and generated clients | Maintainer workflow |
 | `cantonctl doctor` | Check prerequisites and profile-aware environment readiness | Support and diagnostics surface |
-| `cantonctl serve` | Start the profile-aware Canton IDE Protocol backend | Adjunct workbench backend |
-| `cantonctl playground` | Open the local browser workbench | Adjunct demo and inspection surface |
 | `cantonctl topology show/export` | Preview or export the local Canton-only topology | Local topology builder |
-| `cantonctl validator experimental ...` | Opt into operator-only validator-internal flows | Experimental only |
 
-All commands except `console` and `playground` support `--json`.
+All public commands support `--json`.
 
 ## Stable/Public Vs Experimental
 
 ### Stable/Public Defaults
 
 - Profile-based config and compatibility checks
+- LocalNet-to-profile bootstrap via `profiles import-localnet`
 - Official LocalNet wrapping via `localnet up/down/status`
 - Scan, token-standard, ANS, and validator-user surfaces
-- Auth, status, and doctor flows for sandbox, LocalNet, and remote profiles
+- Auth, status, readiness, preflight, and doctor flows for sandbox, LocalNet, and remote profiles
 - Manifest-driven stability policy and generated client sync
 
 ### Explicitly Experimental
 
-- `validator experimental ...`
 - Scan-proxy-only reads
-- Auth modes that require explicit acknowledgement such as `localnet-unsafe-hmac` and `oidc-client-credentials`
 - Any validator-internal, wallet-internal, or other operator-only surface
 
-See [docs/reference/experimental.md](docs/reference/experimental.md) and [docs/reference/api-stability.md](docs/reference/api-stability.md).
+See [docs/reference/api-stability.md](docs/reference/api-stability.md).
 
 ## Templates And Examples
 
@@ -160,16 +158,6 @@ Stable/public Splice workflows lead the starter story:
 cantonctl init my-app --template splice-dapp-sdk
 cantonctl init my-app --template splice-scan-reader
 cantonctl init my-app --template splice-token-app
-```
-
-Generic Canton and Zenith templates remain available:
-
-```bash
-cantonctl init my-app --template basic
-cantonctl init my-app --template token
-cantonctl init my-app --template defi-amm
-cantonctl init my-app --template api-service
-cantonctl init my-app --template zenith-evm
 ```
 
 If you want the official reference app path, start from Quickstart instead of these templates.

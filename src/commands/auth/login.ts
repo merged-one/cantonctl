@@ -8,7 +8,12 @@
 import {Args, Command, Flags} from '@oclif/core'
 import * as readline from 'node:readline'
 
-import {AUTH_PROFILE_MODES, isAuthProfileMode, resolveAuthProfile} from '../../lib/auth-profile.js'
+import {
+  AUTH_PROFILE_MODES,
+  authProfileUsesLocalFallback,
+  isAuthProfileMode,
+  resolveAuthProfile,
+} from '../../lib/auth-profile.js'
 import {type CantonctlConfig, loadConfig} from '../../lib/config.js'
 import {createCredentialStore, type CredentialStore, type KeychainBackend} from '../../lib/credential-store.js'
 import {CantonctlError, ErrorCode} from '../../lib/errors.js'
@@ -29,15 +34,11 @@ export default class AuthLogin extends Command {
   static override examples = [
     '<%= config.bin %> auth login devnet',
     '<%= config.bin %> auth login testnet --token eyJhbGci...',
-    '<%= config.bin %> auth login validator --mode oidc-client-credentials --token eyJhbGci... --experimental',
+    '<%= config.bin %> auth login localnet',
     '<%= config.bin %> auth login devnet --json',
   ]
 
   static override flags = {
-    experimental: Flags.boolean({
-      default: false,
-      description: 'Acknowledge experimental or operator-only auth modes',
-    }),
     json: Flags.boolean({
       default: false,
       description: 'Output result as JSON',
@@ -65,13 +66,7 @@ export default class AuthLogin extends Command {
         requestedMode: flags.mode && isAuthProfileMode(flags.mode) ? flags.mode : undefined,
       })
       const network = config.networks![networkName]!
-
-      if (authProfile.requiresExplicitExperimental && !flags.experimental) {
-        throw new CantonctlError(ErrorCode.EXPERIMENTAL_CONFIRMATION_REQUIRED, {
-          context: {mode: authProfile.mode, network: networkName},
-          suggestion: `Re-run "cantonctl auth login ${networkName} --experimental" to acknowledge the ${authProfile.mode} auth profile.`,
-        })
-      }
+      const usesLocalFallback = authProfileUsesLocalFallback(authProfile, network)
 
       const warnings = [...authProfile.warnings]
       if (!flags.json) {
@@ -83,24 +78,24 @@ export default class AuthLogin extends Command {
 
       // Get token: from flag or prompt when the mode actually persists operator credentials.
       let token = flags.token
-      if (!token && authProfile.mode !== 'localnet-unsafe-hmac') {
-        token = await this.promptForToken(authProfile.mode)
+      if (!token && !usesLocalFallback) {
+        token = await this.promptForToken()
       }
 
-      if (!token && authProfile.mode !== 'localnet-unsafe-hmac') {
+      if (!token && !usesLocalFallback) {
         throw new CantonctlError(ErrorCode.DEPLOY_AUTH_FAILED, {
           context: {mode: authProfile.mode, network: networkName},
           suggestion: 'No token provided. Pass --token or enter it when prompted.',
         })
       }
 
-      if (!token && authProfile.mode === 'localnet-unsafe-hmac') {
+      if (!token && usesLocalFallback) {
         const message =
           `No credential persisted for ${networkName}. ` +
-          'This profile relies on a local-only unsafe HMAC/shared-secret flow.'
+          'This profile relies on the built-in local fallback token path.'
         if (!flags.json) {
           out.info(message)
-          out.success(`Acknowledged ${authProfile.mode} for ${networkName}`)
+          out.success(`Using local fallback auth for ${networkName}`)
         }
 
         out.result({
@@ -186,15 +181,14 @@ export default class AuthLogin extends Command {
     return readline.createInterface(options)
   }
 
-  private async promptForToken(mode: string): Promise<string | undefined> {
+  private async promptForToken(): Promise<string | undefined> {
     const rl = this.createReadlineInterface({
       input: process.stdin,
       output: process.stderr,
     })
 
     return new Promise((resolve) => {
-      const label = mode === 'oidc-client-credentials' ? 'Enter OIDC access token: ' : 'Enter JWT token: '
-      rl.question(label, (answer) => {
+      rl.question('Enter JWT token: ', (answer) => {
         rl.close()
         resolve(answer.trim() || undefined)
       })

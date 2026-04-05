@@ -19,7 +19,7 @@ version: 1
 project:
   name: my-app
   sdk-version: "3.4.9"
-  template: token          # Optional: which template was used
+  template: splice-dapp-sdk  # Optional: which template was used
 
 parties:
   - name: Alice
