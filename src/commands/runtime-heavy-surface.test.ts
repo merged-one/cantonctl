@@ -680,7 +680,7 @@ describe('runtime-heavy command surface', () => {
       const sandboxWatcher = capturedSandboxServerDeps!.watch(darPath, {ignoreInitial: true})
       await sandboxWatcher.close()
       await expect(capturedSandboxServerDeps!.readFile(darPath)).resolves.toBeInstanceOf(Uint8Array)
-      await expect(capturedSandboxServerDeps!.isPortInUse(65530)).resolves.toBe(false)
+      await expect(capturedSandboxServerDeps!.isPortInUse!(65530)).resolves.toBe(false)
 
       const harness = new DevHarness([], {} as never)
       let stdinHandler: ((data: Buffer) => Promise<void>) | undefined

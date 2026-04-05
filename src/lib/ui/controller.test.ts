@@ -628,6 +628,7 @@ describe('ui controller helpers', () => {
 
     expect(controller).toEqual(expect.objectContaining({
       getChecks: expect.any(Function),
+      getMap: expect.any(Function),
       getOverview: expect.any(Function),
       getProfiles: expect.any(Function),
       getRuntime: expect.any(Function),
@@ -994,6 +995,213 @@ describe('ui controller', () => {
     ]))
   })
 
+  it('builds topology-first map data and findings across sandbox, topology, localnet, and remote profiles', async () => {
+    const {controller, topology} = createFixture()
+
+    const sandboxMap = await controller.getMap({profileName: 'sandbox'})
+    expect(sandboxMap).toEqual(expect.objectContaining({
+      autoPoll: true,
+      mode: 'sandbox',
+      profile: {kind: 'sandbox', name: 'sandbox'},
+      summary: {
+        detail: 'Sandbox profile on local; 1 visible party.',
+        headline: '1 blocking issue',
+        readiness: {failed: 1, passed: 1, skipped: 1, success: false, warned: 1},
+      },
+    }))
+    expect(sandboxMap.nodes).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        detail: 'Network local.',
+        id: 'profile',
+        kind: 'profile',
+        status: 'attention',
+        tone: 'fail',
+      }),
+      expect.objectContaining({
+        badges: ['bearer-token', 'fallback'],
+        id: 'auth',
+        kind: 'auth',
+        status: 'fallback',
+        tone: 'warn',
+      }),
+      expect.objectContaining({
+        badges: ['SDK 3.4.11'],
+        id: 'ledger',
+        kind: 'service',
+        parties: ['Alice'],
+        ports: {'json-api': 7575, port: 5001},
+        status: 'healthy',
+        tone: 'pass',
+      }),
+    ]))
+    expect(sandboxMap.edges).toEqual(expect.arrayContaining([
+      {from: 'profile', label: 'profile', to: 'auth', tone: 'fail'},
+      {from: 'auth', label: 'talks to', to: 'ledger', tone: 'pass'},
+    ]))
+    expect(sandboxMap.findings).toEqual(expect.arrayContaining([
+      expect.objectContaining({detail: 'Using local fallback token.', source: 'auth', title: 'Auth posture', tone: 'warn'}),
+      expect.objectContaining({source: 'compatibility', title: 'Service auth', tone: 'warn'}),
+      expect.objectContaining({detail: 'Ledger warming up.', source: 'preflight', title: 'Ledger', tone: 'warn'}),
+      expect.objectContaining({detail: 'Wallet endpoint not reachable.', nodeIds: ['profile'], source: 'preflight', title: 'Wallet', tone: 'fail'}),
+      expect.objectContaining({detail: 'Docker daemon reachable.', source: 'doctor', title: 'Docker', tone: 'warn'}),
+      expect.objectContaining({detail: 'Java 21 missing.', source: 'doctor', title: 'Java 21', tone: 'fail'}),
+    ]))
+    expect((sandboxMap.nodes.find(node => node.id === 'auth')?.findingIds ?? []).length).toBeGreaterThan(0)
+    expect((sandboxMap.nodes.find(node => node.id === 'profile')?.findingIds ?? []).length).toBeGreaterThan(0)
+
+    const topologyMap = await controller.getMap({profileName: 'canton-multi'})
+    expect(topologyMap).toEqual(expect.objectContaining({
+      autoPoll: true,
+      mode: 'canton-multi',
+      profile: {kind: 'canton-multi', name: 'canton-multi'},
+      summary: expect.objectContaining({
+        detail: '2 participants in topology "default".',
+        headline: 'Mapped surfaces healthy',
+      }),
+    }))
+    expect(topologyMap.nodes).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        id: 'synchronizer',
+        kind: 'synchronizer',
+        ports: {
+          admin: topology.synchronizer.admin,
+          'public-api': topology.synchronizer.publicApi,
+        },
+        status: 'degraded',
+        tone: 'warn',
+      }),
+      expect.objectContaining({
+        badges: ['SDK 3.4.11'],
+        id: `participant:${topology.participants[0]?.name ?? 'participant1'}`,
+        parties: ['participant1-party'],
+        status: 'healthy',
+        tone: 'pass',
+      }),
+      expect.objectContaining({
+        id: `participant:${topology.participants[1]?.name ?? 'participant2'}`,
+        status: 'unreachable',
+        tone: 'fail',
+      }),
+    ]))
+    expect(topologyMap.edges).toEqual(expect.arrayContaining([
+      {from: 'profile', label: 'profile', to: 'auth', tone: 'pass'},
+      {from: 'auth', label: 'authorizes', to: 'synchronizer', tone: 'warn'},
+      {from: 'synchronizer', label: 'sync', to: `participant:${topology.participants[0]?.name ?? 'participant1'}`, tone: 'pass'},
+      {from: 'synchronizer', label: 'sync', to: `participant:${topology.participants[1]?.name ?? 'participant2'}`, tone: 'fail'},
+    ]))
+
+    const localnetMap = await controller.getMap({profileName: 'splice-localnet'})
+    expect(localnetMap).toEqual(expect.objectContaining({
+      autoPoll: true,
+      mode: 'splice-localnet',
+      profile: {kind: 'splice-localnet', name: 'splice-localnet'},
+      summary: expect.objectContaining({
+        detail: 'Workspace /workspace.',
+        headline: 'Mapped surfaces healthy',
+      }),
+    }))
+    expect(localnetMap.nodes).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        badges: ['sv'],
+        id: 'workspace',
+        kind: 'workspace',
+        status: 'configured',
+        tone: 'info',
+        url: '/workspace',
+      }),
+      expect.objectContaining({id: 'localnet', label: 'LocalNet', status: 'healthy', tone: 'pass'}),
+      expect.objectContaining({id: 'tokenStandard', label: 'Token Standard', status: 'configured', tone: 'info'}),
+      expect.objectContaining({id: 'validator', status: 'configured', tone: 'info'}),
+    ]))
+    expect(localnetMap.edges).toEqual(expect.arrayContaining([
+      {from: 'profile', label: 'profile', to: 'auth', tone: 'pass'},
+      {from: 'workspace', label: 'sv', to: 'validator', tone: 'info'},
+      {from: 'validator', label: 'submits', to: 'ledger', tone: 'info'},
+      {from: 'scan', label: 'indexes', to: 'ledger', tone: 'info'},
+      {from: 'tokenStandard', label: 'reads', to: 'scan', tone: 'info'},
+    ]))
+    expect(localnetMap.findings).toEqual(expect.arrayContaining([
+      expect.objectContaining({source: 'compatibility', title: 'Service auth', tone: 'warn'}),
+      expect.objectContaining({source: 'compatibility', title: 'Service validator', tone: 'warn'}),
+      expect.objectContaining({source: 'compatibility', title: 'Service localnet', tone: 'warn'}),
+    ]))
+
+    const brokenLocalnetMap = await controller.getMap({profileName: 'broken-localnet'})
+    expect(brokenLocalnetMap).toEqual(expect.objectContaining({
+      autoPoll: true,
+      mode: 'splice-localnet',
+      summary: expect.objectContaining({
+        detail: 'Workspace /broken-workspace.',
+      }),
+    }))
+    expect(brokenLocalnetMap.nodes).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        id: 'workspace',
+        status: 'imported',
+        tone: 'warn',
+        url: '/broken-workspace',
+      }),
+      expect.objectContaining({
+        id: 'auth',
+        kind: 'auth',
+        status: 'fallback',
+        tone: 'warn',
+      }),
+      expect.objectContaining({
+        detail: 'LocalNet down',
+        id: 'localnet',
+        label: 'LocalNet',
+        status: 'unreachable',
+        tone: 'fail',
+      }),
+    ]))
+
+    const remoteMap = await controller.getMap({profileName: 'splice-devnet'})
+    expect(remoteMap).toEqual(expect.objectContaining({
+      autoPoll: false,
+      mode: 'remote',
+      profile: {kind: 'remote-validator', name: 'splice-devnet'},
+      summary: {
+        detail: 'Remote service graph on devnet.',
+        headline: 'Mapped surfaces healthy',
+        readiness: {failed: 0, passed: 2, skipped: 1, success: true, warned: 0},
+      },
+    }))
+    expect(remoteMap.nodes).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        id: 'auth',
+        kind: 'auth',
+        badges: ['env-or-keychain-jwt'],
+        status: 'auth-required',
+        tone: 'warn',
+      }),
+      expect.objectContaining({
+        id: 'validator',
+        kind: 'service',
+        status: 'unreachable',
+        tone: 'fail',
+      }),
+    ]))
+    expect(remoteMap.findings).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        detail: 'No stored credential found.',
+        nodeIds: ['auth'],
+        source: 'auth',
+        title: 'Auth posture',
+        tone: 'fail',
+      }),
+      expect.objectContaining({
+        detail: 'No credential is currently resolved for this profile.',
+        nodeIds: ['auth'],
+        source: 'auth',
+        title: 'Credential required',
+        tone: 'fail',
+      }),
+      expect.objectContaining({source: 'compatibility', title: 'Service auth', tone: 'warn'}),
+      expect.objectContaining({source: 'compatibility', title: 'Service validator', tone: 'warn'}),
+    ]))
+  })
+
   it('handles missing config paths and unavailable topology manifests gracefully', async () => {
     const missingConfigController = createUiController({
       cwd: '/repo',
@@ -1316,6 +1524,16 @@ describe('ui controller', () => {
       },
     })
 
+    const sandboxMap = await controller.getMap()
+    expect(sandboxMap.nodes).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        detail: 'Ledger unreachable.',
+        id: 'ledger',
+        status: 'unreachable',
+        tone: 'fail',
+      }),
+    ]))
+
     const localnetRuntime = await controller.getRuntime({profileName: 'splice-localnet'})
     expect(localnetRuntime).toEqual({
       autoPoll: true,
@@ -1412,6 +1630,736 @@ describe('ui controller', () => {
       synchronizer: topology.synchronizer,
       topologyName: 'default',
     })
+  })
+
+  it('covers remaining map branches for warn-only readiness, inserted auth nodes, unimported localnet, and canary-linked participants', async () => {
+    const config: CantonctlConfig = {
+      'default-profile': 'warn-sandbox',
+      networks: {
+        local: {type: 'docker'},
+        remote: {type: 'remote', url: 'https://ledger-only.example.com'},
+      },
+      parties: [{name: 'Operator'}],
+      profiles: {
+        'canton-multi': {
+          experimental: false,
+          kind: 'canton-multi',
+          name: 'canton-multi',
+          services: {
+            auth: {kind: 'shared-secret'},
+            ledger: {url: 'http://localhost:12013'},
+            localnet: {'base-port': 12000, distribution: 'canton-multi'},
+          },
+        },
+        'remote-missing': {
+          experimental: false,
+          kind: 'remote-validator',
+          name: 'remote-missing',
+          services: {
+            ledger: {url: 'https://missing-ledger.example.com'},
+          },
+        },
+        'remote-plain': {
+          experimental: false,
+          kind: 'remote-sv-network',
+          name: 'remote-plain',
+          services: {
+            ledger: {url: 'https://ledger-only.example.com'},
+          },
+        },
+        'party-fallback-sandbox': {
+          experimental: false,
+          kind: 'sandbox',
+          name: 'party-fallback-sandbox',
+          services: {
+            auth: {kind: 'shared-secret'},
+            ledger: {url: 'http://localhost:5200'},
+          },
+        },
+        'unimported-localnet': {
+          experimental: false,
+          kind: 'splice-localnet',
+          name: 'unimported-localnet',
+          services: {
+            ledger: {url: 'http://canton.localhost:5000/v2'},
+            localnet: {distribution: 'splice-localnet'},
+            validator: {url: 'http://wallet.localhost:5000/api/validator'},
+          },
+        },
+        'workspace-fallback': {
+          experimental: false,
+          kind: 'splice-localnet',
+          name: 'workspace-fallback',
+          services: {
+            ledger: {url: 'http://canton.localhost:5100/v2'},
+            localnet: {
+              distribution: 'splice-localnet',
+              workspace: '/workspace-fallback',
+            },
+          },
+        },
+        'warn-sandbox': {
+          experimental: true,
+          kind: 'sandbox',
+          name: 'warn-sandbox',
+          services: {
+            auth: {kind: 'shared-secret'},
+            ledger: {url: 'https://sandbox.example.com'},
+          },
+        },
+      },
+      project: {name: 'map-branches', 'sdk-version': '1.0.0'},
+      version: 1,
+    }
+
+    const topology = generateTopology({
+      cantonImage: 'ghcr.io/example/canton:0.5.3',
+      config,
+      projectName: config.project.name,
+    })
+    const participantA = topology.participants[0]?.name ?? 'participant1'
+    const participantB = topology.participants[1]?.name ?? 'participant2'
+
+    const createRuntimeResolver = vi.fn(() => ({
+      resolve: vi.fn(async ({config: loadedConfig, profileName}: {config: CantonctlConfig; profileName?: string}) => {
+        const resolvedProfile = loadedConfig.profiles?.[profileName ?? loadedConfig['default-profile'] ?? 'warn-sandbox']
+        if (!resolvedProfile) {
+          throw new Error('Expected profile to exist')
+        }
+
+        const runtimeByProfile: Record<string, {
+          credentialSource: 'fallback' | 'missing' | 'stored'
+          mode: 'bearer-token' | 'env-or-keychain-jwt'
+          networkName: string
+          warnings: string[]
+        }> = {
+          'canton-multi': {
+            credentialSource: 'fallback',
+            mode: 'bearer-token',
+            networkName: 'local',
+            warnings: [],
+          },
+          'remote-missing': {
+            credentialSource: 'missing',
+            mode: 'env-or-keychain-jwt',
+            networkName: 'remote',
+            warnings: [],
+          },
+          'remote-plain': {
+            credentialSource: 'stored',
+            mode: 'env-or-keychain-jwt',
+            networkName: 'remote',
+            warnings: [],
+          },
+          'party-fallback-sandbox': {
+            credentialSource: 'fallback',
+            mode: 'bearer-token',
+            networkName: 'local',
+            warnings: [],
+          },
+          'unimported-localnet': {
+            credentialSource: 'fallback',
+            mode: 'bearer-token',
+            networkName: 'localnet',
+            warnings: [],
+          },
+          'workspace-fallback': {
+            credentialSource: 'fallback',
+            mode: 'bearer-token',
+            networkName: 'localnet',
+            warnings: [],
+          },
+          'warn-sandbox': {
+            credentialSource: 'fallback',
+            mode: 'bearer-token',
+            networkName: 'local',
+            warnings: [],
+          },
+        }
+
+        const runtime = runtimeByProfile[resolvedProfile.name]
+        return {
+          auth: {
+            description: 'Map branch auth profile',
+            envVarName: `CANTONCTL_JWT_${runtime.networkName.toUpperCase()}`,
+            experimental: false,
+            mode: runtime.mode,
+            network: runtime.networkName,
+            profileKind: resolvedProfile.kind,
+            profileName: resolvedProfile.name,
+            requiresExplicitExperimental: false,
+            warnings: runtime.warnings,
+          },
+          compatibility: {
+            checks: [],
+            failed: 0,
+            passed: 1,
+            profile: {
+              experimental: resolvedProfile.experimental,
+              kind: resolvedProfile.kind,
+              name: resolvedProfile.name,
+            },
+            services: [],
+            warned: 0,
+          },
+          credential: {
+            mode: runtime.mode,
+            network: runtime.networkName,
+            source: runtime.credentialSource,
+            token: runtime.credentialSource === 'missing' ? undefined : `${resolvedProfile.name}-token`,
+          },
+          networkName: runtime.networkName,
+          profile: resolvedProfile,
+          profileContext: {} as never,
+        }
+      }),
+    }))
+
+    const createReadinessRunner = vi.fn(() => ({
+      run: vi.fn(async ({config: loadedConfig, profileName}: {config: CantonctlConfig; profileName?: string}) => {
+        const resolvedProfile = loadedConfig.profiles?.[profileName ?? loadedConfig['default-profile'] ?? 'warn-sandbox']
+        if (!resolvedProfile) {
+          throw new Error('Expected readiness profile to exist')
+        }
+
+        if (resolvedProfile.name === 'warn-sandbox') {
+          return {
+            auth: {
+              credentialSource: 'fallback',
+              envVarName: 'CANTONCTL_JWT_LOCAL',
+              mode: 'bearer-token',
+              warnings: [],
+            },
+            canary: {checks: [], selectedSuites: [], skippedSuites: [], success: true},
+            compatibility: {failed: 0, passed: 1, warned: 0},
+            preflight: {
+              auth: {
+                credentialSource: 'fallback',
+                envVarName: 'CANTONCTL_JWT_LOCAL',
+                mode: 'bearer-token',
+                warnings: [],
+              },
+              checks: [{
+                category: 'service',
+                detail: 'Ledger still verifying.',
+                endpoint: 'https://sandbox.example.com',
+                name: 'Ledger',
+                status: 'warn',
+              }, {
+                category: 'service',
+                detail: 'Workspace import is still pending.',
+                endpoint: undefined,
+                name: 'Workspace',
+                status: 'warn',
+              }],
+              compatibility: {failed: 0, passed: 1, warned: 0},
+              network: {
+                checklist: [],
+                name: 'local',
+                reminders: [],
+                resetExpectation: 'local-only',
+                tier: 'local',
+              },
+              profile: {
+                experimental: resolvedProfile.experimental,
+                kind: resolvedProfile.kind,
+                name: resolvedProfile.name,
+              },
+              success: true,
+            },
+            profile: {
+              experimental: resolvedProfile.experimental,
+              kind: resolvedProfile.kind,
+              name: resolvedProfile.name,
+            },
+            success: false,
+            summary: {failed: 0, passed: 1, skipped: 0, warned: 2},
+          } as never
+        }
+
+        if (resolvedProfile.name === 'party-fallback-sandbox') {
+          return {
+            auth: {
+              credentialSource: 'fallback',
+              envVarName: 'CANTONCTL_JWT_LOCAL',
+              mode: 'bearer-token',
+              warnings: [],
+            },
+            canary: {checks: [], selectedSuites: [], skippedSuites: [], success: true},
+            compatibility: {failed: 0, passed: 1, warned: 0},
+            preflight: {
+              auth: {
+                credentialSource: 'fallback',
+                envVarName: 'CANTONCTL_JWT_LOCAL',
+                mode: 'bearer-token',
+                warnings: [],
+              },
+              checks: [],
+              compatibility: {failed: 0, passed: 1, warned: 0},
+              network: {
+                checklist: [],
+                name: 'local',
+                reminders: [],
+                resetExpectation: 'local-only',
+                tier: 'local',
+              },
+              profile: {
+                experimental: resolvedProfile.experimental,
+                kind: resolvedProfile.kind,
+                name: resolvedProfile.name,
+              },
+              success: true,
+            },
+            profile: {
+              experimental: resolvedProfile.experimental,
+              kind: resolvedProfile.kind,
+              name: resolvedProfile.name,
+            },
+            success: true,
+            summary: {failed: 0, passed: 1, skipped: 0, warned: 0},
+          } as never
+        }
+
+        if (resolvedProfile.name === 'unimported-localnet') {
+          return {
+            auth: {
+              credentialSource: 'fallback',
+              envVarName: 'CANTONCTL_JWT_LOCALNET',
+              mode: 'bearer-token',
+              warnings: [],
+            },
+            canary: {checks: [], selectedSuites: [], skippedSuites: [], success: true},
+            compatibility: {failed: 0, passed: 1, warned: 0},
+            preflight: {
+              auth: {
+                credentialSource: 'fallback',
+                envVarName: 'CANTONCTL_JWT_LOCALNET',
+                mode: 'bearer-token',
+                warnings: [],
+              },
+              checks: [{
+                category: 'service',
+                detail: 'LocalNet workspace has not been imported yet.',
+                endpoint: undefined,
+                name: 'LocalNet',
+                status: 'warn',
+              }],
+              compatibility: {failed: 0, passed: 1, warned: 0},
+              network: {
+                checklist: [],
+                name: 'localnet',
+                reminders: [],
+                resetExpectation: 'local-only',
+                tier: 'local',
+              },
+              profile: {
+                experimental: resolvedProfile.experimental,
+                kind: resolvedProfile.kind,
+                name: resolvedProfile.name,
+              },
+              success: true,
+            },
+            profile: {
+              experimental: resolvedProfile.experimental,
+              kind: resolvedProfile.kind,
+              name: resolvedProfile.name,
+            },
+            success: true,
+            summary: {failed: 0, passed: 1, skipped: 0, warned: 1},
+          } as never
+        }
+
+        if (resolvedProfile.name === 'canton-multi') {
+          return {
+            auth: {
+              credentialSource: 'fallback',
+              envVarName: 'CANTONCTL_JWT_LOCAL',
+              mode: 'bearer-token',
+              warnings: [],
+            },
+            canary: {
+              checks: [{
+                detail: `${participantA} ledger latency high.`,
+                status: 'fail',
+                suite: 'participant-latency',
+                warnings: [`${participantB} is waiting on domain sequencing.`],
+              }],
+              selectedSuites: ['participant-latency'],
+              skippedSuites: [],
+              success: false,
+            },
+            compatibility: {failed: 0, passed: 1, warned: 0},
+            preflight: {
+              auth: {
+                credentialSource: 'fallback',
+                envVarName: 'CANTONCTL_JWT_LOCAL',
+                mode: 'bearer-token',
+                warnings: [],
+              },
+              checks: [],
+              compatibility: {failed: 0, passed: 1, warned: 0},
+              network: {
+                checklist: [],
+                name: 'local',
+                reminders: [],
+                resetExpectation: 'local-only',
+                tier: 'local',
+              },
+              profile: {
+                experimental: resolvedProfile.experimental,
+                kind: resolvedProfile.kind,
+                name: resolvedProfile.name,
+              },
+              success: true,
+            },
+            profile: {
+              experimental: resolvedProfile.experimental,
+              kind: resolvedProfile.kind,
+              name: resolvedProfile.name,
+            },
+            success: false,
+            summary: {failed: 2, passed: 0, skipped: 0, warned: 1},
+          } as never
+        }
+
+        return {
+          auth: {
+            credentialSource: resolvedProfile.name === 'remote-missing' ? 'missing' : 'stored',
+            envVarName: 'CANTONCTL_JWT_REMOTE',
+            mode: 'env-or-keychain-jwt',
+            warnings: [],
+          },
+          canary: {checks: [], selectedSuites: [], skippedSuites: [], success: true},
+          compatibility: {failed: 0, passed: 1, warned: 0},
+          preflight: {
+            auth: {
+              credentialSource: resolvedProfile.name === 'remote-missing' ? 'missing' : 'stored',
+              envVarName: 'CANTONCTL_JWT_REMOTE',
+              mode: 'env-or-keychain-jwt',
+              warnings: [],
+            },
+            checks: [],
+            compatibility: {failed: 0, passed: 1, warned: 0},
+            network: {
+              checklist: [],
+              name: resolvedProfile.name,
+              reminders: [],
+              resetExpectation: 'unknown',
+              tier: resolvedProfile.kind.startsWith('remote-') ? 'remote' : 'local',
+            },
+            profile: {
+              experimental: resolvedProfile.experimental,
+              kind: resolvedProfile.kind,
+              name: resolvedProfile.name,
+            },
+            success: true,
+          },
+          profile: {
+            experimental: resolvedProfile.experimental,
+            kind: resolvedProfile.kind,
+            name: resolvedProfile.name,
+          },
+          success: true,
+          summary: {failed: 0, passed: 1, skipped: 0, warned: 0},
+        } as never
+      }),
+    }))
+
+    const controller = createUiController({
+      createDiagnosticsCollector: vi.fn(() => ({
+        collect: vi.fn(async ({config: loadedConfig, profileName}: {config: CantonctlConfig; profileName?: string}) => {
+          const resolvedProfile = loadedConfig.profiles?.[profileName ?? 'remote-plain']
+          if (!resolvedProfile) {
+            throw new Error('Expected diagnostics profile to exist')
+          }
+
+          return {
+            auth: {
+              envVarName: 'CANTONCTL_JWT_REMOTE',
+              mode: 'env-or-keychain-jwt',
+              source: resolvedProfile.name === 'remote-missing' ? 'missing' : 'stored',
+            },
+            compatibility: {failed: 0, passed: 1, warned: 0},
+            health: [],
+            metrics: [],
+            profile: {
+              experimental: resolvedProfile.experimental,
+              kind: resolvedProfile.kind,
+              name: resolvedProfile.name,
+              network: 'remote',
+            },
+            services: [],
+          } as never
+        }),
+      })),
+      createDoctor: vi.fn(() => ({
+        check: vi.fn(async () => ({
+          checks: [],
+          failed: 0,
+          passed: 1,
+          warned: 0,
+        }) as never),
+      })),
+      createLedgerClient: vi.fn(({baseUrl}: {baseUrl: string}) => ({
+        getParties: vi.fn(async () => (
+          baseUrl === 'http://localhost:5200'
+            ? {partyDetails: [{identifier: 'ops-party'}, {}]}
+            : {partyDetails: []}
+        )),
+        getVersion: vi.fn(async () => (
+          baseUrl === 'http://canton.localhost:5000/v2' || baseUrl === 'http://localhost:5200'
+            ? {version: undefined}
+            : {version: '3.4.11'}
+        )),
+      }) as never),
+      createLocalnet: vi.fn(() => ({
+        down: vi.fn(async () => ({target: 'stop', workspace: {root: '/unused'} as never})),
+        status: vi.fn(async ({workspace}: {workspace: string}) => {
+          if (workspace === '/workspace-fallback') {
+            return {
+              containers: [],
+              health: {
+                validatorReadyz: {
+                  body: 'ok',
+                  healthy: true,
+                  status: 200,
+                  url: 'http://127.0.0.1:5903/api/validator/readyz',
+                },
+              },
+              profiles: {} as never,
+              selectedProfile: 'sv' as never,
+              services: {
+                ledger: {url: 'http://canton.localhost:5100/v2'},
+                validator: {url: 'http://wallet.localhost:5100/api/validator'},
+                wallet: {url: 'http://wallet.localhost:5100'},
+              },
+              workspace: {root: workspace} as never,
+            } as never
+          }
+
+          throw new Error('LocalNet status should not be requested without a workspace')
+        }),
+        up: vi.fn(async () => ({
+          containers: [],
+          health: {
+            validatorReadyz: {
+              body: 'ok',
+              healthy: true,
+              status: 200,
+              url: 'http://127.0.0.1:4903/api/validator/readyz',
+            },
+          },
+          profiles: {} as never,
+          selectedProfile: 'sv' as never,
+          services: {
+            ledger: {url: 'http://canton.localhost:5000/v2'},
+            validator: {url: 'http://wallet.localhost:5000/api/validator'},
+            wallet: {url: 'http://wallet.localhost:5000'},
+          },
+          workspace: {root: '/unused'} as never,
+        }) as never),
+      })),
+      createProcessRunner: vi.fn(() => ({} as never)),
+      createProfileRuntimeResolver: createRuntimeResolver,
+      createReadinessRunner,
+      cwd: '/repo',
+      detectTopology: vi.fn(async () => topology),
+      findConfigPath: vi.fn(() => '/repo/cantonctl.yaml'),
+      loadConfig: vi.fn(async () => config),
+    })
+
+    const warnSandboxMap = await controller.getMap({profileName: 'warn-sandbox'})
+    expect(warnSandboxMap).toEqual(expect.objectContaining({
+      mode: 'sandbox',
+      summary: {
+        detail: 'Sandbox profile on local; 0 visible parties.',
+        headline: '2 advisory findings',
+        readiness: {failed: 0, passed: 1, skipped: 0, success: false, warned: 2},
+      },
+    }))
+    expect(warnSandboxMap.nodes).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        detail: 'Experimental profile.',
+        id: 'profile',
+        status: 'advisory',
+        tone: 'warn',
+      }),
+      expect.objectContaining({
+        detail: 'Credential source: fallback.',
+        id: 'auth',
+        status: 'fallback',
+        tone: 'pass',
+      }),
+      expect.objectContaining({
+        detail: 'Ledger configured.',
+        id: 'ledger',
+        ports: {},
+        status: 'configured',
+        tone: 'info',
+        url: 'https://sandbox.example.com',
+      }),
+    ]))
+    expect(warnSandboxMap.findings).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        source: 'compatibility',
+        title: 'Project SDK',
+        tone: 'fail',
+      }),
+      expect.objectContaining({
+        detail: 'Ledger still verifying.',
+        nodeIds: ['ledger'],
+        source: 'preflight',
+        title: 'Ledger',
+        tone: 'warn',
+      }),
+      expect.objectContaining({
+        detail: 'Workspace import is still pending.',
+        nodeIds: ['profile'],
+        source: 'preflight',
+        title: 'Workspace',
+        tone: 'warn',
+      }),
+    ]))
+
+    const unimportedLocalnetMap = await controller.getMap({profileName: 'unimported-localnet'})
+    expect(unimportedLocalnetMap).toEqual(expect.objectContaining({
+      mode: 'splice-localnet',
+      summary: {
+        detail: 'Import a LocalNet workspace to populate the service map.',
+        headline: '1 advisory finding',
+        readiness: {failed: 0, passed: 1, skipped: 0, success: true, warned: 1},
+      },
+    }))
+    expect(unimportedLocalnetMap.nodes.some(node => node.id === 'workspace')).toBe(false)
+    expect(unimportedLocalnetMap.nodes).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        detail: 'Credential source: fallback.',
+        id: 'auth',
+        kind: 'auth',
+        status: 'fallback',
+        tone: 'pass',
+      }),
+      expect.objectContaining({id: 'validator', status: 'configured', tone: 'info'}),
+      expect.objectContaining({id: 'localnet', label: 'LocalNet', status: 'configured', tone: 'info'}),
+    ]))
+    expect(unimportedLocalnetMap.edges).toEqual(expect.arrayContaining([
+      {from: 'profile', label: 'profile', to: 'auth', tone: 'warn'},
+      {from: 'validator', label: 'submits', to: 'ledger', tone: 'info'},
+    ]))
+    expect(unimportedLocalnetMap.edges.some(edge => edge.from === 'workspace')).toBe(false)
+    expect(unimportedLocalnetMap.findings).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        detail: 'LocalNet workspace has not been imported yet.',
+        nodeIds: ['profile'],
+        source: 'preflight',
+        title: 'LocalNet',
+        tone: 'warn',
+      }),
+    ]))
+
+    const workspaceFallbackMap = await controller.getMap({profileName: 'workspace-fallback'})
+    expect(workspaceFallbackMap).toEqual(expect.objectContaining({
+      mode: 'splice-localnet',
+      summary: expect.objectContaining({
+        detail: 'Workspace /workspace-fallback.',
+      }),
+    }))
+    expect(workspaceFallbackMap.nodes).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        badges: ['sv'],
+        id: 'workspace',
+        status: 'configured',
+        tone: 'info',
+      }),
+    ]))
+    expect(workspaceFallbackMap.edges).toEqual(expect.arrayContaining([
+      {from: 'workspace', label: 'sv', to: 'ledger', tone: 'pass'},
+    ]))
+    expect(workspaceFallbackMap.edges.some(edge => edge.from === 'validator' && edge.to === 'ledger')).toBe(false)
+
+    const remotePlainMap = await controller.getMap({profileName: 'remote-plain'})
+    expect(remotePlainMap).toEqual(expect.objectContaining({
+      autoPoll: false,
+      mode: 'remote',
+      summary: {
+        detail: 'Remote service graph on remote.',
+        headline: 'Mapped surfaces healthy',
+        readiness: {failed: 0, passed: 1, skipped: 0, success: true, warned: 0},
+      },
+    }))
+    expect(remotePlainMap.nodes).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        badges: ['env-or-keychain-jwt', 'stored'],
+        detail: 'Credential source: stored.',
+        id: 'auth',
+        kind: 'auth',
+        status: 'configured',
+        tone: 'pass',
+      }),
+      expect.objectContaining({id: 'ledger', label: 'ledger', status: 'configured', tone: 'info'}),
+    ]))
+    expect(remotePlainMap.edges).toEqual([
+      {from: 'profile', label: 'profile', to: 'auth', tone: 'pass'},
+    ])
+
+    const remoteMissingMap = await controller.getMap({profileName: 'remote-missing'})
+    expect(remoteMissingMap.nodes).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        badges: ['env-or-keychain-jwt', 'missing'],
+        detail: 'Credential source: missing.',
+        id: 'auth',
+        kind: 'auth',
+        status: 'missing',
+        tone: 'fail',
+      }),
+    ]))
+    expect(remoteMissingMap.findings).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        detail: 'No credential is currently resolved for this profile.',
+        nodeIds: ['auth'],
+        source: 'auth',
+        title: 'Credential required',
+        tone: 'fail',
+      }),
+    ]))
+
+    const partyFallbackMap = await controller.getMap({profileName: 'party-fallback-sandbox'})
+    expect(partyFallbackMap.nodes).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        id: 'ledger',
+        parties: ['ops-party', 'party'],
+        status: 'healthy',
+        tone: 'pass',
+      }),
+    ]))
+
+    const topologyMap = await controller.getMap({profileName: 'canton-multi'})
+    expect(topologyMap.summary).toEqual(expect.objectContaining({
+      headline: '2 blocking issues',
+    }))
+    expect(topologyMap.nodes).toEqual(expect.arrayContaining([
+      expect.objectContaining({id: 'synchronizer', status: 'healthy', tone: 'pass'}),
+      expect.objectContaining({id: `participant:${participantA}`, status: 'healthy', tone: 'pass'}),
+      expect.objectContaining({id: `participant:${participantB}`, status: 'healthy', tone: 'pass'}),
+    ]))
+    expect(topologyMap.findings).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        detail: `${participantA} ledger latency high.`,
+        nodeIds: expect.arrayContaining([`participant:${participantA}`]),
+        source: 'canary',
+        title: 'participant-latency',
+        tone: 'fail',
+      }),
+      expect.objectContaining({
+        detail: `${participantB} is waiting on domain sequencing.`,
+        nodeIds: expect.arrayContaining([`participant:${participantB}`, 'synchronizer']),
+        source: 'canary',
+        title: 'participant-latency',
+        tone: 'warn',
+      }),
+    ]))
+    expect((topologyMap.nodes.find(node => node.id === `participant:${participantA}`)?.findingIds ?? []).length).toBeGreaterThan(0)
+    expect((topologyMap.nodes.find(node => node.id === `participant:${participantB}`)?.findingIds ?? []).length).toBeGreaterThan(0)
   })
 
   it('uses the default config, runtime, readiness, and diagnostics factories against a real project config', async () => {

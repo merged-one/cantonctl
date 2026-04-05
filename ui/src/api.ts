@@ -2,6 +2,7 @@ import type {
   UiApiEnvelope,
   UiBootstrapData,
   UiChecksData,
+  UiMapData,
   UiOverviewData,
   UiProfilesData,
   UiRuntimeData,
@@ -33,6 +34,10 @@ export async function fetchSession(profile?: string): Promise<UiSessionData> {
 
 export async function fetchOverview(profile: string): Promise<UiOverviewData> {
   return fetchEnvelope(`/ui/overview${withProfile(profile)}`)
+}
+
+export async function fetchMap(profile: string): Promise<UiMapData> {
+  return fetchEnvelope(`/ui/map${withProfile(profile)}`)
 }
 
 export async function fetchProfiles(profile: string): Promise<UiProfilesData> {

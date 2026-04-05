@@ -769,7 +769,7 @@ describe('core command surface', () => {
       }
     }
 
-    const loaded = await new Init([], {} as never).loadInteractivePrompts()
+    const loaded = await new PromptHarness([], {} as never).callLoadInteractivePrompts()
     expect(loaded).toEqual(expect.objectContaining({
       input: expect.any(Function),
       select: expect.any(Function),
@@ -779,6 +779,21 @@ describe('core command surface', () => {
       name: 'good_name',
       template: 'splice-token-app',
     })
+
+    class RealPromptLoader extends Init {
+      public async callBaseLoadInteractivePrompts() {
+        return super.loadInteractivePrompts()
+      }
+
+      public callBaseResolveProjectDir(projectName: string) {
+        return super.resolveProjectDir(projectName)
+      }
+    }
+
+    const realLoaded = await new RealPromptLoader([], {} as never).callBaseLoadInteractivePrompts()
+    expect(realLoaded.input).toEqual(expect.any(Function))
+    expect(realLoaded.select).toEqual(expect.any(Function))
+    expect(new RealPromptLoader([], {} as never).callBaseResolveProjectDir('demo-app')).toBe(join(process.cwd(), 'demo-app'))
   })
 
   it('uses the default init scaffold helper to create a project tree', () => {
@@ -1096,7 +1111,7 @@ describe('core command surface', () => {
     }
 
     class BrokenAuthLogout extends AuthLogout {
-      protected override async createBackend() {
+      protected override async createBackend(): Promise<{backend: never}> {
         throw new Error('logout boom')
       }
     }
@@ -1370,7 +1385,7 @@ describe('core command surface', () => {
     expect(human.stdout).toContain('No credentials stored for devnet')
 
     class BrokenAuthLogout extends AuthLogout {
-      protected override async createBackend() {
+      protected override async createBackend(): Promise<{backend: never}> {
         throw new CantonctlError(ErrorCode.CONFIG_SCHEMA_VIOLATION, {
           suggestion: 'fix logout backend',
         })

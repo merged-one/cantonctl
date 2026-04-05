@@ -22,6 +22,11 @@ import {serializeTopologyManifest, type GeneratedTopology, detectTopology} from 
 import type {
   UiAuthState,
   UiChecksData,
+  UiMapData,
+  UiMapEdge,
+  UiMapFinding,
+  UiMapGroup,
+  UiMapNode,
   UiOverviewData,
   UiProfileDetailData,
   UiProfileSummary,
@@ -37,6 +42,7 @@ import type {
 
 export interface UiController {
   getChecks(options?: {profileName?: string}): Promise<UiChecksData>
+  getMap(options?: {profileName?: string}): Promise<UiMapData>
   getOverview(options?: {profileName?: string}): Promise<UiOverviewData>
   getProfiles(options?: {profileName?: string}): Promise<UiProfilesData>
   getRuntime(options?: {profileName?: string}): Promise<UiRuntimeData>
@@ -125,6 +131,43 @@ export function createUiController(
         selectedProfile,
         storageKey: buildStorageKey(configPath),
       }
+    },
+
+    async getMap(options = {}) {
+      const context = await resolveProfileContext(options.profileName)
+      const runtime = await createRuntimeResolver().resolve({
+        config: context.config,
+        profileName: context.profileName,
+      })
+      const readiness = await createReadiness().run({
+        config: context.config,
+        profileName: context.profileName,
+      })
+      const doctor = await createDoctorInstance({
+        config: context.config,
+        output: createOutput({json: true, quiet: true}),
+        profileName: context.profileName,
+        runner: createRunner(),
+      }).check()
+      const compatibility = createCompatibilityReport(context.config, context.profileName)
+      const status = await buildProfileStatusSnapshot(context)
+
+      const map = await buildMapGraph({
+        compatibility,
+        context,
+        doctor,
+        readiness,
+        runtime,
+        status,
+      })
+
+      return attachFindings(map, buildMapFindings({
+        compatibility,
+        doctor,
+        map,
+        readiness,
+        runtime,
+      }))
     },
 
     async getOverview(options = {}) {
@@ -544,7 +587,414 @@ export function createUiController(
     }
   }
 
-  async function buildTopologyRuntime(context: ProfileContext): Promise<UiRuntimeData['topology']> {
+  async function buildMapGraph(options: {
+    compatibility: ReturnType<typeof createCompatibilityReport>
+    context: ProfileContext
+    doctor: Awaited<ReturnType<ReturnType<typeof createDoctor>['check']>>
+    readiness: Awaited<ReturnType<ReadinessRunner['run']>>
+    runtime: Awaited<ReturnType<ProfileRuntimeResolver['resolve']>>
+    status: ProfileStatusSnapshot
+  }): Promise<UiMapData> {
+    const readinessTone = toReadinessTone(options.readiness.summary)
+    const profileNode: UiMapNode = {
+      badges: [options.context.profile.kind, options.runtime.networkName],
+      detail: options.context.profile.experimental
+        ? 'Experimental profile.'
+        : `Network ${options.runtime.networkName}.`,
+      groupId: 'environment',
+      id: 'profile',
+      kind: 'profile',
+      label: options.context.profile.name,
+      status: options.readiness.success ? 'ready' : options.readiness.summary.failed > 0 ? 'attention' : 'advisory',
+      tone: readinessTone,
+    }
+    const authNode = createAuthMapNode(options.runtime)
+    const groups: UiMapGroup[] = [
+      {
+        description: 'Selected profile, auth posture, and environment context.',
+        id: 'environment',
+        label: 'Environment',
+      },
+    ]
+    const overlays: UiMapData['overlays'] = ['health', 'parties', 'ports', 'auth', 'checks']
+    const summary = buildMapSummary(options.context, options.readiness, options.status, options.runtime.networkName)
+
+    switch (options.context.profile.kind) {
+      case 'sandbox': {
+        groups.push({
+          description: 'Single local ledger surface for fast contract iteration.',
+          id: 'runtime',
+          label: 'Runtime',
+        })
+
+        const ledgerParties = options.status.ledger.parties.map(party => String(party.displayName ?? party.identifier ?? 'party'))
+        const ledgerNode: UiMapNode = {
+          badges: options.status.ledger.version ? [`SDK ${options.status.ledger.version}`] : undefined,
+          detail: options.status.ledger.healthy === false
+            ? 'Ledger unreachable.'
+            : options.status.ledger.healthy
+              ? 'Ledger ready.'
+              : 'Ledger configured.',
+          groupId: 'runtime',
+          id: 'ledger',
+          kind: 'service',
+          label: 'Ledger',
+          parties: ledgerParties,
+          ports: {
+            ...(typeof options.context.profile.services.ledger?.['json-api-port'] === 'number'
+              ? {'json-api': options.context.profile.services.ledger['json-api-port']}
+              : {}),
+            ...(typeof options.context.profile.services.ledger?.port === 'number'
+              ? {port: options.context.profile.services.ledger.port}
+              : {}),
+          },
+          status: options.status.ledger.healthy === false
+            ? 'unreachable'
+            : options.status.ledger.healthy
+              ? 'healthy'
+              : 'configured',
+          tone: options.status.ledger.healthy === false
+            ? 'fail'
+            : options.status.ledger.healthy
+              ? 'pass'
+              : 'info',
+          url: options.context.profile.services.ledger?.url,
+        }
+
+        return {
+          autoPoll: true,
+          edges: [
+            {from: 'profile', label: 'profile', to: 'auth', tone: readinessTone},
+            {from: 'auth', label: 'talks to', to: 'ledger', tone: ledgerNode.tone},
+          ],
+          findings: [],
+          groups,
+          mode: 'sandbox',
+          nodes: [profileNode, authNode, ledgerNode],
+          overlays,
+          profile: {kind: options.context.profile.kind, name: options.context.profile.name},
+          summary,
+        }
+      }
+
+      case 'canton-multi': {
+        groups.push({
+          description: 'Synchronizer plus participant placement for the active local topology.',
+          id: 'topology',
+          label: 'Topology',
+        })
+
+        const topology = await buildTopologyRuntime(options.context)
+        const synchronizerNode: UiMapNode = {
+          detail: `Topology ${topology.topologyName}.`,
+          groupId: 'topology',
+          id: 'synchronizer',
+          kind: 'synchronizer',
+          label: 'Synchronizer',
+          ports: {
+            admin: topology.synchronizer.admin,
+            'public-api': topology.synchronizer.publicApi,
+          },
+          status: topology.participants.every(participant => participant.healthy) ? 'healthy' : 'degraded',
+          tone: topology.participants.every(participant => participant.healthy) ? 'pass' : 'warn',
+        }
+        const participantNodes: UiMapNode[] = topology.participants.map(participant => ({
+          badges: participant.version ? [`SDK ${participant.version}`] : undefined,
+          detail: participant.healthy ? 'Participant healthy.' : 'Participant unreachable.',
+          groupId: 'topology',
+          id: `participant:${participant.name}`,
+          kind: 'participant',
+          label: participant.name,
+          parties: participant.parties,
+          ports: {
+            admin: participant.ports.admin,
+            'json-api': participant.ports.jsonApi,
+            'ledger-api': participant.ports.ledgerApi,
+          },
+          status: participant.healthy ? 'healthy' : 'unreachable',
+          tone: participant.healthy ? 'pass' : 'fail',
+        }))
+
+        return {
+          autoPoll: true,
+          edges: [
+            {from: 'profile', label: 'profile', to: 'auth', tone: readinessTone},
+            {from: 'auth', label: 'authorizes', to: 'synchronizer', tone: authNode.tone},
+            ...participantNodes.map(node => ({
+              from: 'synchronizer',
+              label: 'sync',
+              to: node.id,
+              tone: node.tone,
+            })),
+          ],
+          findings: [],
+          groups,
+          mode: 'canton-multi',
+          nodes: [profileNode, authNode, synchronizerNode, ...participantNodes],
+          overlays,
+          profile: {kind: options.context.profile.kind, name: options.context.profile.name},
+          summary: {
+            ...summary,
+            detail: `${topology.participants.length} participants in topology "${topology.topologyName}".`,
+          },
+        }
+      }
+
+      case 'splice-localnet': {
+        groups.push({
+          description: 'Imported LocalNet workspace and the public service surfaces it exposes.',
+          id: 'workspace',
+          label: 'Workspace',
+        })
+        groups.push({
+          description: 'Service map derived from the imported LocalNet workspace.',
+          id: 'services',
+          label: 'Services',
+        })
+
+        const localnet = options.context.profile.services.localnet
+        const workspaceNode: UiMapNode | null = localnet?.workspace
+          ? {
+            badges: [localnet['source-profile'] ?? 'sv'],
+            detail: localnet.workspace,
+            groupId: 'workspace',
+            id: 'workspace',
+            kind: 'workspace',
+            label: 'LocalNet Workspace',
+            status: options.status.localnet ? 'configured' : 'imported',
+            tone: options.status.localnet ? 'info' : 'warn',
+            url: localnet.workspace,
+          }
+          : null
+
+        const localnetNodes = createServiceNodes(options.status.services, 'services')
+        if (!localnetNodes.some(node => node.id === 'auth')) {
+          localnetNodes.unshift(authNode)
+        }
+
+        if (options.context.profile.services.tokenStandard) {
+          localnetNodes.push({
+            detail: options.context.profile.services.tokenStandard.url,
+            groupId: 'services',
+            id: 'tokenStandard',
+            kind: 'service',
+            label: 'Token Standard',
+            status: 'configured',
+            tone: 'info',
+            url: options.context.profile.services.tokenStandard.url,
+          })
+        }
+
+        const nodes = [
+          profileNode,
+          ...(workspaceNode ? [workspaceNode] : []),
+          ...localnetNodes,
+        ]
+
+        const edges: UiMapEdge[] = [
+          {from: 'profile', label: 'profile', to: 'auth', tone: readinessTone},
+          ...(workspaceNode
+            ? localnetNodes
+              .filter(node => node.id !== 'auth')
+              .map(node => ({
+                from: workspaceNode.id,
+                label: localnet?.['source-profile'] ?? 'sv',
+                to: node.id,
+                tone: node.tone,
+              }))
+            : []),
+          ...(localnetNodes.some(node => node.id === 'validator') && localnetNodes.some(node => node.id === 'ledger')
+            ? [{from: 'validator', label: 'submits', to: 'ledger', tone: 'info' as const}]
+            : []),
+          ...(localnetNodes.some(node => node.id === 'scan') && localnetNodes.some(node => node.id === 'ledger')
+            ? [{from: 'scan', label: 'indexes', to: 'ledger', tone: 'info' as const}]
+            : []),
+          ...(localnetNodes.some(node => node.id === 'tokenStandard') && localnetNodes.some(node => node.id === 'scan')
+            ? [{from: 'tokenStandard', label: 'reads', to: 'scan', tone: 'info' as const}]
+            : []),
+        ]
+
+        return {
+          autoPoll: true,
+          edges,
+          findings: [],
+          groups,
+          mode: 'splice-localnet',
+          nodes,
+          overlays,
+          profile: {kind: options.context.profile.kind, name: options.context.profile.name},
+          summary: {
+            ...summary,
+            detail: localnet?.workspace
+              ? `Workspace ${localnet.workspace}.`
+              : 'Import a LocalNet workspace to populate the service map.',
+          },
+        }
+      }
+
+      case 'remote-sv-network':
+      case 'remote-validator': {
+        groups.push({
+          description: 'Resolved remote services for the selected profile.',
+          id: 'services',
+          label: 'Services',
+        })
+
+        const diagnostics = await createDiagnostics().collect({
+          config: options.context.config,
+          profileName: options.context.profileName,
+        })
+        const remoteServiceMap = buildRemoteServiceMap(options.context.profile, diagnostics)
+        const nodes: UiMapNode[] = [
+          profileNode,
+          ...remoteServiceMap.nodes.map(node => ({
+            badges: node.id === 'auth' ? [options.runtime.auth.mode] : undefined,
+            detail: node.detail,
+            groupId: 'services',
+            id: node.id,
+            kind: (node.id === 'auth' ? 'auth' : 'service') as UiMapNode['kind'],
+            label: node.label,
+            status: node.status,
+            tone: node.tone,
+            url: node.url,
+          })),
+        ]
+        if (!nodes.some(node => node.id === 'auth')) {
+          nodes.splice(1, 0, authNode)
+        }
+
+        return {
+          autoPoll: false,
+          edges: [
+            {from: 'profile', label: 'profile', to: 'auth', tone: readinessTone},
+            ...remoteServiceMap.edges,
+          ],
+          findings: [],
+          groups,
+          mode: 'remote',
+          nodes,
+          overlays,
+          profile: {kind: options.context.profile.kind, name: options.context.profile.name},
+          summary,
+        }
+      }
+    }
+  }
+
+  function buildMapFindings(options: {
+    compatibility: ReturnType<typeof createCompatibilityReport>
+    doctor: Awaited<ReturnType<ReturnType<typeof createDoctor>['check']>>
+    map: UiMapData
+    readiness: Awaited<ReturnType<ReadinessRunner['run']>>
+    runtime: Awaited<ReturnType<ProfileRuntimeResolver['resolve']>>
+  }): UiMapFinding[] {
+    const nodeIds = new Set(options.map.nodes.map(node => node.id))
+    const findings: UiMapFinding[] = []
+
+    for (const warning of options.runtime.auth.warnings) {
+      findings.push({
+        detail: warning,
+        id: `auth-warning:${findings.length}`,
+        nodeIds: resolveFindingNodeIds([warning, options.runtime.auth.mode], nodeIds, 'auth'),
+        source: 'auth',
+        title: 'Auth posture',
+        tone: options.runtime.credential.source === 'missing' ? 'fail' : 'warn',
+      })
+    }
+
+    if (options.runtime.credential.source === 'missing') {
+      findings.push({
+        detail: 'No credential is currently resolved for this profile.',
+        id: `auth-missing:${findings.length}`,
+        nodeIds: resolveFindingNodeIds(['credential', options.runtime.auth.mode], nodeIds, 'auth'),
+        source: 'auth',
+        title: 'Credential required',
+        tone: 'fail',
+      })
+    }
+
+    for (const check of options.compatibility.checks.filter(check => check.status !== 'pass')) {
+      findings.push({
+        detail: check.detail,
+        id: `compat:${check.name}:${findings.length}`,
+        nodeIds: resolveFindingNodeIds([check.name, check.detail], nodeIds, 'profile'),
+        source: 'compatibility',
+        title: check.name,
+        tone: check.status === 'fail' ? 'fail' : 'warn',
+      })
+    }
+
+    for (const check of options.readiness.preflight.checks.filter(check => check.status === 'warn' || check.status === 'fail')) {
+      findings.push({
+        detail: check.detail,
+        id: `preflight:${check.name}:${findings.length}`,
+        nodeIds: resolveFindingNodeIds([check.category, check.name, check.detail, check.endpoint ?? ''], nodeIds, 'profile'),
+        source: 'preflight',
+        title: check.name,
+        tone: check.status === 'fail' ? 'fail' : 'warn',
+      })
+    }
+
+    for (const check of options.doctor.checks.filter(check => check.status !== 'pass')) {
+      findings.push({
+        detail: check.detail,
+        id: `doctor:${check.name}:${findings.length}`,
+        nodeIds: ['profile'],
+        source: 'doctor',
+        title: check.name,
+        tone: check.status === 'fail' ? 'fail' : 'warn',
+      })
+    }
+
+    for (const check of options.readiness.canary.checks) {
+      if (check.status === 'fail') {
+        findings.push({
+          detail: check.detail,
+          id: `canary:${check.suite}:${findings.length}`,
+          nodeIds: resolveFindingNodeIds([check.suite, check.detail], nodeIds, 'profile'),
+          source: 'canary',
+          title: check.suite,
+          tone: 'fail',
+        })
+      }
+
+      for (const warning of check.warnings) {
+        findings.push({
+          detail: warning,
+          id: `canary:${check.suite}:warning:${findings.length}`,
+          nodeIds: resolveFindingNodeIds([check.suite, warning], nodeIds, 'profile'),
+          source: 'canary',
+          title: check.suite,
+          tone: 'warn',
+        })
+      }
+    }
+
+    return findings
+  }
+
+  function attachFindings(map: UiMapData, findings: UiMapFinding[]): UiMapData {
+    const findingIdsByNode = new Map<string, string[]>()
+
+    for (const finding of findings) {
+      for (const nodeId of finding.nodeIds) {
+        const current = findingIdsByNode.get(nodeId) ?? []
+        current.push(finding.id)
+        findingIdsByNode.set(nodeId, current)
+      }
+    }
+
+    return {
+      ...map,
+      findings,
+      nodes: map.nodes.map(node => ({
+        ...node,
+        findingIds: findingIdsByNode.get(node.id) ?? [],
+      })),
+    }
+  }
+
+  async function buildTopologyRuntime(context: ProfileContext): Promise<NonNullable<UiRuntimeData['topology']>> {
     const topology = await detectProjectTopology(cwd)
     if (!topology) {
       return {
@@ -623,6 +1073,122 @@ export function resolveRequestedProfileName(config: CantonctlConfig, profileName
 
 export function buildStorageKey(configPath: string): string {
   return `cantonctl-ui:${configPath}`
+}
+
+function toReadinessTone(summary: {
+  failed: number
+  warned: number
+}): UiTone {
+  if (summary.failed > 0) return 'fail'
+  if (summary.warned > 0) return 'warn'
+  return 'pass'
+}
+
+function buildMapSummary(
+  context: ProfileContext,
+  readiness: Awaited<ReturnType<ReadinessRunner['run']>>,
+  status: ProfileStatusSnapshot,
+  networkName: string,
+): UiMapData['summary'] {
+  const headline = readiness.summary.failed > 0
+    ? `${readiness.summary.failed} blocking ${readiness.summary.failed === 1 ? 'issue' : 'issues'}`
+    : readiness.summary.warned > 0
+      ? `${readiness.summary.warned} advisory ${readiness.summary.warned === 1 ? 'finding' : 'findings'}`
+      : 'Mapped surfaces healthy'
+
+  const detail = context.profile.kind === 'sandbox'
+    ? `Sandbox profile on ${networkName}; ${status.ledger.parties.length} visible ${status.ledger.parties.length === 1 ? 'party' : 'parties'}.`
+    : context.profile.kind === 'canton-multi'
+      ? `Local multi-participant topology on ${networkName}.`
+      : context.profile.kind === 'splice-localnet'
+        ? `Imported LocalNet workspace on ${networkName}.`
+        : `Remote service graph on ${networkName}.`
+
+  return {
+    detail,
+    headline,
+    readiness: {
+      ...readiness.summary,
+      success: readiness.success,
+    },
+  }
+}
+
+function createAuthMapNode(
+  runtime: Awaited<ReturnType<ProfileRuntimeResolver['resolve']>>,
+): UiMapNode {
+  return {
+    badges: [runtime.auth.mode, runtime.credential.source],
+    detail: runtime.auth.warnings[0] ?? `Credential source: ${runtime.credential.source}.`,
+    groupId: 'environment',
+    id: 'auth',
+    kind: 'auth',
+    label: 'Auth',
+    status: runtime.credential.source === 'missing' ? 'missing' : runtime.credential.source === 'fallback' ? 'fallback' : 'configured',
+    tone: runtime.credential.source === 'missing' ? 'fail' : runtime.auth.warnings.length > 0 ? 'warn' : 'pass',
+  }
+}
+
+function createServiceNodes(
+  services: UiServiceStatus[],
+  groupId: string,
+): UiMapNode[] {
+  return services.map(service => ({
+    badges: [service.stability],
+    detail: service.detail,
+    groupId,
+    id: service.name,
+    kind: 'service',
+    label: service.name === 'localnet'
+      ? 'LocalNet'
+      : service.name === 'tokenStandard'
+        ? 'Token Standard'
+        : service.name,
+    status: service.status,
+    tone: service.tone,
+    url: service.endpoint,
+  }))
+}
+
+function resolveFindingNodeIds(
+  fragments: string[],
+  nodeIds: Set<string>,
+  fallback: string,
+): string[] {
+  const text = fragments.join(' ').toLowerCase()
+  const matches = new Set<string>()
+  const keywordMap: Array<{keywords: string[]; nodeId: string}> = [
+    {keywords: ['token-standard', 'token standard'], nodeId: 'tokenStandard'},
+    {keywords: ['scan proxy', 'scan-proxy', 'scanproxy'], nodeId: 'scanProxy'},
+    {keywords: ['validator'], nodeId: 'validator'},
+    {keywords: ['wallet'], nodeId: 'wallet'},
+    {keywords: ['ledger'], nodeId: 'ledger'},
+    {keywords: ['scan'], nodeId: 'scan'},
+    {keywords: ['auth', 'credential', 'token'], nodeId: 'auth'},
+    {keywords: ['ans'], nodeId: 'ans'},
+    {keywords: ['workspace', 'localnet'], nodeId: 'workspace'},
+    {keywords: ['synchronizer', 'domain'], nodeId: 'synchronizer'},
+    {keywords: ['profile', 'sdk'], nodeId: 'profile'},
+  ]
+
+  for (const entry of keywordMap) {
+    if (entry.keywords.some(keyword => text.includes(keyword)) && nodeIds.has(entry.nodeId)) {
+      matches.add(entry.nodeId)
+    }
+  }
+
+  for (const nodeId of nodeIds) {
+    if (nodeId.startsWith('participant:')) {
+      const label = nodeId.replace('participant:', '').toLowerCase()
+      if (text.includes(label)) {
+        matches.add(nodeId)
+      }
+    }
+  }
+
+  return matches.size > 0
+    ? [...matches]
+    : [fallback]
 }
 
 export function deriveReadinessBadge(options: {

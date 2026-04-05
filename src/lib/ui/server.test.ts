@@ -70,6 +70,7 @@ describe('ui server', () => {
 
     const endpoints = [
       ['/ui/session?profile=splice-devnet', {requestedProfile: 'splice-devnet'}],
+      ['/ui/map?profile=splice-devnet', {mode: 'remote'}],
       ['/ui/overview?profile=splice-devnet', {profile: {kind: 'remote-validator', name: 'splice-devnet'}}],
       ['/ui/profiles?profile=splice-devnet', {selected: expect.objectContaining({kind: 'remote-validator', name: 'splice-devnet'})}],
       ['/ui/runtime?profile=splice-devnet', {mode: 'remote'}],
@@ -94,6 +95,7 @@ describe('ui server', () => {
     }
 
     expect(controller.getChecks).toHaveBeenCalledTimes(6)
+    expect(controller.getMap).toHaveBeenCalledWith({profileName: 'splice-devnet'})
     expect(controller.getOverview).toHaveBeenCalledWith({profileName: 'splice-devnet'})
     expect(controller.getProfiles).toHaveBeenCalledWith({profileName: 'splice-devnet'})
     expect(controller.getRuntime).toHaveBeenCalledWith({profileName: 'splice-devnet'})
@@ -461,6 +463,21 @@ function createControllerStub() {
       },
       profile: {kind: 'remote-validator' as const, name: 'splice-devnet'},
       readiness: {failed: 0, passed: 1, skipped: 0, success: true, warned: 0},
+    })),
+    getMap: vi.fn(async () => ({
+      autoPoll: false,
+      edges: [],
+      findings: [],
+      groups: [],
+      mode: 'remote' as const,
+      nodes: [],
+      overlays: ['health', 'parties', 'ports', 'auth', 'checks'] as never,
+      profile: {kind: 'remote-validator' as const, name: 'splice-devnet'},
+      summary: {
+        detail: 'Remote service graph on devnet.',
+        headline: 'Mapped surfaces healthy',
+        readiness: {failed: 0, passed: 1, skipped: 0, success: true, warned: 0},
+      },
     })),
     getOverview: vi.fn(async () => ({
       advisories: [],

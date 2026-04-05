@@ -28,6 +28,21 @@ function createStubController(): UiController {
       profile: {kind: 'sandbox', name: 'sandbox'},
       readiness: {failed: 0, passed: 1, skipped: 0, success: true, warned: 0},
     } as never)),
+    getMap: vi.fn(async () => ({
+      autoPoll: false,
+      edges: [],
+      findings: [],
+      groups: [],
+      mode: 'sandbox',
+      nodes: [],
+      overlays: ['health', 'parties', 'ports', 'auth', 'checks'],
+      profile: {kind: 'sandbox', name: 'sandbox'},
+      summary: {
+        detail: 'Sandbox profile on local.',
+        headline: 'Mapped surfaces healthy',
+        readiness: {failed: 0, passed: 1, skipped: 0, success: true, warned: 0},
+      },
+    } as never)),
     getOverview: vi.fn(async () => ({
       advisories: [],
       environmentPath: [],
@@ -213,6 +228,7 @@ describe('ui command', () => {
     const controller = new TestUi([], {} as never).exposeCreateUiController()
     expect(controller).toEqual(expect.objectContaining({
       getChecks: expect.any(Function),
+      getMap: expect.any(Function),
       getOverview: expect.any(Function),
       getProfiles: expect.any(Function),
       getRuntime: expect.any(Function),

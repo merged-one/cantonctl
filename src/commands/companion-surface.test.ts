@@ -787,6 +787,7 @@ describe('companion command surface', () => {
       info: vi.fn(),
       log: vi.fn((message: string) => { logs.push(message) }),
       result: vi.fn(),
+      spinner: vi.fn().mockReturnValue({fail: vi.fn(), start: vi.fn(), stop: vi.fn(), succeed: vi.fn()}),
       success: vi.fn((message: string) => { successes.push(message) }),
       table: vi.fn(),
       warn: vi.fn((message: string) => { warnings.push(message) }),
@@ -804,7 +805,7 @@ describe('companion command surface', () => {
         success: true,
       },
       compatibility: {failed: 0, passed: 3, warned: 0},
-      preflight: createPreflightReport(true),
+      preflight: createPreflightReport(true) as never,
       profile: {
         experimental: false,
         kind: 'remote-validator',

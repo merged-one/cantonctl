@@ -33,7 +33,7 @@ beforeEach(() => {
               name: 'sandbox',
               networkName: 'local',
               readiness: {detail: 'Local runtime', tone: 'info'},
-              services: ['ledger'],
+              services: ['ledger', 'auth'],
             },
             {
               auth: {authenticated: true, mode: 'bearer-token', source: 'fallback', warnings: []},
@@ -46,7 +46,7 @@ beforeEach(() => {
               services: ['ledger', 'validator', 'scan', 'localnet'],
             },
             {
-              auth: {authenticated: false, mode: 'env-or-keychain-jwt', source: 'missing', warnings: []},
+              auth: {authenticated: false, mode: 'env-or-keychain-jwt', source: 'missing', warnings: ['No stored credential found.']},
               experimental: false,
               isDefault: false,
               kind: 'remote-validator',
@@ -64,107 +64,218 @@ beforeEach(() => {
       })
     }
 
-    if (url.startsWith('/ui/overview')) {
-      return jsonResponse({
-        data: {
-          advisories: [],
-          environmentPath: [
-            {active: true, label: 'Sandbox', profiles: ['sandbox'], stage: 'sandbox'},
-            {active: false, label: 'Local Control Plane', profiles: ['splice-localnet'], stage: 'local'},
-            {active: false, label: 'Remote Network', profiles: ['splice-devnet'], stage: 'remote'},
-          ],
-          profile: {kind: 'sandbox', name: 'sandbox'},
-          readiness: {failed: 0, passed: 4, skipped: 1, success: true, warned: 0},
-          services: [
-            {detail: 'json-api-port 7575', name: 'ledger', stability: 'stable-external', status: 'healthy', tone: 'pass'},
-          ],
-        },
-        success: true,
-      })
-    }
-
-    if (url.startsWith('/ui/runtime?profile=splice-localnet')) {
+    if (url.startsWith('/ui/map?profile=sandbox')) {
       return jsonResponse({
         data: {
           autoPoll: true,
-          mode: 'splice-localnet',
-          profile: {kind: 'splice-localnet', name: 'splice-localnet'},
-          serviceMap: {
-            edges: [{from: 'workspace', label: 'sv', to: 'validator'}],
-            nodes: [
-              {id: 'workspace', kind: 'workspace', label: 'LocalNet Workspace', status: 'configured', tone: 'info', url: '/workspace'},
-              {id: 'validator', kind: 'service', label: 'Validator', status: 'healthy', tone: 'pass', url: 'http://wallet.localhost:4000/api/validator'},
-            ],
-          },
-          summary: {
-            healthDetail: 'Validator readyz healthy.',
-            ledgerUrl: 'http://canton.localhost:4000/v2',
-            workspace: '/workspace',
-          },
-        },
-        success: true,
-      })
-    }
-
-    if (url.startsWith('/ui/runtime')) {
-      return jsonResponse({
-        data: {
-          autoPoll: true,
+          edges: [
+            {from: 'profile', label: 'profile', to: 'auth'},
+            {from: 'auth', label: 'talks to', to: 'ledger'},
+          ],
+          findings: [
+            {
+              detail: 'Wallet endpoint not reachable.',
+              id: 'preflight:wallet',
+              nodeIds: ['profile'],
+              source: 'preflight',
+              title: 'Wallet',
+              tone: 'fail',
+            },
+          ],
+          groups: [
+            {id: 'environment', label: 'Environment'},
+            {id: 'runtime', label: 'Runtime'},
+          ],
           mode: 'sandbox',
+          nodes: [
+            {groupId: 'environment', id: 'profile', kind: 'profile', label: 'sandbox', status: 'attention', tone: 'warn'},
+            {groupId: 'environment', id: 'auth', kind: 'auth', label: 'Auth', status: 'fallback', tone: 'warn'},
+            {
+              detail: 'Ledger ready.',
+              findingIds: [],
+              groupId: 'runtime',
+              id: 'ledger',
+              kind: 'service',
+              label: 'Ledger',
+              parties: ['Alice', 'Bob'],
+              ports: {'json-api': 7575, port: 5001},
+              status: 'healthy',
+              tone: 'pass',
+              url: 'http://localhost:7575',
+            },
+          ],
+          overlays: ['health', 'parties', 'ports', 'auth', 'checks'],
           profile: {kind: 'sandbox', name: 'sandbox'},
           summary: {
-            healthDetail: 'Ledger ready.',
-            ledgerUrl: 'http://localhost:7575',
-            partyCount: 2,
-            version: '3.4.11',
+            detail: 'Sandbox profile on local; 2 visible parties.',
+            headline: '1 blocking issue',
+            readiness: {failed: 1, passed: 2, skipped: 0, success: false, warned: 1},
           },
         },
         success: true,
       })
     }
 
-    if (url.startsWith('/ui/profiles')) {
+    if (url.startsWith('/ui/map?profile=splice-localnet')) {
       return jsonResponse({
         data: {
-          profiles: [],
+          autoPoll: true,
+          edges: [
+            {from: 'profile', label: 'profile', to: 'auth'},
+            {from: 'workspace', label: 'sv', to: 'validator'},
+            {from: 'validator', label: 'submits', to: 'ledger'},
+          ],
+          findings: [
+            {
+              detail: 'Validator readyz healthy.',
+              id: 'validator-info',
+              nodeIds: ['validator'],
+              source: 'preflight',
+              title: 'Validator',
+              tone: 'warn',
+            },
+          ],
+          groups: [
+            {id: 'environment', label: 'Environment'},
+            {id: 'workspace', label: 'Workspace'},
+            {id: 'services', label: 'Services'},
+          ],
+          mode: 'splice-localnet',
+          nodes: [
+            {groupId: 'environment', id: 'profile', kind: 'profile', label: 'splice-localnet', status: 'ready', tone: 'pass'},
+            {groupId: 'environment', id: 'auth', kind: 'auth', label: 'Auth', status: 'fallback', tone: 'warn'},
+            {detail: '/workspace', groupId: 'workspace', id: 'workspace', kind: 'workspace', label: 'LocalNet Workspace', status: 'configured', tone: 'info', url: '/workspace'},
+            {detail: 'Ledger ready.', groupId: 'services', id: 'ledger', kind: 'service', label: 'Ledger', status: 'healthy', tone: 'pass', url: 'http://canton.localhost:4000/v2'},
+            {detail: 'Validator readyz healthy.', findingIds: ['validator-info'], groupId: 'services', id: 'validator', kind: 'service', label: 'Validator', status: 'healthy', tone: 'pass', url: 'http://wallet.localhost:4000/api/validator'},
+          ],
+          overlays: ['health', 'parties', 'ports', 'auth', 'checks'],
+          profile: {kind: 'splice-localnet', name: 'splice-localnet'},
+          summary: {
+            detail: 'Workspace /workspace.',
+            headline: '1 advisory finding',
+            readiness: {failed: 0, passed: 3, skipped: 0, success: true, warned: 1},
+          },
+        },
+        success: true,
+      })
+    }
+
+    if (url.startsWith('/ui/map?profile=splice-devnet')) {
+      return jsonResponse({
+        data: {
+          autoPoll: false,
+          edges: [
+            {from: 'profile', label: 'profile', to: 'auth'},
+            {from: 'auth', label: 'authenticates', to: 'ledger'},
+            {from: 'validator', label: 'submits', to: 'ledger'},
+          ],
+          findings: [
+            {
+              detail: 'No credential is currently resolved for this profile.',
+              id: 'auth-missing',
+              nodeIds: ['auth'],
+              source: 'auth',
+              title: 'Credential required',
+              tone: 'fail',
+            },
+            {
+              detail: 'Validator unreachable.',
+              id: 'validator-unreachable',
+              nodeIds: ['validator'],
+              source: 'preflight',
+              title: 'Validator',
+              tone: 'warn',
+            },
+          ],
+          groups: [
+            {id: 'environment', label: 'Environment'},
+            {id: 'services', label: 'Services'},
+          ],
+          mode: 'remote',
+          nodes: [
+            {groupId: 'environment', id: 'profile', kind: 'profile', label: 'splice-devnet', status: 'attention', tone: 'fail'},
+            {badges: ['env-or-keychain-jwt'], detail: 'No stored credential found.', groupId: 'services', id: 'auth', kind: 'auth', label: 'Auth', status: 'missing', tone: 'fail', findingIds: ['auth-missing']},
+            {detail: 'https://ledger.example.com', groupId: 'services', id: 'ledger', kind: 'service', label: 'ledger', status: 'configured', tone: 'info', url: 'https://ledger.example.com'},
+            {detail: 'https://validator.example.com', groupId: 'services', id: 'validator', kind: 'service', label: 'validator', status: 'unreachable', tone: 'fail', url: 'https://validator.example.com', findingIds: ['validator-unreachable']},
+          ],
+          overlays: ['health', 'parties', 'ports', 'auth', 'checks'],
+          profile: {kind: 'remote-validator', name: 'splice-devnet'},
+          summary: {
+            detail: 'Remote service graph on devnet.',
+            headline: '1 blocking issue',
+            readiness: {failed: 1, passed: 2, skipped: 0, success: false, warned: 1},
+          },
+        },
+        success: true,
+      })
+    }
+
+    if (url.startsWith('/ui/checks?profile=splice-devnet')) {
+      return jsonResponse({
+        data: {
+          auth: {authenticated: false, envVarName: 'JWT', mode: 'env-or-keychain-jwt', source: 'missing', warnings: ['No stored credential found.']},
+          canary: {checks: [{detail: 'Validator public API reachable.', status: 'pass', suite: 'validator-public', warnings: []}], selectedSuites: ['validator-public'], skippedSuites: ['scan'], success: true},
+          compatibility: {checks: [{detail: 'Project SDK pinned.', name: 'Project SDK', status: 'pass'}], failed: 0, passed: 1, warned: 0},
+          doctor: {checks: [{detail: 'Environment healthy.', name: 'Node.js', required: true, status: 'pass'}], failed: 0, passed: 1, warned: 0},
+          preflight: {
+            checks: [{category: 'service', detail: 'Ledger reachable.', endpoint: 'https://ledger.example.com', name: 'Ledger', status: 'pass'}],
+            network: {checklist: [], name: 'devnet', reminders: [], resetExpectation: 'unknown', tier: 'remote'},
+            success: true,
+          },
+          profile: {kind: 'remote-validator', name: 'splice-devnet'},
+          readiness: {failed: 1, passed: 2, skipped: 0, success: false, warned: 1},
+        },
+        success: true,
+      })
+    }
+
+    if (url.startsWith('/ui/profiles?profile=splice-devnet')) {
+      return jsonResponse({
+        data: {
+          profiles: [
+            {auth: {authenticated: false, mode: 'env-or-keychain-jwt', source: 'missing', warnings: []}, experimental: false, isDefault: false, kind: 'remote-validator', name: 'splice-devnet', networkName: 'devnet', readiness: {detail: 'Auth required', tone: 'fail'}, services: ['ledger', 'validator', 'scan', 'auth']},
+          ],
           selected: {
             auth: {authenticated: false, mode: 'env-or-keychain-jwt', source: 'missing', warnings: []},
             experimental: false,
             imports: {scan: {url: 'https://scan.example.com'}},
-            json: {kind: 'remote-validator'},
+            json: {auth: {kind: 'oidc'}, kind: 'remote-validator', validator: {url: 'https://validator.example.com'}},
             kind: 'remote-validator',
             name: 'splice-devnet',
             networkMappings: ['devnet'],
             networkName: 'devnet',
-            services: [],
-            validation: {detail: 'valid', valid: true},
-            yaml: 'profiles: {}',
+            services: [{detail: 'Remote validator.', name: 'validator', stability: 'stable-external', status: 'configured', tone: 'info'}],
+            validation: {detail: 'cantonctl.yaml validates against the canonical schema.', valid: true},
+            yaml: 'profiles:\n  splice-devnet: {}',
           },
         },
         success: true,
       })
     }
 
-    if (url.startsWith('/ui/checks')) {
+    if (url.startsWith('/ui/profiles?profile=splice-localnet')) {
       return jsonResponse({
         data: {
-          auth: {authenticated: true, envVarName: 'JWT', mode: 'bearer-token', source: 'fallback', warnings: []},
-          canary: {checks: [], selectedSuites: [], skippedSuites: [], success: true},
-          compatibility: {checks: [], failed: 0, passed: 1, warned: 0},
-          doctor: {checks: [], failed: 0, passed: 1, warned: 0},
-          preflight: {
-            checks: [],
-            network: {checklist: [], name: 'local', reminders: [], resetExpectation: 'local-only', tier: 'local'},
-            success: true,
+          profiles: [],
+          selected: {
+            auth: {authenticated: true, mode: 'bearer-token', source: 'fallback', warnings: []},
+            experimental: false,
+            imports: {localnet: {workspace: '/workspace'}},
+            json: {kind: 'splice-localnet', localnet: {workspace: '/workspace'}},
+            kind: 'splice-localnet',
+            name: 'splice-localnet',
+            networkMappings: ['localnet'],
+            networkName: 'localnet',
+            services: [{detail: 'Workspace imported.', name: 'localnet', stability: 'local', status: 'configured', tone: 'info'}],
+            validation: {detail: 'cantonctl.yaml validates against the canonical schema.', valid: true},
+            yaml: 'profiles:\n  splice-localnet: {}',
           },
-          profile: {kind: 'sandbox', name: 'sandbox'},
-          readiness: {failed: 0, passed: 3, skipped: 1, success: true, warned: 0},
         },
         success: true,
       })
     }
 
-    if (url.startsWith('/ui/support')) {
+    if (url.startsWith('/ui/support?profile=splice-devnet')) {
       return jsonResponse({
         data: {
           defaults: {
@@ -187,36 +298,38 @@ afterEach(() => {
 })
 
 describe('App', () => {
-  it('renders the read-only control center, switches profiles, and shows CLI handoff commands', async () => {
+  it('renders the map-first control center, switches modes, and loads secondary views', async () => {
     const user = userEvent.setup()
     renderWithQueryClient(<App />)
 
-    expect(await screen.findByText('Project-local control center')).toBeTruthy()
-    expect(await screen.findByText('sandbox readiness')).toBeTruthy()
-    expect(screen.getByText('Visualization first')).toBeTruthy()
+    expect(await screen.findByText('Topology-first control map')).toBeTruthy()
+    expect((await screen.findAllByText('1 blocking issue')).length).toBeGreaterThan(0)
+    expect(screen.getAllByText('Ledger').length).toBeGreaterThan(0)
+    expect(screen.getByText('Wallet')).toBeTruthy()
 
     await user.selectOptions(screen.getByLabelText('Selected profile'), 'splice-localnet')
-    await user.click(screen.getByText('Runtime').closest('button')!)
-
-    expect(await screen.findByText('LocalNet Service Map')).toBeTruthy()
-    expect(screen.getByText('LocalNet Workspace')).toBeTruthy()
-    expect(screen.getByText('Validator readyz healthy.')).toBeTruthy()
-    expect(screen.getByText('Inspect the upstream LocalNet workspace status')).toBeTruthy()
-    expect(screen.getByText(/cantonctl localnet status --workspace \/workspace --json/)).toBeTruthy()
+    expect(await screen.findByText('LocalNet Workspace')).toBeTruthy()
+    expect(screen.getByText('Workspace /workspace.')).toBeTruthy()
+    expect(screen.getAllByText('Validator readyz healthy.').length).toBeGreaterThan(0)
 
     await user.selectOptions(screen.getByLabelText('Selected profile'), 'splice-devnet')
-    await user.click(screen.getAllByText('Profiles')[0].closest('button')!)
-    expect(await screen.findByText('Credential missing')).toBeTruthy()
-    expect(screen.getByText('Resolve credentials for the selected remote profile')).toBeTruthy()
-    expect(screen.getByText(/cantonctl auth login devnet/)).toBeTruthy()
+    expect(await screen.findByText('Credential required')).toBeTruthy()
+    expect(screen.getByText('Remote service graph on devnet.')).toBeTruthy()
 
-    await user.click(screen.getByText('Support').closest('button')!)
-    expect(await screen.findByText('CLI-only Support Actions')).toBeTruthy()
-    expect(screen.getByText('Write a diagnostics bundle from the CLI')).toBeTruthy()
-    expect(screen.getByText(/cantonctl diagnostics bundle --profile splice-devnet/)).toBeTruthy()
+    await user.click(screen.getAllByText('Checks')[0].closest('button')!)
+    expect(await screen.findByText('Failure-oriented view')).toBeTruthy()
+    expect(screen.getByText('Locate on map: auth')).toBeTruthy()
+
+    await user.click(screen.getAllByText('Profiles')[0].closest('button')!)
+    expect(await screen.findByText('Diff Panel')).toBeTruthy()
+    expect(screen.getAllByText('splice-localnet').length).toBeGreaterThan(0)
+
+    await user.click(screen.getAllByText('Support')[0].closest('button')!)
+    expect(await screen.findByText('/repo/.cantonctl/diagnostics/splice-devnet')).toBeTruthy()
+    expect(screen.getByText('wallet-sdk')).toBeTruthy()
 
     await waitFor(() => {
-      expect(fetchMock).toHaveBeenCalledWith('/ui/support?profile=splice-devnet', expect.objectContaining({
+      expect(fetchMock).toHaveBeenCalledWith('/ui/map?profile=splice-devnet', expect.objectContaining({
         headers: expect.objectContaining({'X-Cantonctl-Ui-Session': 'session-token'}),
       }))
     })

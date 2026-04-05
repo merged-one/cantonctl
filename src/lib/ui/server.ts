@@ -177,6 +177,9 @@ async function handleApiRequest(
     case '/ui/session':
       writeJson(response, 200, {data: await controller.getSession({requestedProfile: profileName}), success: true})
       return
+    case '/ui/map':
+      writeJson(response, 200, {data: await controller.getMap({profileName}), success: true})
+      return
     case '/ui/overview':
       writeJson(response, 200, {data: await controller.getOverview({profileName}), success: true})
       return

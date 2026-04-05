@@ -4,45 +4,45 @@ import {useQuery, useQueryClient} from '@tanstack/react-query'
 
 import type {
   UiChecksData,
-  UiOverviewData,
+  UiMapData,
+  UiMapFinding,
+  UiMapNode,
+  UiMapOverlay,
+  UiProfileDetailData,
   UiProfileSummary,
-  UiRuntimeData,
   UiSupportData,
   UiTone,
 } from '../../src/lib/ui/contracts'
 import {
-  fetchCheckSection,
   fetchChecks,
-  fetchOverview,
+  fetchMap,
   fetchProfiles,
-  fetchRuntime,
   fetchSession,
   fetchSupport,
 } from './api'
-import {Card, EmptyState, JsonPanel, SectionTitle, TonePill} from './components/primitives'
+import {Card, EmptyState, JsonPanel, TonePill} from './components/primitives'
 import {resolveInitialProfileSelection} from './profile-selection'
 
-type View = 'checks' | 'overview' | 'profiles' | 'runtime' | 'support'
-
-interface SuggestedCommand {
-  command: string
-  description: string
-  tone: UiTone
-}
+type View = 'checks' | 'map' | 'profiles' | 'support'
+type InspectorTab = 'checks' | 'endpoints' | 'overview' | 'raw'
 
 const VIEWS: Array<{description: string; id: View; label: string}> = [
-  {description: 'Readiness, service posture, and session outputs.', id: 'overview', label: 'Overview'},
-  {description: 'Profile detail, validation, imports, and auth.', id: 'profiles', label: 'Profiles'},
-  {description: 'Runtime topology or service dependencies.', id: 'runtime', label: 'Runtime'},
-  {description: 'Auth, compatibility, preflight, canary, and doctor.', id: 'checks', label: 'Checks'},
-  {description: 'Diagnostics posture, discovery inputs, and SDK export targets.', id: 'support', label: 'Support'},
+  {description: 'Topology and service graph with live findings.', id: 'map', label: 'Map'},
+  {description: 'Blocking checks, warnings, and machine posture.', id: 'checks', label: 'Checks'},
+  {description: 'Resolved profile detail and environment deltas.', id: 'profiles', label: 'Profiles'},
+  {description: 'Artifacts, discovery defaults, and export targets.', id: 'support', label: 'Support'},
 ]
+
+const DEFAULT_OVERLAYS: UiMapOverlay[] = ['health', 'parties', 'ports', 'auth', 'checks']
+const SERVICE_NODE_ORDER = ['auth', 'ledger', 'scan', 'validator', 'wallet', 'tokenStandard', 'ans']
 
 export function App() {
   const queryClient = useQueryClient()
   const commandProfile = new URLSearchParams(window.location.search).get('profile') ?? undefined
-  const [view, setView] = useState<View>('overview')
+  const [view, setView] = useState<View>('map')
+  const [selectedNodeId, setSelectedNodeId] = useState<string>()
   const [selectedProfile, setSelectedProfile] = useState<string>()
+  const [overlays, setOverlays] = useState<UiMapOverlay[]>(DEFAULT_OVERLAYS)
 
   const sessionQuery = useQuery({
     placeholderData: previous => previous,
@@ -72,15 +72,24 @@ export function App() {
 
   const activeProfile = selectedProfile ?? sessionQuery.data?.selectedProfile
   const activeProfileSummary = sessionQuery.data?.profiles.find(profile => profile.name === activeProfile)
-  const isLocalRuntime = activeProfileSummary
+  const comparisonProfile = getComparisonProfileName(sessionQuery.data?.profiles ?? [], activeProfile)
+  const localRuntime = activeProfileSummary
     ? ['sandbox', 'canton-multi', 'splice-localnet'].includes(activeProfileSummary.kind)
     : false
 
-  const overviewQuery = useQuery({
-    enabled: view === 'overview' && Boolean(activeProfile),
+  const mapQuery = useQuery({
+    enabled: Boolean(activeProfile),
     placeholderData: previous => previous,
-    queryFn: () => fetchOverview(activeProfile!),
-    queryKey: ['ui', 'overview', activeProfile],
+    queryFn: () => fetchMap(activeProfile!),
+    queryKey: ['ui', 'map', activeProfile],
+    refetchInterval: view === 'map' && localRuntime ? 10_000 : false,
+  })
+
+  const checksQuery = useQuery({
+    enabled: Boolean(activeProfile),
+    placeholderData: previous => previous,
+    queryFn: () => fetchChecks(activeProfile!),
+    queryKey: ['ui', 'checks', activeProfile],
   })
 
   const profilesQuery = useQuery({
@@ -90,19 +99,11 @@ export function App() {
     queryKey: ['ui', 'profiles', activeProfile],
   })
 
-  const runtimeQuery = useQuery({
-    enabled: view === 'runtime' && Boolean(activeProfile),
+  const comparisonProfileQuery = useQuery({
+    enabled: view === 'profiles' && Boolean(comparisonProfile),
     placeholderData: previous => previous,
-    queryFn: () => fetchRuntime(activeProfile!),
-    queryKey: ['ui', 'runtime', activeProfile],
-    refetchInterval: view === 'runtime' && isLocalRuntime ? 10_000 : false,
-  })
-
-  const checksQuery = useQuery({
-    enabled: view === 'checks' && Boolean(activeProfile),
-    placeholderData: previous => previous,
-    queryFn: () => fetchChecks(activeProfile!),
-    queryKey: ['ui', 'checks', activeProfile],
+    queryFn: () => fetchProfiles(comparisonProfile!),
+    queryKey: ['ui', 'profiles', 'compare', comparisonProfile],
   })
 
   const supportQuery = useQuery({
@@ -112,315 +113,390 @@ export function App() {
     queryKey: ['ui', 'support', activeProfile],
   })
 
-  const authSectionQuery = useQuery({
-    enabled: view === 'checks' && Boolean(activeProfile),
-    placeholderData: previous => previous,
-    queryFn: () => fetchCheckSection<UiChecksData['auth']>(activeProfile!, 'auth'),
-    queryKey: ['ui', 'checks', 'auth', activeProfile],
-  })
+  useEffect(() => {
+    const map = mapQuery.data
+    if (!map) return
 
-  const compatibilitySectionQuery = useQuery({
-    enabled: view === 'checks' && Boolean(activeProfile),
-    placeholderData: previous => previous,
-    queryFn: () => fetchCheckSection<UiChecksData['compatibility']>(activeProfile!, 'compatibility'),
-    queryKey: ['ui', 'checks', 'compatibility', activeProfile],
-  })
+    setSelectedNodeId(current => {
+      if (current && map.nodes.some(node => node.id === current)) {
+        return current
+      }
 
-  const preflightSectionQuery = useQuery({
-    enabled: view === 'checks' && Boolean(activeProfile),
-    placeholderData: previous => previous,
-    queryFn: () => fetchCheckSection<UiChecksData['preflight']>(activeProfile!, 'preflight'),
-    queryKey: ['ui', 'checks', 'preflight', activeProfile],
-  })
+      return defaultNodeSelection(map)
+    })
+  }, [mapQuery.data])
 
-  const canarySectionQuery = useQuery({
-    enabled: view === 'checks' && Boolean(activeProfile),
-    placeholderData: previous => previous,
-    queryFn: () => fetchCheckSection<UiChecksData['canary']>(activeProfile!, 'canary'),
-    queryKey: ['ui', 'checks', 'canary', activeProfile],
-  })
+  const activeNode = mapQuery.data?.nodes.find(node => node.id === selectedNodeId)
+  const relatedFindings = mapQuery.data && activeNode
+    ? mapQuery.data.findings.filter(finding => finding.nodeIds.includes(activeNode.id))
+    : []
 
-  const doctorSectionQuery = useQuery({
-    enabled: view === 'checks' && Boolean(activeProfile),
-    placeholderData: previous => previous,
-    queryFn: () => fetchCheckSection<UiChecksData['doctor']>(activeProfile!, 'doctor'),
-    queryKey: ['ui', 'checks', 'doctor', activeProfile],
-  })
-
-  const activeDataUpdatedAt = [
+  const updatedAt = [
     sessionQuery.dataUpdatedAt,
-    overviewQuery.dataUpdatedAt,
-    profilesQuery.dataUpdatedAt,
-    runtimeQuery.dataUpdatedAt,
+    mapQuery.dataUpdatedAt,
     checksQuery.dataUpdatedAt,
+    profilesQuery.dataUpdatedAt,
     supportQuery.dataUpdatedAt,
   ].filter(Boolean).sort((left, right) => right - left)[0]
 
-  const headerKind = activeProfileSummary?.kind ?? sessionQuery.data?.profiles[0]?.kind
+  function toggleOverlay(overlay: UiMapOverlay) {
+    setOverlays(current => current.includes(overlay)
+      ? current.filter(item => item !== overlay)
+      : [...current, overlay],
+    )
+  }
+
+  function locateFinding(finding: UiMapFinding) {
+    setSelectedNodeId(finding.nodeIds[0] ?? 'profile')
+    setView('map')
+  }
+
+  function runRefresh(nextView?: View) {
+    if (nextView) setView(nextView)
+    void queryClient.invalidateQueries({queryKey: ['ui', 'session']})
+    void queryClient.invalidateQueries({queryKey: ['ui', 'map', activeProfile]})
+    void queryClient.invalidateQueries({queryKey: ['ui', 'checks', activeProfile]})
+    void queryClient.invalidateQueries({queryKey: ['ui', 'profiles', activeProfile]})
+    void queryClient.invalidateQueries({queryKey: ['ui', 'support', activeProfile]})
+  }
 
   return (
-    <div className="ui-shell px-4 py-4 lg:px-6 lg:py-6">
-      <div className="ui-grid">
-        <aside className="ui-card flex flex-col gap-6 p-5">
+    <div className="control-shell">
+      <header className="control-topbar">
+        <div>
+          <p className="control-kicker">cantonctl ui</p>
+          <div className="mt-3 flex flex-wrap items-center gap-3">
+            <h1 className="text-2xl font-semibold text-[var(--text-strong)]">
+              {sessionQuery.data?.project.name ?? 'Loading project'}
+            </h1>
+            {activeProfileSummary ? <TonePill tone={activeProfileSummary.readiness.tone}>{activeProfileSummary.kind}</TonePill> : null}
+            {mapQuery.data ? <TonePill tone={mapSummaryTone(mapQuery.data.summary)}>{mapQuery.data.summary.headline}</TonePill> : null}
+          </div>
+          <p className="mt-3 text-sm text-[var(--text-muted)]">
+            Profile {activeProfile ?? 'pending'} • Last refresh {updatedAt ? formatRelativeTime(updatedAt) : 'pending'}
+          </p>
+        </div>
+
+        <div className="flex flex-col gap-3 lg:items-end">
+          <label className="control-label">
+            Selected profile
+            <select
+              className="control-select"
+              onChange={event => setSelectedProfile(event.target.value)}
+              value={activeProfile}
+            >
+              {sessionQuery.data?.profiles.map(profile => (
+                <option key={profile.name} value={profile.name}>
+                  {profile.name}
+                </option>
+              ))}
+            </select>
+          </label>
+          <div className="flex flex-wrap gap-3">
+            <button className="control-button" onClick={() => runRefresh()} type="button">
+              Refresh
+            </button>
+            <button className="control-button control-button-primary" onClick={() => runRefresh('checks')} type="button">
+              Run readiness
+            </button>
+          </div>
+        </div>
+      </header>
+
+      <div className="control-layout">
+        <aside className="control-nav">
           <div>
-            <p className="text-xs font-semibold uppercase tracking-[0.22em] text-[var(--accent)]">cantonctl ui</p>
-            <h1 className="mt-3 text-3xl font-semibold leading-tight">Project-local control center</h1>
+            <p className="control-kicker">Primary flow</p>
+            <h2 className="mt-3 text-xl font-semibold text-[var(--text-strong)]">Topology-first control map</h2>
             <p className="mt-3 text-sm leading-6 text-[var(--text-muted)]">
-              Profile-centric visibility for sandbox, LocalNet, and remote Canton or Splice environments.
+              Start on the live graph, inspect a node, then follow checks and support only when the map says something needs attention.
             </p>
           </div>
 
-          <nav className="space-y-3">
+          <nav className="mt-8 space-y-3">
             {VIEWS.map(item => (
               <button
-                className="ui-nav-button"
+                className="control-nav-button"
                 data-active={item.id === view}
                 key={item.id}
                 onClick={() => setView(item.id)}
                 type="button"
               >
-                <div>
-                  <div className="text-sm font-semibold">{item.label}</div>
-                  <div className="mt-1 text-xs leading-5 text-[var(--text-soft)]">{item.description}</div>
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <div className="text-sm font-semibold text-[var(--text-strong)]">{item.label}</div>
+                    <div className="mt-1 text-xs leading-5 text-[var(--text-soft)]">{item.description}</div>
+                  </div>
+                  {item.id === 'map' && mapQuery.data ? <TonePill tone={mapSummaryTone(mapQuery.data.summary)}>{mapQuery.data.profile.kind}</TonePill> : null}
                 </div>
               </button>
             ))}
           </nav>
 
-          <Card className="!rounded-[1.75rem]" title="Profiles">
+          <Card className="mt-8" title="Profiles">
             {sessionQuery.data?.profiles.length ? (
               <div className="space-y-3">
                 {sessionQuery.data.profiles.map(profile => (
                   <button
-                    className="ui-card-soft w-full rounded-2xl p-4 text-left transition hover:border-[var(--border-strong)]"
+                    className="profile-chip"
+                    data-active={profile.name === activeProfile}
                     key={profile.name}
-                    onClick={() => setSelectedProfile(profile.name)}
+                    onClick={() => {
+                      setSelectedProfile(profile.name)
+                      setView('map')
+                    }}
                     type="button"
                   >
-                    <div className="flex items-center justify-between gap-3">
-                      <div>
-                        <div className="font-semibold">{profile.name}</div>
-                        <div className="mt-1 text-xs uppercase tracking-[0.16em] text-[var(--text-soft)]">
-                          {profile.kind}
-                        </div>
-                      </div>
-                      <TonePill tone={profile.readiness.tone}>{profile.readiness.detail}</TonePill>
+                    <div>
+                      <div className="font-semibold text-[var(--text-strong)]">{profile.name}</div>
+                      <div className="mt-1 text-xs uppercase tracking-[0.16em] text-[var(--text-soft)]">{profile.networkName}</div>
                     </div>
+                    <TonePill tone={profile.readiness.tone}>{profile.readiness.detail}</TonePill>
                   </button>
                 ))}
               </div>
             ) : (
-              <EmptyState body="No profiles resolved from cantonctl.yaml yet." title="No Profiles" />
+              <EmptyState body="No profiles resolved from cantonctl.yaml." title="No profiles" />
             )}
           </Card>
         </aside>
 
-        <main className="space-y-4">
-          <header className="ui-card p-5">
-            <div className="flex flex-col gap-5 xl:flex-row xl:items-center xl:justify-between">
-              <div>
-                <p className="text-xs font-semibold uppercase tracking-[0.2em] text-[var(--text-soft)]">Project</p>
-                <div className="mt-2 flex flex-wrap items-center gap-3">
-                  <h2 className="text-2xl font-semibold">{sessionQuery.data?.project.name ?? 'Loading project...'}</h2>
-                  {headerKind ? <TonePill tone={isLocalRuntime ? 'info' : 'pass'}>{headerKind}</TonePill> : null}
-                </div>
-                <p className="mt-3 text-sm text-[var(--text-muted)]">
-                  Last refresh {activeDataUpdatedAt ? formatRelativeTime(activeDataUpdatedAt) : 'pending'}
-                </p>
-              </div>
-
-              <div className="flex flex-col gap-3 md:flex-row md:items-end">
-                <label className="flex min-w-[13rem] flex-col gap-2 text-xs font-semibold uppercase tracking-[0.16em] text-[var(--text-soft)]">
-                  Selected profile
-                  <select
-                    className="rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-sm text-[var(--text-strong)] outline-none"
-                    onChange={event => setSelectedProfile(event.target.value)}
-                    value={activeProfile}
-                  >
-                    {sessionQuery.data?.profiles.map(profile => (
-                      <option key={profile.name} value={profile.name}>
-                        {profile.name}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <button
-                  className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm font-semibold transition hover:border-[var(--border-strong)] hover:bg-white/10"
-                  onClick={() => refreshEverything(queryClient, activeProfile, setView)}
-                  type="button"
-                >
-                  Refresh
-                </button>
-                <button
-                  className="rounded-2xl border border-[var(--accent)]/35 bg-[var(--accent-soft)] px-4 py-3 text-sm font-semibold text-[var(--text-strong)] transition hover:border-[var(--accent)]/55 hover:bg-[var(--accent)]/18"
-                  onClick={() => refreshEverything(queryClient, activeProfile, setView, 'checks')}
-                  type="button"
-                >
-                  Run readiness
-                </button>
-              </div>
-            </div>
-          </header>
-
-          {view === 'overview' ? (
-            <OverviewView
-              data={overviewQuery.data}
-              loading={overviewQuery.isLoading}
-              onRunReadiness={() => refreshEverything(queryClient, activeProfile, setView, 'checks')}
-            />
-          ) : null}
-
-          {view === 'profiles' ? (
-            <ProfilesView
-              data={profilesQuery.data}
-              loading={profilesQuery.isLoading}
-            />
-          ) : null}
-
-          {view === 'runtime' ? (
-            <RuntimeView
-              data={runtimeQuery.data}
-              loading={runtimeQuery.isLoading}
+        <main className="control-main">
+          {view === 'map' ? (
+            <MapView
+              activeNode={activeNode}
+              data={mapQuery.data}
+              loading={mapQuery.isLoading}
+              onFocusFinding={locateFinding}
+              onSelectNode={setSelectedNodeId}
+              onToggleOverlay={toggleOverlay}
+              overlays={overlays}
+              relatedFindings={relatedFindings}
             />
           ) : null}
 
           {view === 'checks' ? (
             <ChecksView
-              auth={authSectionQuery.data}
-              canary={canarySectionQuery.data}
-              compatibility={compatibilitySectionQuery.data}
-              doctor={doctorSectionQuery.data}
+              data={checksQuery.data}
               loading={checksQuery.isLoading}
-              preflight={preflightSectionQuery.data}
-              readiness={checksQuery.data}
-              rerun={(section) => queryClient.invalidateQueries({queryKey: ['ui', 'checks', section, activeProfile]})}
+              map={mapQuery.data}
+              onFocusFinding={locateFinding}
+              onRerun={() => runRefresh('checks')}
+            />
+          ) : null}
+
+          {view === 'profiles' ? (
+            <ProfilesView
+              comparison={comparisonProfileQuery.data?.selected}
+              comparisonName={comparisonProfile}
+              data={profilesQuery.data}
+              loading={profilesQuery.isLoading}
             />
           ) : null}
 
           {view === 'support' ? (
             <SupportView
               data={supportQuery.data}
+              findings={mapQuery.data?.findings ?? []}
               loading={supportQuery.isLoading}
             />
           ) : null}
         </main>
-
-        <aside className="ui-card flex min-h-[40rem] flex-col">
-          <div className="border-b border-white/5 px-5 py-4">
-            <p className="text-xs font-semibold uppercase tracking-[0.2em] text-[var(--text-soft)]">CLI Companion</p>
-            <h2 className="mt-2 text-xl font-semibold">Read-only UI, explicit CLI handoff</h2>
-          </div>
-          <div className="flex-1 p-5">
-            <CommandRail
-              activeProfile={activeProfileSummary}
-              profilesData={profilesQuery.data}
-              runtimeData={runtimeQuery.data}
-              supportData={supportQuery.data}
-              view={view}
-            />
-          </div>
-        </aside>
       </div>
     </div>
   )
 }
 
-function OverviewView(props: {
-  data?: UiOverviewData
+function MapView(props: {
+  activeNode?: UiMapNode
+  data?: UiMapData
   loading: boolean
-  onRunReadiness: () => void
+  onFocusFinding: (finding: UiMapFinding) => void
+  onSelectNode: (nodeId: string) => void
+  onToggleOverlay: (overlay: UiMapOverlay) => void
+  overlays: UiMapOverlay[]
+  relatedFindings: UiMapFinding[]
 }) {
   if (props.loading && !props.data) {
     return <SkeletonPanels />
   }
 
   if (!props.data) {
-    return <EmptyState body="Select a profile to load readiness, service status, and recent control-plane outputs." title="Overview Unavailable" />
+    return <EmptyState body="Select a profile to render its topology or service graph." title="Map unavailable" />
   }
 
   return (
-    <div className="grid gap-4 xl:grid-cols-[1.35fr_1fr]">
-      <Card title="Readiness">
-        <SectionTitle
-          action={(
-            <button className="rounded-2xl border border-white/10 bg-white/5 px-4 py-2 text-sm font-semibold" onClick={props.onRunReadiness} type="button">
-              Run readiness
-            </button>
-          )}
-          eyebrow="Primary gate"
-          title={`${props.data.profile.name} readiness`}
+    <div className="space-y-5">
+      <section className="map-board">
+        <div className="map-stage">
+          <div className="stage-header">
+            <div>
+              <p className="control-kicker">Map</p>
+              <h2 className="mt-2 text-2xl font-semibold text-[var(--text-strong)]">{props.data.summary.headline}</h2>
+              <p className="mt-3 text-sm leading-6 text-[var(--text-muted)]">{props.data.summary.detail}</p>
+            </div>
+
+            <div className="overlay-strip">
+              {props.data.overlays.map(overlay => (
+                <button
+                  className="overlay-chip"
+                  data-active={props.overlays.includes(overlay)}
+                  key={overlay}
+                  onClick={() => props.onToggleOverlay(overlay)}
+                  type="button"
+                >
+                  {overlay}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="metrics-strip">
+            <Metric label="Passed" value={props.data.summary.readiness.passed} />
+            <Metric label="Warned" tone="warn" value={props.data.summary.readiness.warned} />
+            <Metric label="Failed" tone="fail" value={props.data.summary.readiness.failed} />
+            <Metric label="Skipped" tone="skip" value={props.data.summary.readiness.skipped} />
+          </div>
+
+          <MapCanvas
+            data={props.data}
+            overlays={props.overlays}
+            selectedNodeId={props.activeNode?.id}
+            onSelectNode={props.onSelectNode}
+          />
+        </div>
+
+        <NodeInspector
+          findings={props.relatedFindings}
+          node={props.activeNode}
+          onFocusFinding={props.onFocusFinding}
         />
-        <div className="mt-6 grid gap-3 md:grid-cols-4">
-          <Metric label="Passed" value={props.data.readiness.passed} />
-          <Metric label="Warned" tone="warn" value={props.data.readiness.warned} />
-          <Metric label="Failed" tone="fail" value={props.data.readiness.failed} />
-          <Metric label="Skipped" tone="skip" value={props.data.readiness.skipped} />
-        </div>
-      </Card>
+      </section>
 
-      <Card title="Scope">
-        <SectionTitle eyebrow="Narrow slice" title="Visualization first" />
-        <p className="mt-5 text-sm leading-6 text-[var(--text-muted)]">
-          This UI is intentionally read-only. Use it to inspect profile state, readiness, runtime topology, and support posture, then hand off to the CLI for any auth, import, LocalNet, diagnostics, or export action.
-        </p>
-      </Card>
-
-      <Card title="Service Summary">
-        <div className="grid gap-3 md:grid-cols-2">
-          {props.data.services.map(service => (
-            <div className="ui-card-soft rounded-2xl p-4" key={`${service.name}-${service.endpoint ?? service.detail}`}>
-              <div className="flex items-center justify-between gap-3">
-                <div className="text-sm font-semibold capitalize">{service.name}</div>
-                <TonePill tone={service.tone}>{service.status}</TonePill>
-              </div>
-              <p className="mt-3 text-sm text-[var(--text-muted)]">{service.detail}</p>
-              {service.endpoint ? (
-                <p className="mt-3 break-all text-xs text-[var(--signal)]">{service.endpoint}</p>
-              ) : null}
-            </div>
-          ))}
-        </div>
-      </Card>
-
-      <Card title="Environment Path">
-        <div className="space-y-3">
-          {props.data.environmentPath.map(stage => (
-            <div className="ui-card-soft rounded-2xl p-4" key={stage.label}>
-              <div className="flex items-center justify-between gap-3">
-                <div>
-                  <div className="font-semibold">{stage.label}</div>
-                  <div className="mt-1 text-xs uppercase tracking-[0.16em] text-[var(--text-soft)]">{stage.stage}</div>
-                </div>
-                <TonePill tone={stage.active ? 'pass' : 'info'}>{stage.active ? 'selected' : 'available'}</TonePill>
-              </div>
-              <p className="mt-3 text-sm text-[var(--text-muted)]">{stage.profiles.join(', ')}</p>
-            </div>
-          ))}
-        </div>
-      </Card>
-
-      <Card className="xl:col-span-2" title="Advisories">
-        {props.data.advisories.length > 0 ? (
-          <div className="grid gap-3 md:grid-cols-2">
-            {props.data.advisories.map(advisory => (
-              <div className="ui-card-soft rounded-2xl p-4" key={`${advisory.source}-${advisory.detail}`}>
+      <Card title="Activity Rail">
+        {props.data.findings.length > 0 ? (
+          <div className="activity-grid">
+            {props.data.findings.map(finding => (
+              <button
+                className="activity-card"
+                key={finding.id}
+                onClick={() => props.onFocusFinding(finding)}
+                type="button"
+              >
                 <div className="flex items-center justify-between gap-3">
-                  <div className="text-sm font-semibold">{advisory.source}</div>
-                  <TonePill tone={advisory.tone}>{advisory.tone}</TonePill>
+                  <div>
+                    <div className="text-sm font-semibold text-[var(--text-strong)]">{finding.title}</div>
+                    <div className="mt-1 text-xs uppercase tracking-[0.16em] text-[var(--text-soft)]">{finding.source}</div>
+                  </div>
+                  <TonePill tone={finding.tone}>{finding.tone}</TonePill>
                 </div>
-                <p className="mt-3 text-sm leading-6 text-[var(--text-muted)]">{advisory.detail}</p>
-              </div>
+                <p className="mt-3 text-sm leading-6 text-[var(--text-muted)]">{finding.detail}</p>
+                <p className="mt-3 text-xs text-[var(--signal)]">{finding.nodeIds.map(toNodeLabel).join(' • ')}</p>
+              </button>
             ))}
           </div>
         ) : (
-          <EmptyState body="No current warnings surfaced by auth, readiness, preflight, or doctor." title="Quiet Control Plane" />
+          <EmptyState body="No blocking or advisory findings are currently mapped onto the active graph." title="Quiet control plane" />
         )}
       </Card>
     </div>
   )
 }
 
+function ChecksView(props: {
+  data?: UiChecksData
+  loading: boolean
+  map?: UiMapData
+  onFocusFinding: (finding: UiMapFinding) => void
+  onRerun: () => void
+}) {
+  if (props.loading && !props.data) {
+    return <SkeletonPanels />
+  }
+
+  if (!props.data) {
+    return <EmptyState body="Select a profile to inspect blocking checks and warnings." title="Checks unavailable" />
+  }
+
+  const blocking = props.map?.findings.filter(finding => finding.tone === 'fail') ?? []
+  const warnings = props.map?.findings.filter(finding => finding.tone === 'warn') ?? []
+  const passed = collectPassedChecks(props.data)
+
+  return (
+    <div className="space-y-5">
+      <Card title="Checks">
+        <div className="flex flex-col gap-5 xl:flex-row xl:items-start xl:justify-between">
+          <div>
+            <p className="control-kicker">Failure-oriented view</p>
+            <h2 className="mt-2 text-2xl font-semibold text-[var(--text-strong)]">{props.data.profile.name}</h2>
+            <p className="mt-3 text-sm leading-6 text-[var(--text-muted)]">
+              Findings stay grouped by operational impact first. Use “Locate on map” to jump back to the affected node.
+            </p>
+          </div>
+          <button className="control-button control-button-primary" onClick={props.onRerun} type="button">
+            Rerun checks
+          </button>
+        </div>
+      </Card>
+
+      <div className="grid gap-5 xl:grid-cols-2">
+        <ChecksBucket
+          findings={blocking}
+          onFocusFinding={props.onFocusFinding}
+          title="Blocking"
+          tone="fail"
+        />
+        <ChecksBucket
+          findings={warnings}
+          onFocusFinding={props.onFocusFinding}
+          title="Warnings"
+          tone="warn"
+        />
+      </div>
+
+      <div className="grid gap-5 xl:grid-cols-[1.2fr_0.8fr]">
+        <Card title="Passed">
+          {passed.length > 0 ? (
+            <div className="space-y-3">
+              {passed.map(item => (
+                <div className="map-node-card" key={`${item.source}-${item.title}`}>
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <div className="text-sm font-semibold text-[var(--text-strong)]">{item.title}</div>
+                      <div className="mt-1 text-xs uppercase tracking-[0.16em] text-[var(--text-soft)]">{item.source}</div>
+                    </div>
+                    <TonePill tone="pass">pass</TonePill>
+                  </div>
+                  <p className="mt-3 text-sm text-[var(--text-muted)]">{item.detail}</p>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <EmptyState body="No passing checks are currently recorded for this profile." title="No passes" />
+          )}
+        </Card>
+
+        <Card title="Machine">
+          <div className="space-y-3">
+            {props.data.doctor.checks.map(check => (
+              <div className="map-node-card" key={check.name}>
+                <div className="flex items-center justify-between gap-3">
+                  <div className="text-sm font-semibold text-[var(--text-strong)]">{check.name}</div>
+                  <TonePill tone={check.status === 'fail' ? 'fail' : check.status === 'warn' ? 'warn' : 'pass'}>{check.status}</TonePill>
+                </div>
+                <p className="mt-3 text-sm text-[var(--text-muted)]">{check.detail}</p>
+              </div>
+            ))}
+          </div>
+        </Card>
+      </div>
+    </div>
+  )
+}
+
 function ProfilesView(props: {
+  comparison?: UiProfileDetailData
+  comparisonName?: string
   data?: ReturnType<typeof fetchProfiles> extends Promise<infer T> ? T : never
   loading: boolean
 }) {
@@ -429,325 +505,115 @@ function ProfilesView(props: {
   }
 
   if (!props.data) {
-    return <EmptyState body="Select a profile to inspect its services, auth mode, and import paths." title="Profiles Unavailable" />
+    return <EmptyState body="Select a profile to inspect its resolved config and services." title="Profiles unavailable" />
   }
 
   const selected = props.data.selected
-  const usesFallback = ['sandbox', 'canton-multi', 'splice-localnet'].includes(selected.kind)
+  const diffLines = props.comparison
+    ? buildProfileDiffPreview(selected.json, props.comparison.json)
+    : []
 
   return (
-    <div className="grid gap-4 xl:grid-cols-[19rem_minmax(0,1fr)]">
-      <Card title="All Profiles">
+    <div className="grid gap-5 xl:grid-cols-[18rem_minmax(0,1fr)_20rem]">
+      <Card title="Profile List">
         <div className="space-y-3">
           {props.data.profiles.map(profile => (
-            <div className="ui-card-soft rounded-2xl p-4" key={profile.name}>
-              <div className="flex items-center justify-between gap-3">
-                <div>
-                  <div className="font-semibold">{profile.name}</div>
-                  <div className="mt-1 text-xs uppercase tracking-[0.16em] text-[var(--text-soft)]">{profile.networkName}</div>
-                </div>
-                <TonePill tone={profile.readiness.tone}>{profile.readiness.detail}</TonePill>
+            <div className="profile-chip" data-active={profile.name === selected.name} key={profile.name}>
+              <div>
+                <div className="font-semibold text-[var(--text-strong)]">{profile.name}</div>
+                <div className="mt-1 text-xs uppercase tracking-[0.16em] text-[var(--text-soft)]">{profile.kind}</div>
               </div>
-              <div className="mt-3 flex items-center justify-between text-sm text-[var(--text-muted)]">
-                <span>{profile.kind}</span>
-                <TonePill tone={profile.auth.authenticated ? 'pass' : 'fail'}>
-                  {profile.auth.authenticated ? profile.auth.source : 'auth-required'}
-                </TonePill>
-              </div>
+              <TonePill tone={profile.readiness.tone}>{profile.readiness.detail}</TonePill>
             </div>
           ))}
         </div>
       </Card>
 
-      <div className="space-y-4">
+      <div className="space-y-5">
         <Card title="Selected Profile">
-          <SectionTitle eyebrow={selected.kind} title={selected.name} />
-          <div className="mt-5 grid gap-4 xl:grid-cols-2">
-            <div className="space-y-3">
-              <div className="ui-card-soft rounded-2xl p-4">
-                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[var(--text-soft)]">Network mappings</p>
-                <p className="mt-3 text-sm text-[var(--text-muted)]">
-                  {selected.networkMappings.length > 0 ? selected.networkMappings.join(', ') : 'No named network mappings reference this profile yet.'}
-                </p>
-              </div>
-              <div className="ui-card-soft rounded-2xl p-4">
-                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[var(--text-soft)]">Validation</p>
-                <p className="mt-3 text-sm text-[var(--text-muted)]">{selected.validation.detail}</p>
+          <div className="grid gap-5 xl:grid-cols-[1fr_0.95fr]">
+            <div>
+              <p className="control-kicker">{selected.kind}</p>
+              <h2 className="mt-2 text-2xl font-semibold text-[var(--text-strong)]">{selected.name}</h2>
+              <p className="mt-3 text-sm leading-6 text-[var(--text-muted)]">
+                Network mappings: {selected.networkMappings.length > 0 ? selected.networkMappings.join(', ') : 'none'}
+              </p>
+              <div className="mt-5 grid gap-3">
+                <div className="map-node-card">
+                  <div className="text-sm font-semibold text-[var(--text-strong)]">Validation</div>
+                  <p className="mt-3 text-sm text-[var(--text-muted)]">{selected.validation.detail}</p>
+                </div>
+                <div className="map-node-card">
+                  <div className="text-sm font-semibold text-[var(--text-strong)]">Auth</div>
+                  <p className="mt-3 text-sm text-[var(--text-muted)]">
+                    {selected.auth.mode} • {selected.auth.source}
+                  </p>
+                </div>
+                <div className="map-node-card">
+                  <div className="text-sm font-semibold text-[var(--text-strong)]">Imports</div>
+                  <p className="mt-3 text-sm text-[var(--text-muted)]">
+                    LocalNet workspace: {selected.imports.localnet?.workspace ?? 'none'}
+                  </p>
+                  <p className="mt-2 text-sm text-[var(--text-muted)]">
+                    Scan URL: {selected.imports.scan?.url ?? 'none'}
+                  </p>
+                </div>
               </div>
             </div>
+
             <div className="space-y-3">
               {selected.services.map(service => (
-                <div className="ui-card-soft rounded-2xl p-4" key={`${service.name}-${service.endpoint ?? service.detail}`}>
+                <div className="map-node-card" key={`${service.name}-${service.endpoint ?? service.detail}`}>
                   <div className="flex items-center justify-between gap-3">
-                    <div className="font-semibold capitalize">{service.name}</div>
+                    <div className="text-sm font-semibold text-[var(--text-strong)]">{service.name}</div>
                     <TonePill tone={service.tone}>{service.status}</TonePill>
                   </div>
                   <p className="mt-3 text-sm text-[var(--text-muted)]">{service.detail}</p>
+                  {service.endpoint ? <p className="mt-3 break-all text-xs text-[var(--signal)]">{service.endpoint}</p> : null}
                 </div>
               ))}
             </div>
           </div>
-          <div className="mt-4 grid gap-4 xl:grid-cols-2">
-            <JsonPanel value={selected.json} />
-            <details className="rounded-2xl border border-white/10 bg-black/20 p-4">
-              <summary className="cursor-pointer text-xs font-semibold uppercase tracking-[0.18em] text-[var(--text-muted)]">Resolved YAML</summary>
-              <pre className="mt-4 overflow-x-auto text-xs leading-6 text-[var(--signal)]">{selected.yaml}</pre>
-            </details>
-          </div>
         </Card>
 
-        <div className="grid gap-4 xl:grid-cols-2">
-          <Card title="Imports">
-            <SectionTitle eyebrow="Bootstrap" title="Profile materialization" />
-            <div className="mt-5 space-y-3 text-sm text-[var(--text-muted)]">
-              <p>LocalNet workspace: {selected.imports.localnet?.workspace ?? 'Not imported yet.'}</p>
-              <p>LocalNet source profile: {selected.imports.localnet?.sourceProfile ?? 'n/a'}</p>
-              <p>Scan endpoint: {selected.imports.scan?.url ?? 'No scan endpoint configured.'}</p>
-              <p>The CLI companion rail shows the exact import commands for this profile.</p>
-            </div>
-          </Card>
-
-          <Card title="Authentication">
-            <SectionTitle eyebrow={selected.auth.mode} title={selected.auth.authenticated ? 'Credential resolved' : 'Credential missing'} />
-            <div className="mt-5 space-y-3 text-sm text-[var(--text-muted)]">
-              <p>Source: {selected.auth.source}</p>
-              {selected.auth.warnings.map(warning => (
-                <p key={warning}>{warning}</p>
-              ))}
-              {usesFallback ? (
-                <p>Local profiles use the fallback token path. Login does not require a remote credential.</p>
-              ) : null}
-              <p>Auth changes stay CLI-only so the UI does not expose a localhost mutation surface.</p>
-            </div>
-          </Card>
+        <div className="grid gap-5 xl:grid-cols-2">
+          <JsonPanel value={selected.json} />
+          <details className="control-raw">
+            <summary className="control-raw-summary">Resolved YAML</summary>
+            <pre className="control-raw-body">{selected.yaml}</pre>
+          </details>
         </div>
       </div>
-    </div>
-  )
-}
 
-function RuntimeView(props: {
-  data?: UiRuntimeData
-  loading: boolean
-}) {
-  if (props.loading && !props.data) {
-    return <SkeletonPanels />
-  }
-
-  if (!props.data) {
-    return <EmptyState body="Select a profile to render its local topology or remote service dependency map." title="Runtime Unavailable" />
-  }
-
-  return (
-    <div className="space-y-4">
-      <Card title="Runtime Summary">
-        <SectionTitle eyebrow={props.data.mode} title={props.data.profile.name} />
-        {props.data.summary ? (
-          <div className="mt-5 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-            <Metric label="Ledger URL" value={props.data.summary.ledgerUrl ?? 'n/a'} />
-            <Metric label="Version" value={props.data.summary.version ?? 'n/a'} />
-            <Metric label="Parties" value={props.data.summary.partyCount ?? 'n/a'} />
-            <Metric label="Workspace" value={props.data.summary.workspace ?? 'n/a'} />
-          </div>
-        ) : null}
-        {props.data.summary?.healthDetail ? (
-          <p className="mt-4 text-sm text-[var(--text-muted)]">{props.data.summary.healthDetail}</p>
-        ) : null}
-      </Card>
-
-      {props.data.mode === 'canton-multi' && props.data.topology ? (
-        <Card title="Topology Graph">
-          <div className="space-y-5">
-            <div className="ui-card-soft mx-auto max-w-md rounded-3xl p-5 text-center">
-              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[var(--text-soft)]">Synchronizer</p>
-              <p className="mt-2 text-lg font-semibold">{props.data.topology.topologyName}</p>
-              <p className="mt-3 text-sm text-[var(--text-muted)]">
-                admin {props.data.topology.synchronizer.admin} • public {props.data.topology.synchronizer.publicApi}
-              </p>
-            </div>
-            <div className="grid gap-4 md:grid-cols-2">
-              {props.data.topology.participants.map(participant => (
-                <div className="ui-card-soft rounded-3xl p-5" key={participant.name}>
-                  <div className="flex items-center justify-between gap-3">
-                    <div>
-                      <div className="text-lg font-semibold">{participant.name}</div>
-                      <div className="mt-1 text-xs uppercase tracking-[0.18em] text-[var(--text-soft)]">
-                        json-api {participant.ports.jsonApi}
-                      </div>
-                    </div>
-                    <TonePill tone={participant.healthy ? 'pass' : 'fail'}>
-                      {participant.healthy ? 'healthy' : 'unreachable'}
-                    </TonePill>
-                  </div>
-                  <div className="mt-4 flex flex-wrap gap-2">
-                    {participant.parties.map(party => (
-                      <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs" key={party}>
-                        {party}
-                      </span>
-                    ))}
-                  </div>
-                </div>
-              ))}
-            </div>
-            <JsonPanel value={props.data.topology.exportJson} />
-          </div>
-        </Card>
-      ) : null}
-
-      {props.data.serviceMap ? (
-        <Card title={props.data.mode === 'splice-localnet' ? 'LocalNet Service Map' : 'Service Map'}>
-          <div className="space-y-4">
-            <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-              {props.data.serviceMap.nodes.map(node => (
-                <div className="ui-card-soft rounded-3xl p-5" key={node.id}>
-                  <div className="flex items-center justify-between gap-3">
-                    <div>
-                      <div className="text-lg font-semibold">{node.label}</div>
-                      <div className="mt-1 text-xs uppercase tracking-[0.18em] text-[var(--text-soft)]">{node.kind}</div>
-                    </div>
-                    <TonePill tone={node.tone}>{node.status}</TonePill>
-                  </div>
-                  {node.detail ? <p className="mt-3 text-sm text-[var(--text-muted)]">{node.detail}</p> : null}
-                  {node.url ? <p className="mt-3 break-all text-xs text-[var(--signal)]">{node.url}</p> : null}
-                </div>
-              ))}
-            </div>
-            {props.data.serviceMap.edges.length > 0 ? (
-              <div className="ui-card-soft rounded-3xl p-5">
-                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[var(--text-soft)]">Dependencies</p>
-                <div className="mt-4 flex flex-wrap gap-3 text-sm text-[var(--text-muted)]">
-                  {props.data.serviceMap.edges.map(edge => (
-                    <span className="rounded-full border border-white/10 bg-white/5 px-3 py-2" key={`${edge.from}-${edge.to}`}>
-                      {edge.from} {edge.label ? `${edge.label} ` : ''}→ {edge.to}
-                    </span>
-                  ))}
-                </div>
-              </div>
-            ) : null}
-          </div>
-        </Card>
-      ) : null}
-    </div>
-  )
-}
-
-function ChecksView(props: {
-  auth?: UiChecksData['auth']
-  canary?: UiChecksData['canary']
-  compatibility?: UiChecksData['compatibility']
-  doctor?: UiChecksData['doctor']
-  loading: boolean
-  preflight?: UiChecksData['preflight']
-  readiness?: UiChecksData
-  rerun: (section: 'auth' | 'canary' | 'compatibility' | 'doctor' | 'preflight') => void
-}) {
-  if (props.loading && !props.readiness) {
-    return <SkeletonPanels />
-  }
-
-  if (!props.readiness) {
-    return <EmptyState body="Select a profile to run auth, compatibility, preflight, canary, and doctor checks." title="Checks Unavailable" />
-  }
-
-  return (
-    <div className="space-y-4">
-      <Card title="Readiness Summary">
-        <div className="grid gap-3 md:grid-cols-4">
-          <Metric label="Passed" value={props.readiness.readiness.passed} />
-          <Metric label="Warned" tone="warn" value={props.readiness.readiness.warned} />
-          <Metric label="Failed" tone="fail" value={props.readiness.readiness.failed} />
-          <Metric label="Skipped" tone="skip" value={props.readiness.readiness.skipped} />
+      <Card title="Diff Panel">
+        <div>
+          <p className="control-kicker">Comparison</p>
+          <h3 className="mt-2 text-lg font-semibold text-[var(--text-strong)]">
+            {props.comparisonName ?? 'No adjacent profile'}
+          </h3>
+          <p className="mt-3 text-sm leading-6 text-[var(--text-muted)]">
+            Shows the first meaningful JSON differences between the selected profile and the adjacent environment profile.
+          </p>
         </div>
-      </Card>
-
-      <div className="grid gap-4 xl:grid-cols-2">
-        <CheckCard title="Auth" tone={props.auth?.authenticated ? 'pass' : 'fail'} onRerun={() => props.rerun('auth')}>
-          {props.auth ? (
-            <div className="space-y-3 text-sm text-[var(--text-muted)]">
-              <p>Mode: {props.auth.mode}</p>
-              <p>Source: {props.auth.source}</p>
-              <p>Env var: {props.auth.envVarName}</p>
-              {props.auth.warnings.map(warning => <p key={warning}>{warning}</p>)}
-            </div>
+        <div className="mt-5 space-y-3">
+          {diffLines.length > 0 ? (
+            diffLines.map(line => (
+              <div className="map-node-card" key={line}>
+                <p className="text-sm leading-6 text-[var(--text-muted)]">{line}</p>
+              </div>
+            ))
           ) : (
-            <EmptyState body="Auth state has not loaded yet." title="Auth Pending" />
+            <EmptyState body="No comparison profile is available, or the selected profile resolves to the same top-level shape." title="No deltas" />
           )}
-        </CheckCard>
-
-        <CheckCard title="Compatibility" tone={(props.compatibility?.failed ?? 0) > 0 ? 'fail' : (props.compatibility?.warned ?? 0) > 0 ? 'warn' : 'pass'} onRerun={() => props.rerun('compatibility')}>
-          {props.compatibility ? (
-            <div className="space-y-3">
-              {props.compatibility.checks.map(check => (
-                <div className="ui-card-soft rounded-2xl p-4" key={check.name}>
-                  <div className="flex items-center justify-between gap-3">
-                    <div className="font-semibold">{check.name}</div>
-                    <TonePill tone={toTone(check.status)}>{check.status}</TonePill>
-                  </div>
-                  <p className="mt-3 text-sm text-[var(--text-muted)]">{check.detail}</p>
-                </div>
-              ))}
-            </div>
-          ) : null}
-        </CheckCard>
-
-        <CheckCard title="Preflight" tone={props.preflight?.success ? 'pass' : 'fail'} onRerun={() => props.rerun('preflight')}>
-          {props.preflight ? (
-            <div className="space-y-3">
-              {props.preflight.checks.map(check => (
-                <div className="ui-card-soft rounded-2xl p-4" key={`${check.name}-${check.endpoint ?? check.detail}`}>
-                  <div className="flex items-center justify-between gap-3">
-                    <div className="font-semibold">{check.name}</div>
-                    <TonePill tone={toTone(check.status)}>{check.status}</TonePill>
-                  </div>
-                  <p className="mt-3 text-sm text-[var(--text-muted)]">{check.detail}</p>
-                </div>
-              ))}
-            </div>
-          ) : null}
-        </CheckCard>
-
-        <CheckCard title="Canary" tone={props.canary?.success ? 'pass' : 'fail'} onRerun={() => props.rerun('canary')}>
-          {props.canary ? (
-            <div className="space-y-3">
-              {props.canary.checks.map(check => (
-                <div className="ui-card-soft rounded-2xl p-4" key={check.suite}>
-                  <div className="flex items-center justify-between gap-3">
-                    <div className="font-semibold">{check.suite}</div>
-                    <TonePill tone={toTone(check.status)}>{check.status}</TonePill>
-                  </div>
-                  <p className="mt-3 text-sm text-[var(--text-muted)]">{check.detail}</p>
-                  {check.warnings.length > 0 ? (
-                    <div className="mt-3 text-xs text-[var(--warn)]">{check.warnings.join(' • ')}</div>
-                  ) : null}
-                </div>
-              ))}
-            </div>
-          ) : null}
-        </CheckCard>
-      </div>
-
-      <CheckCard title="Doctor" tone={(props.doctor?.failed ?? 0) > 0 ? 'fail' : (props.doctor?.warned ?? 0) > 0 ? 'warn' : 'pass'} onRerun={() => props.rerun('doctor')}>
-        {props.doctor ? (
-          <div className="grid gap-3 md:grid-cols-2">
-            {props.doctor.checks.map(check => (
-              <div className="ui-card-soft rounded-2xl p-4" key={check.name}>
-                <div className="flex items-center justify-between gap-3">
-                  <div className="font-semibold">{check.name}</div>
-                  <TonePill tone={toTone(check.status)}>{check.status}</TonePill>
-                </div>
-                <p className="mt-3 text-sm text-[var(--text-muted)]">{check.detail}</p>
-                {check.fix ? <p className="mt-3 text-xs text-[var(--warn)]">{check.fix}</p> : null}
-              </div>
-            ))}
-          </div>
-        ) : null}
-      </CheckCard>
+        </div>
+      </Card>
     </div>
   )
 }
 
 function SupportView(props: {
   data?: UiSupportData
+  findings: UiMapFinding[]
   loading: boolean
 }) {
   if (props.loading && !props.data) {
@@ -755,100 +621,473 @@ function SupportView(props: {
   }
 
   if (!props.data) {
-    return <EmptyState body="Select a profile to produce diagnostics, discovery snapshots, or SDK config output." title="Support Unavailable" />
+    return <EmptyState body="Select a profile to inspect support artifacts and defaults." title="Support unavailable" />
   }
 
   return (
-    <div className="space-y-4">
-      <div className="grid gap-4 xl:grid-cols-3">
-        <Card title="Diagnostics Bundle">
-          <SectionTitle eyebrow="Bundle" title="Project-local output target" />
-          <p className="mt-4 text-sm text-[var(--text-muted)]">{props.data.defaults.diagnosticsOutputDir}</p>
+    <div className="grid gap-5 xl:grid-cols-[1fr_0.9fr]">
+      <div className="space-y-5">
+        <Card title="Diagnostics">
+          <div className="map-node-card">
+            <div className="text-sm font-semibold text-[var(--text-strong)]">Default output directory</div>
+            <p className="mt-3 break-all text-sm text-[var(--signal)]">{props.data.defaults.diagnosticsOutputDir}</p>
+          </div>
         </Card>
 
         <Card title="Discovery">
-          <SectionTitle eyebrow="Scan" title="Stable/public metadata source" />
-          <p className="mt-4 text-sm text-[var(--text-muted)]">{props.data.defaults.scanUrl ?? 'No scan URL is configured for this profile.'}</p>
+          <div className="map-node-card">
+            <div className="text-sm font-semibold text-[var(--text-strong)]">Scan URL</div>
+            <p className="mt-3 break-all text-sm text-[var(--text-muted)]">{props.data.defaults.scanUrl ?? 'No scan endpoint configured.'}</p>
+          </div>
         </Card>
 
         <Card title="SDK Export">
-          <SectionTitle eyebrow="Official SDKs" title="Derived CLI export targets" />
-          <p className="mt-4 text-sm text-[var(--text-muted)]">{props.data.defaults.exportTargets.join(', ')}</p>
+          <div className="activity-grid">
+            {props.data.defaults.exportTargets.map(target => (
+              <div className="map-node-card" key={target}>
+                <div className="text-sm font-semibold text-[var(--text-strong)]">{target}</div>
+                <p className="mt-3 text-sm text-[var(--text-muted)]">Available as a read-only export target for this profile.</p>
+              </div>
+            ))}
+          </div>
         </Card>
       </div>
 
-      <Card title="CLI-only Support Actions">
-        <EmptyState
-          body="Diagnostics bundles, discovery fetches, and SDK config exports stay CLI-only in this hardened UI. Use the command companion rail to jump from the visualization into the exact command."
-          title="Explicit Handoff"
-        />
+      <Card title="Current Signals">
+        {props.findings.length > 0 ? (
+          <div className="space-y-3">
+            {props.findings.map(finding => (
+              <div className="map-node-card" key={finding.id}>
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <div className="text-sm font-semibold text-[var(--text-strong)]">{finding.title}</div>
+                    <div className="mt-1 text-xs uppercase tracking-[0.16em] text-[var(--text-soft)]">{finding.source}</div>
+                  </div>
+                  <TonePill tone={finding.tone}>{finding.tone}</TonePill>
+                </div>
+                <p className="mt-3 text-sm text-[var(--text-muted)]">{finding.detail}</p>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <EmptyState body="No current map findings need support follow-up." title="No active signals" />
+        )}
       </Card>
     </div>
   )
 }
 
-function CommandRail(props: {
-  activeProfile?: UiProfileSummary
-  profilesData?: ReturnType<typeof fetchProfiles> extends Promise<infer T> ? T : never
-  runtimeData?: UiRuntimeData
-  supportData?: UiSupportData
-  view: View
+function MapCanvas(props: {
+  data: UiMapData
+  onSelectNode: (nodeId: string) => void
+  overlays: UiMapOverlay[]
+  selectedNodeId?: string
 }) {
-  const commands = buildSuggestedCommands(props)
-
-  if (!props.activeProfile) {
-    return (
-      <EmptyState
-        body="Select a profile to see the exact CLI commands that correspond to the current view."
-        title="No Profile Selected"
-      />
-    )
+  switch (props.data.mode) {
+    case 'canton-multi':
+      return (
+        <TopologyCanvas
+          data={props.data}
+          onSelectNode={props.onSelectNode}
+          overlays={props.overlays}
+          selectedNodeId={props.selectedNodeId}
+        />
+      )
+    case 'sandbox':
+      return (
+        <SandboxCanvas
+          data={props.data}
+          onSelectNode={props.onSelectNode}
+          overlays={props.overlays}
+          selectedNodeId={props.selectedNodeId}
+        />
+      )
+    case 'splice-localnet':
+    case 'remote':
+      return (
+        <ServiceCanvas
+          data={props.data}
+          onSelectNode={props.onSelectNode}
+          overlays={props.overlays}
+          selectedNodeId={props.selectedNodeId}
+        />
+      )
   }
+}
+
+function SandboxCanvas(props: {
+  data: UiMapData
+  onSelectNode: (nodeId: string) => void
+  overlays: UiMapOverlay[]
+  selectedNodeId?: string
+}) {
+  const environmentNodes = props.data.nodes.filter(node => node.groupId === 'environment')
+  const ledgerNode = props.data.nodes.find(node => node.id === 'ledger')
 
   return (
-    <div className="space-y-4">
-      <EmptyState
-        body="The UI stays read-only. Use these commands for explicit auth, import, LocalNet, diagnostics, and export operations outside the browser."
-        title="CLI-only Execution"
-      />
-      {commands.map(command => (
-        <div className="ui-card-soft rounded-3xl p-4" key={`${command.command}-${command.description}`}>
-          <div className="flex items-center justify-between gap-3">
-            <div className="text-sm font-semibold">{command.description}</div>
-            <TonePill tone={command.tone}>{command.tone}</TonePill>
+    <div className="canvas-layout canvas-layout-sandbox">
+      <div className="canvas-column">
+        {environmentNodes.map(node => (
+          <MapNodeCard
+            key={node.id}
+            node={node}
+            onSelectNode={props.onSelectNode}
+            overlays={props.overlays}
+            selected={node.id === props.selectedNodeId}
+          />
+        ))}
+      </div>
+      {ledgerNode ? (
+        <div className="canvas-focus">
+          <div className="edge-pair">
+            <span>profile</span>
+            <span>auth</span>
+            <span>ledger</span>
           </div>
-          <pre className="mt-4 overflow-x-auto rounded-2xl border border-white/10 bg-black/20 p-4 text-xs leading-6 text-[var(--signal)]">
-            {command.command}
-          </pre>
+          <MapNodeCard
+            node={ledgerNode}
+            onSelectNode={props.onSelectNode}
+            overlays={props.overlays}
+            selected={ledgerNode.id === props.selectedNodeId}
+          />
         </div>
-      ))}
+      ) : null}
     </div>
   )
 }
 
-function CheckCard(props: {children: ReactNode; onRerun: () => void; title: string; tone: UiTone}) {
+function TopologyCanvas(props: {
+  data: UiMapData
+  onSelectNode: (nodeId: string) => void
+  overlays: UiMapOverlay[]
+  selectedNodeId?: string
+}) {
+  const environmentNodes = props.data.nodes.filter(node => node.groupId === 'environment')
+  const synchronizer = props.data.nodes.find(node => node.id === 'synchronizer')
+  const participants = props.data.nodes.filter(node => node.kind === 'participant')
+
   return (
-    <Card title={props.title} tone={props.tone}>
-      <SectionTitle
-        action={(
-          <button className="rounded-2xl border border-white/10 bg-white/5 px-3 py-2 text-sm font-semibold" onClick={props.onRerun} type="button">
-            Rerun
-          </button>
-        )}
-        title={props.title}
-      />
-      <div className="mt-5">{props.children}</div>
+    <div className="canvas-layout canvas-layout-topology">
+      <div className="canvas-column">
+        {environmentNodes.map(node => (
+          <MapNodeCard
+            key={node.id}
+            node={node}
+            onSelectNode={props.onSelectNode}
+            overlays={props.overlays}
+            selected={node.id === props.selectedNodeId}
+          />
+        ))}
+      </div>
+
+      <div className="canvas-focus">
+        {synchronizer ? (
+          <div className="sync-stack">
+            <MapNodeCard
+              node={synchronizer}
+              onSelectNode={props.onSelectNode}
+              overlays={props.overlays}
+              selected={synchronizer.id === props.selectedNodeId}
+            />
+            <div className="connector-row">
+              {participants.map(participant => (
+                <span className="connector-pill" key={participant.id}>sync</span>
+              ))}
+            </div>
+          </div>
+        ) : null}
+        <div className="participant-grid">
+          {participants.map(node => (
+            <MapNodeCard
+              key={node.id}
+              node={node}
+              onSelectNode={props.onSelectNode}
+              overlays={props.overlays}
+              selected={node.id === props.selectedNodeId}
+            />
+          ))}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function ServiceCanvas(props: {
+  data: UiMapData
+  onSelectNode: (nodeId: string) => void
+  overlays: UiMapOverlay[]
+  selectedNodeId?: string
+}) {
+  const environmentNodes = props.data.nodes.filter(node => node.groupId === 'environment')
+  const workspaceNodes = props.data.nodes.filter(node => node.kind === 'workspace')
+  const serviceNodes = props.data.nodes
+    .filter(node => node.kind === 'service' || node.kind === 'auth')
+    .sort((left, right) => rankServiceNode(left.id) - rankServiceNode(right.id))
+
+  return (
+    <div className="canvas-layout canvas-layout-services">
+      <div className="canvas-column">
+        {environmentNodes.map(node => (
+          <MapNodeCard
+            key={node.id}
+            node={node}
+            onSelectNode={props.onSelectNode}
+            overlays={props.overlays}
+            selected={node.id === props.selectedNodeId}
+          />
+        ))}
+        {workspaceNodes.map(node => (
+          <MapNodeCard
+            key={node.id}
+            node={node}
+            onSelectNode={props.onSelectNode}
+            overlays={props.overlays}
+            selected={node.id === props.selectedNodeId}
+          />
+        ))}
+      </div>
+
+      <div className="canvas-focus">
+        <div className="service-grid">
+          {serviceNodes.map(node => (
+            <MapNodeCard
+              key={node.id}
+              node={node}
+              onSelectNode={props.onSelectNode}
+              overlays={props.overlays}
+              selected={node.id === props.selectedNodeId}
+            />
+          ))}
+        </div>
+        <div className="edge-belt">
+          {props.data.edges.map(edge => (
+            <div className="edge-pill" key={`${edge.from}-${edge.to}-${edge.label ?? ''}`}>
+              <span>{toNodeLabel(edge.from)}</span>
+              <span>{edge.label ?? 'links to'}</span>
+              <span>{toNodeLabel(edge.to)}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function MapNodeCard(props: {
+  node: UiMapNode
+  onSelectNode: (nodeId: string) => void
+  overlays: UiMapOverlay[]
+  selected: boolean
+}) {
+  const showAuth = props.overlays.includes('auth') && props.node.kind === 'auth'
+  const showChecks = props.overlays.includes('checks') && (props.node.findingIds?.length ?? 0) > 0
+  const showParties = props.overlays.includes('parties') && (props.node.parties?.length ?? 0) > 0
+  const showPorts = props.overlays.includes('ports') && props.node.ports && Object.keys(props.node.ports).length > 0
+
+  return (
+    <button
+      className="map-node-card"
+      data-selected={props.selected}
+      onClick={() => props.onSelectNode(props.node.id)}
+      type="button"
+    >
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <div className="text-xs font-semibold uppercase tracking-[0.18em] text-[var(--text-soft)]">{props.node.kind}</div>
+          <div className="mt-2 text-lg font-semibold text-[var(--text-strong)]">{props.node.label}</div>
+        </div>
+        <TonePill tone={props.node.tone}>{props.node.status}</TonePill>
+      </div>
+
+      {props.node.detail ? <p className="mt-4 text-sm leading-6 text-[var(--text-muted)]">{props.node.detail}</p> : null}
+
+      {props.node.badges?.length ? (
+        <div className="mt-4 flex flex-wrap gap-2">
+          {props.node.badges.map(badge => (
+            <span className="badge-chip" key={badge}>{badge}</span>
+          ))}
+        </div>
+      ) : null}
+
+      {showChecks ? <p className="mt-4 text-xs uppercase tracking-[0.18em] text-[var(--warn)]">{props.node.findingIds?.length} mapped findings</p> : null}
+      {showAuth ? <p className="mt-4 text-xs uppercase tracking-[0.18em] text-[var(--info)]">Auth surface</p> : null}
+
+      {showParties ? (
+        <div className="mt-4 flex flex-wrap gap-2">
+          {props.node.parties?.map(party => (
+            <span className="party-chip" key={party}>{party}</span>
+          ))}
+        </div>
+      ) : null}
+
+      {showPorts ? (
+        <div className="mt-4 grid gap-2 text-xs text-[var(--signal)]">
+          {Object.entries(props.node.ports ?? {}).map(([key, value]) => (
+            <div className="flex items-center justify-between gap-4" key={key}>
+              <span className="uppercase tracking-[0.16em] text-[var(--text-soft)]">{key}</span>
+              <span>{value}</span>
+            </div>
+          ))}
+        </div>
+      ) : null}
+    </button>
+  )
+}
+
+function NodeInspector(props: {
+  findings: UiMapFinding[]
+  node?: UiMapNode
+  onFocusFinding: (finding: UiMapFinding) => void
+}) {
+  const [tab, setTab] = useState<InspectorTab>('overview')
+
+  if (!props.node) {
+    return (
+      <Card title="Inspector">
+        <EmptyState body="Select a node on the map to inspect its posture, endpoints, and linked findings." title="No node selected" />
+      </Card>
+    )
+  }
+
+  const tabs: InspectorTab[] = ['overview', 'endpoints', 'checks', 'raw']
+
+  return (
+    <Card title="Inspector">
+      <div className="space-y-5">
+        <div>
+          <p className="control-kicker">{props.node.kind}</p>
+          <h3 className="mt-2 text-2xl font-semibold text-[var(--text-strong)]">{props.node.label}</h3>
+          <p className="mt-3 text-sm leading-6 text-[var(--text-muted)]">{props.node.detail ?? 'No additional detail.'}</p>
+        </div>
+
+        <div className="tab-strip">
+          {tabs.map(item => (
+            <button
+              className="overlay-chip"
+              data-active={item === tab}
+              key={item}
+              onClick={() => setTab(item)}
+              type="button"
+            >
+              {item}
+            </button>
+          ))}
+        </div>
+
+        {tab === 'overview' ? (
+          <div className="space-y-3">
+            <div className="map-node-card">
+              <div className="flex items-center justify-between gap-3">
+                <div className="text-sm font-semibold text-[var(--text-strong)]">Status</div>
+                <TonePill tone={props.node.tone}>{props.node.status}</TonePill>
+              </div>
+            </div>
+            {props.node.badges?.length ? (
+              <div className="map-node-card">
+                <div className="text-sm font-semibold text-[var(--text-strong)]">Badges</div>
+                <div className="mt-3 flex flex-wrap gap-2">
+                  {props.node.badges.map(badge => <span className="badge-chip" key={badge}>{badge}</span>)}
+                </div>
+              </div>
+            ) : null}
+            {props.node.parties?.length ? (
+              <div className="map-node-card">
+                <div className="text-sm font-semibold text-[var(--text-strong)]">Parties</div>
+                <div className="mt-3 flex flex-wrap gap-2">
+                  {props.node.parties.map(party => <span className="party-chip" key={party}>{party}</span>)}
+                </div>
+              </div>
+            ) : null}
+          </div>
+        ) : null}
+
+        {tab === 'endpoints' ? (
+          <div className="space-y-3">
+            {props.node.url ? (
+              <div className="map-node-card">
+                <div className="text-sm font-semibold text-[var(--text-strong)]">Endpoint</div>
+                <p className="mt-3 break-all text-sm text-[var(--signal)]">{props.node.url}</p>
+              </div>
+            ) : null}
+            {props.node.ports && Object.keys(props.node.ports).length > 0 ? (
+              <div className="map-node-card">
+                <div className="text-sm font-semibold text-[var(--text-strong)]">Ports</div>
+                <div className="mt-3 grid gap-2 text-sm text-[var(--text-muted)]">
+                  {Object.entries(props.node.ports).map(([key, value]) => (
+                    <div className="flex items-center justify-between gap-3" key={key}>
+                      <span className="uppercase tracking-[0.16em] text-[var(--text-soft)]">{key}</span>
+                      <span>{value}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ) : (
+              <EmptyState body="This node does not expose a URL or port table." title="No endpoints" />
+            )}
+          </div>
+        ) : null}
+
+        {tab === 'checks' ? (
+          <div className="space-y-3">
+            {props.findings.length > 0 ? (
+              props.findings.map(finding => (
+                <button className="activity-card" key={finding.id} onClick={() => props.onFocusFinding(finding)} type="button">
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="text-sm font-semibold text-[var(--text-strong)]">{finding.title}</div>
+                    <TonePill tone={finding.tone}>{finding.tone}</TonePill>
+                  </div>
+                  <p className="mt-3 text-sm text-[var(--text-muted)]">{finding.detail}</p>
+                </button>
+              ))
+            ) : (
+              <EmptyState body="No findings are currently mapped onto this node." title="No findings" />
+            )}
+          </div>
+        ) : null}
+
+        {tab === 'raw' ? <JsonPanel value={props.node} /> : null}
+      </div>
     </Card>
   )
 }
 
-function Metric(props: {label: string; tone?: UiTone; value: number | string}) {
+function ChecksBucket(props: {
+  findings: UiMapFinding[]
+  onFocusFinding: (finding: UiMapFinding) => void
+  title: string
+  tone: UiTone
+}) {
   return (
-    <div className="ui-card-soft rounded-2xl p-4">
-      <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[var(--text-soft)]">{props.label}</p>
-      <div className="mt-4 flex items-end justify-between gap-3">
-        <div className="text-2xl font-semibold">{props.value}</div>
-        {props.tone ? <TonePill tone={props.tone}>{props.tone}</TonePill> : null}
+    <Card title={props.title} tone={props.tone}>
+      {props.findings.length > 0 ? (
+        <div className="space-y-3">
+          {props.findings.map(finding => (
+            <button className="activity-card" key={finding.id} onClick={() => props.onFocusFinding(finding)} type="button">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <div className="text-sm font-semibold text-[var(--text-strong)]">{finding.title}</div>
+                  <div className="mt-1 text-xs uppercase tracking-[0.16em] text-[var(--text-soft)]">{finding.source}</div>
+                </div>
+                <TonePill tone={finding.tone}>{finding.tone}</TonePill>
+              </div>
+              <p className="mt-3 text-sm leading-6 text-[var(--text-muted)]">{finding.detail}</p>
+              <p className="mt-3 text-xs text-[var(--signal)]">Locate on map: {finding.nodeIds.map(toNodeLabel).join(' • ')}</p>
+            </button>
+          ))}
+        </div>
+      ) : (
+        <EmptyState body={`No ${props.title.toLowerCase()} findings are currently recorded.`} title={`No ${props.title.toLowerCase()}`} />
+      )}
+    </Card>
+  )
+}
+
+function Metric(props: {label: string; tone?: UiTone; value: number}) {
+  return (
+    <div className="metric-card">
+      <div className="text-xs uppercase tracking-[0.16em] text-[var(--text-soft)]">{props.label}</div>
+      <div className={`mt-3 text-3xl font-semibold ${props.tone ? toneTextClass(props.tone) : 'text-[var(--text-strong)]'}`}>
+        {props.value}
       </div>
     </div>
   )
@@ -856,228 +1095,135 @@ function Metric(props: {label: string; tone?: UiTone; value: number | string}) {
 
 function SkeletonPanels() {
   return (
-    <div className="grid gap-4 md:grid-cols-2">
-      {Array.from({length: 4}, (_, index) => (
-        <div className="ui-card h-52 animate-pulse" key={index} />
+    <div className="grid gap-5 xl:grid-cols-2">
+      {[0, 1, 2, 3].map(index => (
+        <div className="ui-card h-48 animate-pulse" key={index} />
       ))}
     </div>
   )
 }
 
-function buildSuggestedCommands(props: {
-  activeProfile?: UiProfileSummary
-  profilesData?: ReturnType<typeof fetchProfiles> extends Promise<infer T> ? T : never
-  runtimeData?: UiRuntimeData
-  supportData?: UiSupportData
-  view: View
-}): SuggestedCommand[] {
-  const profile = props.activeProfile
-  if (!profile) return []
+function collectPassedChecks(data: UiChecksData): Array<{detail: string; source: string; title: string}> {
+  const passed: Array<{detail: string; source: string; title: string}> = []
 
-  switch (props.view) {
-    case 'overview':
-      return [
-        {
-          command: `cantonctl readiness --profile ${profile.name}`,
-          description: 'Run the composed readiness gate',
-          tone: 'pass',
-        },
-        {
-          command: `cantonctl status --profile ${profile.name} --json`,
-          description: 'Inspect resolved service posture',
-          tone: 'info',
-        },
-        {
-          command: 'cantonctl doctor --json',
-          description: 'Check machine-local prerequisites',
-          tone: 'warn',
-        },
-        ...(profile.services.includes('scan')
-          ? [{
-            command: `cantonctl canary stable-public --profile ${profile.name} --json`,
-            description: 'Exercise stable/public remote checks',
-            tone: 'info' as const,
-          }]
-          : []),
-      ]
+  for (const check of data.compatibility.checks) {
+    if (check.status === 'pass') {
+      passed.push({detail: check.detail, source: 'compatibility', title: check.name})
+    }
+  }
 
-    case 'profiles': {
-      const commands: SuggestedCommand[] = [
-        {
-          command: `cantonctl profiles show ${profile.name} --json`,
-          description: 'Inspect the resolved profile definition',
-          tone: 'info',
-        },
-        {
-          command: 'cantonctl profiles validate --json',
-          description: 'Validate the canonical project config',
-          tone: 'pass',
-        },
-      ]
+  for (const check of data.preflight.checks) {
+    if (check.status === 'pass') {
+      passed.push({detail: check.detail, source: 'preflight', title: check.name})
+    }
+  }
 
-      const detail = props.profilesData?.selected
-      if (detail?.imports.localnet?.workspace) {
-        commands.push({
-          command: `cantonctl profiles import-localnet --workspace ${detail.imports.localnet.workspace} --write`,
-          description: 'Refresh the imported LocalNet profile from its workspace',
-          tone: 'warn',
-        })
-      }
+  for (const check of data.canary.checks) {
+    if (check.status === 'pass') {
+      passed.push({detail: check.detail, source: 'canary', title: check.suite})
+    }
+  }
 
-      if (detail?.imports.scan?.url && (detail.kind === 'remote-sv-network' || detail.kind === 'remote-validator')) {
-        commands.push({
-          command: `cantonctl profiles import-scan --scan-url ${detail.imports.scan.url} --kind ${detail.kind} --write`,
-          description: 'Refresh the remote profile from scan discovery',
-          tone: 'warn',
-        })
-      }
+  return passed
+}
 
-      if (!profile.auth.authenticated && profile.kind === 'remote-validator') {
-        commands.push({
-          command: `cantonctl auth login ${profile.networkName}`,
-          description: 'Resolve credentials for the selected remote profile',
-          tone: 'fail',
-        })
-      }
+function buildProfileDiffPreview(selected: Record<string, unknown>, comparison: Record<string, unknown>): string[] {
+  return collectJsonDiff(selected, comparison).slice(0, 8)
+}
 
-      return commands
+function collectJsonDiff(
+  selected: Record<string, unknown>,
+  comparison: Record<string, unknown>,
+  prefix = '',
+): string[] {
+  const keys = new Set([...Object.keys(selected), ...Object.keys(comparison)])
+  const lines: string[] = []
+
+  for (const key of [...keys].sort()) {
+    const path = prefix ? `${prefix}.${key}` : key
+    const left = selected[key]
+    const right = comparison[key]
+
+    if (JSON.stringify(left) === JSON.stringify(right)) continue
+
+    if (left && right && typeof left === 'object' && typeof right === 'object' && !Array.isArray(left) && !Array.isArray(right)) {
+      lines.push(...collectJsonDiff(left as Record<string, unknown>, right as Record<string, unknown>, path))
+      continue
     }
 
-    case 'runtime':
-      if (props.runtimeData?.mode === 'canton-multi') {
-        return [
-          {
-            command: `cantonctl topology show --profile ${profile.name} --json`,
-            description: 'Inspect the local multi-participant topology',
-            tone: 'pass',
-          },
-          {
-            command: `cantonctl topology export --profile ${profile.name}`,
-            description: 'Export the topology manifest for tooling or review',
-            tone: 'info',
-          },
-        ]
-      }
-
-      if (props.runtimeData?.mode === 'splice-localnet') {
-        const workspace = props.runtimeData.summary?.workspace ?? '<workspace>'
-        return [
-          {
-            command: `cantonctl localnet status --workspace ${workspace} --json`,
-            description: 'Inspect the upstream LocalNet workspace status',
-            tone: 'pass',
-          },
-          {
-            command: `cantonctl localnet up --workspace ${workspace}`,
-            description: 'Start the LocalNet workspace outside the browser',
-            tone: 'warn',
-          },
-          {
-            command: `cantonctl localnet down --workspace ${workspace}`,
-            description: 'Stop the LocalNet workspace outside the browser',
-            tone: 'warn',
-          },
-        ]
-      }
-
-      return [
-        {
-          command: `cantonctl status --profile ${profile.name} --json`,
-          description: 'Refresh runtime state for the selected profile',
-          tone: 'info',
-        },
-      ]
-
-    case 'checks':
-      return [
-        {
-          command: `cantonctl readiness --profile ${profile.name} --json`,
-          description: 'Run the full readiness report',
-          tone: 'pass',
-        },
-        {
-          command: `cantonctl preflight --profile ${profile.name} --json`,
-          description: 'Inspect preflight checks directly',
-          tone: 'warn',
-        },
-        {
-          command: `cantonctl compat check --profile ${profile.name} --json`,
-          description: 'Inspect compatibility details directly',
-          tone: 'info',
-        },
-        {
-          command: 'cantonctl doctor --json',
-          description: 'Re-run machine-local diagnostics',
-          tone: 'warn',
-        },
-      ]
-
-    case 'support':
-      return [
-        {
-          command: `cantonctl diagnostics bundle --profile ${profile.name} --output ${props.supportData?.defaults.diagnosticsOutputDir ?? '.cantonctl/diagnostics'}`,
-          description: 'Write a diagnostics bundle from the CLI',
-          tone: 'warn',
-        },
-        ...(props.supportData?.defaults.scanUrl
-          ? [{
-            command: `cantonctl discover network --scan-url ${props.supportData.defaults.scanUrl} --json`,
-            description: 'Fetch stable/public discovery metadata',
-            tone: 'info' as const,
-          }]
-          : []),
-        {
-          command: `cantonctl export sdk-config --profile ${profile.name} --target dapp-sdk --format json`,
-          description: 'Render derived SDK config from the CLI',
-          tone: 'pass',
-        },
-      ]
+    lines.push(`${path}: ${formatJsonLeaf(left)} vs ${formatJsonLeaf(right)}`)
   }
+
+  return lines
 }
 
-function refreshEverything(
-  queryClient: ReturnType<typeof useQueryClient>,
-  activeProfile: string | undefined,
-  setView: (view: View) => void,
-  nextView?: View,
-) {
-  if (nextView) setView(nextView)
-  void Promise.all([
-    queryClient.invalidateQueries({queryKey: ['ui', 'session']}),
-    activeProfile ? queryClient.invalidateQueries({queryKey: ['ui', 'overview', activeProfile]}) : Promise.resolve(),
-    activeProfile ? queryClient.invalidateQueries({queryKey: ['ui', 'profiles', activeProfile]}) : Promise.resolve(),
-    activeProfile ? queryClient.invalidateQueries({queryKey: ['ui', 'runtime', activeProfile]}) : Promise.resolve(),
-    activeProfile ? queryClient.invalidateQueries({queryKey: ['ui', 'checks', activeProfile]}) : Promise.resolve(),
-    activeProfile ? queryClient.invalidateQueries({queryKey: ['ui', 'support', activeProfile]}) : Promise.resolve(),
-  ])
+function defaultNodeSelection(data: UiMapData): string {
+  return data.nodes.find(node => node.kind === 'participant')?.id
+    ?? data.nodes.find(node => node.id === 'validator')?.id
+    ?? data.nodes.find(node => node.id === 'ledger')?.id
+    ?? data.nodes[0]?.id
+    ?? 'profile'
 }
 
-function toTone(status: string): UiTone {
-  switch (status) {
-    case 'healthy':
-    case 'pass':
-      return 'pass'
-    case 'auth-required':
-    case 'warn':
-      return 'warn'
-    case 'fail':
-    case 'unreachable':
-      return 'fail'
-    case 'skip':
-    case 'not-exposed':
-      return 'skip'
-    default:
-      return 'info'
-  }
+function formatJsonLeaf(value: unknown): string {
+  if (value === undefined) return 'unset'
+  if (typeof value === 'string') return value
+  return JSON.stringify(value)
+}
+
+function getComparisonProfileName(profiles: UiProfileSummary[], selectedProfile?: string): string | undefined {
+  if (!selectedProfile) return undefined
+
+  const index = profiles.findIndex(profile => profile.name === selectedProfile)
+  if (index === -1) return undefined
+
+  return profiles[index - 1]?.name ?? profiles[index + 1]?.name
 }
 
 function formatRelativeTime(timestamp: number): string {
-  const diffMs = Date.now() - timestamp
-  const diffSeconds = Math.max(0, Math.round(diffMs / 1000))
-  if (diffSeconds < 5) return 'just now'
-  if (diffSeconds < 60) return `${diffSeconds}s ago`
-  const diffMinutes = Math.round(diffSeconds / 60)
-  if (diffMinutes < 60) return `${diffMinutes}m ago`
-  const diffHours = Math.round(diffMinutes / 60)
-  return `${diffHours}h ago`
+  const seconds = Math.max(0, Math.round((Date.now() - timestamp) / 1000))
+  if (seconds < 5) return 'just now'
+  if (seconds < 60) return `${seconds}s ago`
+
+  const minutes = Math.floor(seconds / 60)
+  if (minutes < 60) return `${minutes}m ago`
+
+  const hours = Math.floor(minutes / 60)
+  if (hours < 24) return `${hours}h ago`
+
+  return `${Math.floor(hours / 24)}d ago`
+}
+
+function mapSummaryTone(summary: UiMapData['summary']): UiTone {
+  if (summary.readiness.failed > 0) return 'fail'
+  if (summary.readiness.warned > 0) return 'warn'
+  return 'pass'
+}
+
+function rankServiceNode(nodeId: string): number {
+  const index = SERVICE_NODE_ORDER.indexOf(nodeId)
+  return index === -1 ? SERVICE_NODE_ORDER.length + nodeId.length : index
+}
+
+function toNodeLabel(nodeId: string): string {
+  if (nodeId.startsWith('participant:')) {
+    return nodeId.replace('participant:', '')
+  }
+  if (nodeId === 'tokenStandard') return 'token standard'
+  return nodeId
+}
+
+function toneTextClass(tone: UiTone): string {
+  switch (tone) {
+    case 'fail':
+      return 'text-[var(--fail)]'
+    case 'warn':
+      return 'text-[var(--warn)]'
+    case 'skip':
+      return 'text-[var(--skip)]'
+    case 'info':
+      return 'text-[var(--info)]'
+    case 'pass':
+      return 'text-[var(--pass)]'
+  }
 }

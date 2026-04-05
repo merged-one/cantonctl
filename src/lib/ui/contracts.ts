@@ -19,6 +19,10 @@ export interface UiBootstrapData {
   sessionToken: string
 }
 
+export type UiMapMode = 'canton-multi' | 'remote' | 'sandbox' | 'splice-localnet'
+export type UiMapOverlay = 'auth' | 'checks' | 'health' | 'parties' | 'ports'
+export type UiMapNodeKind = 'auth' | 'participant' | 'profile' | 'service' | 'synchronizer' | 'workspace'
+
 export interface UiAuthState {
   authenticated: boolean
   mode: string
@@ -122,6 +126,70 @@ export interface UiProfilesData {
   }
 }
 
+export interface UiMapGroup {
+  description?: string
+  id: string
+  label: string
+  tone?: UiTone
+}
+
+export interface UiMapNode {
+  badges?: string[]
+  detail?: string
+  findingIds?: string[]
+  groupId: string
+  id: string
+  kind: UiMapNodeKind
+  label: string
+  parties?: string[]
+  ports?: Record<string, number>
+  status: string
+  tone: UiTone
+  url?: string
+}
+
+export interface UiMapEdge {
+  from: string
+  label?: string
+  style?: 'dashed' | 'solid'
+  to: string
+  tone?: UiTone
+}
+
+export interface UiMapFinding {
+  detail: string
+  id: string
+  nodeIds: string[]
+  source: string
+  title: string
+  tone: UiTone
+}
+
+export interface UiMapData {
+  autoPoll: boolean
+  edges: UiMapEdge[]
+  findings: UiMapFinding[]
+  groups: UiMapGroup[]
+  mode: UiMapMode
+  nodes: UiMapNode[]
+  overlays: UiMapOverlay[]
+  profile: {
+    kind: ProfileKind
+    name: string
+  }
+  summary: {
+    detail: string
+    headline: string
+    readiness: {
+      failed: number
+      passed: number
+      skipped: number
+      success: boolean
+      warned: number
+    }
+  }
+}
+
 export interface UiRuntimeNode {
   detail?: string
   id: string
@@ -140,7 +208,7 @@ export interface UiRuntimeEdge {
 
 export interface UiRuntimeData {
   autoPoll: boolean
-  mode: 'canton-multi' | 'remote' | 'sandbox' | 'splice-localnet'
+  mode: UiMapMode
   profile: {
     kind: ProfileKind
     name: string
