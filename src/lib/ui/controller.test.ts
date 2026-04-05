@@ -623,6 +623,19 @@ function createFixture(options: {
 }
 
 describe('ui controller helpers', () => {
+  it('covers controller construction defaults without injecting cwd, env, or fetch', () => {
+    const controller = createUiController()
+
+    expect(controller).toEqual(expect.objectContaining({
+      getChecks: expect.any(Function),
+      getOverview: expect.any(Function),
+      getProfiles: expect.any(Function),
+      getRuntime: expect.any(Function),
+      getSession: expect.any(Function),
+      getSupport: expect.any(Function),
+    }))
+  })
+
   it('covers exported helper behavior for profile selection, rendering, and service maps', () => {
     const config = createConfig()
     const remoteProfile = config.profiles?.['splice-devnet'] as NormalizedProfile
@@ -637,6 +650,11 @@ describe('ui controller helpers', () => {
         beta: config.profiles?.sandbox as NormalizedProfile,
       },
     })).toBe('alpha')
+    expect(resolveRequestedProfileName({
+      ...config,
+      'default-profile': undefined,
+      profiles: undefined,
+    })).toBeUndefined()
 
     expect(buildStorageKey('/repo/cantonctl.yaml')).toBe('cantonctl-ui:/repo/cantonctl.yaml')
     expect(deriveReadinessBadge({
@@ -674,6 +692,13 @@ describe('ui controller helpers', () => {
       experimental: false,
       local: true,
     })).toEqual({detail: 'Local runtime', tone: 'info'})
+    expect(deriveReadinessBadge({
+      authenticated: true,
+      compatibilityFailed: 0,
+      compatibilityWarned: 0,
+      experimental: false,
+      local: false,
+    })).toEqual({detail: 'Ready', tone: 'pass'})
 
     expect(buildEnvironmentPath(config, 'splice-localnet')).toEqual([
       {active: false, label: 'Sandbox', profiles: ['sandbox'], stage: 'sandbox'},
@@ -686,6 +711,10 @@ describe('ui controller helpers', () => {
     }, 'sandbox')).toEqual([
       {active: true, label: 'Sandbox', profiles: ['sandbox'], stage: 'sandbox'},
     ])
+    expect(buildEnvironmentPath({
+      ...config,
+      profiles: undefined,
+    }, 'sandbox')).toEqual([])
     expect(isLocalProfile('sandbox')).toBe(true)
     expect(isLocalProfile('remote-validator')).toBe(false)
     expect(shouldCheckLocalEndpoint('http://scan.localhost:4000/api/scan')).toBe(true)
@@ -988,6 +1017,528 @@ describe('ui controller', () => {
         topologyName: 'unavailable',
       },
     })
+  })
+
+  it('normalizes non-Error LocalNet failures in the profile status snapshot', async () => {
+    const config = createConfig()
+    config['default-profile'] = 'broken-localnet'
+    config.profiles = {
+      'broken-localnet': config.profiles?.['broken-localnet'] as NormalizedProfile,
+    }
+
+    const controller = createUiController({
+      createLedgerClient: vi.fn(() => ({
+        getParties: vi.fn(async () => ({partyDetails: []})),
+        getVersion: vi.fn(async () => ({version: '3.4.11'})),
+      }) as never),
+      createLocalnet: vi.fn(() => ({
+        down: vi.fn(async () => ({target: 'stop', workspace: {root: '/broken-workspace'} as never})),
+        status: vi.fn(async () => {
+          throw 'LocalNet string failure'
+        }),
+        up: vi.fn(async () => ({
+          containers: [],
+          health: {
+            validatorReadyz: {
+              body: 'ok',
+              healthy: true,
+              status: 200,
+              url: 'http://127.0.0.1:4903/api/validator/readyz',
+            },
+          },
+          profiles: {} as never,
+          selectedProfile: 'sv' as never,
+          services: {
+            ledger: {url: 'http://canton.localhost:4100/v2'},
+            validator: {url: 'http://wallet.localhost:4100/api/validator'},
+            wallet: {url: 'http://wallet.localhost:4100'},
+          },
+          workspace: {root: '/broken-workspace'} as never,
+        }) as never),
+      })),
+      createProcessRunner: vi.fn(() => ({} as never)),
+      createProfileRuntimeResolver: vi.fn(() => ({
+        resolve: vi.fn(async () => ({
+          auth: {
+            description: 'LocalNet fallback',
+            envVarName: 'CANTONCTL_JWT_LOCALNET',
+            experimental: false,
+            mode: 'bearer-token',
+            network: 'broken-localnet',
+            profileKind: 'splice-localnet',
+            profileName: 'broken-localnet',
+            requiresExplicitExperimental: false,
+            warnings: [],
+          },
+          compatibility: {
+            checks: [],
+            failed: 0,
+            passed: 1,
+            profile: {experimental: false, kind: 'splice-localnet', name: 'broken-localnet'},
+            services: [],
+            warned: 0,
+          },
+          credential: {mode: 'bearer-token', network: 'broken-localnet', source: 'fallback', token: 'localnet-token'},
+          networkName: 'broken-localnet',
+          profile: config.profiles?.['broken-localnet'],
+          profileContext: {} as never,
+        }) as never),
+      })),
+      cwd: '/repo',
+      findConfigPath: vi.fn(() => '/repo/cantonctl.yaml'),
+      loadConfig: vi.fn(async () => config),
+    })
+
+    const profiles = await controller.getProfiles({profileName: 'broken-localnet'})
+    expect(profiles.selected.services).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        detail: 'LocalNet string failure',
+        name: 'localnet',
+        status: 'unreachable',
+        tone: 'fail',
+      }),
+    ]))
+  })
+
+  it('covers default-argument and fallback branches for sandbox and localnet runtime views', async () => {
+    const config = createConfig()
+    config['default-profile'] = 'sandbox'
+    config.networkProfiles = undefined
+    config.parties = undefined
+    config.profiles = {
+      sandbox: {
+        experimental: false,
+        kind: 'sandbox',
+        name: 'sandbox',
+        services: {
+          auth: {kind: 'shared-secret'},
+          ledger: {},
+        },
+      },
+      'splice-localnet': {
+        experimental: false,
+        kind: 'splice-localnet',
+        name: 'splice-localnet',
+        services: {
+          ledger: {url: 'http://canton.localhost:4000/v2'},
+          localnet: {
+            distribution: 'splice-localnet',
+            workspace: '/workspace-no-source',
+          },
+          validator: {url: 'http://wallet.localhost:4000/api/validator'},
+        },
+      },
+    }
+
+    const createRuntimeResolver = vi.fn(() => ({
+      resolve: vi.fn(async ({config: loadedConfig, profileName}: {config: CantonctlConfig; profileName?: string}) => {
+        const resolvedProfile = loadedConfig.profiles?.[profileName ?? loadedConfig['default-profile'] ?? 'sandbox']
+        if (!resolvedProfile) {
+          throw new Error('Expected profile to exist')
+        }
+
+        const networkName = resolvedProfile.name === 'splice-localnet' ? 'localnet' : 'local'
+
+        return {
+          auth: {
+            description: 'Fallback auth',
+            envVarName: networkName === 'localnet' ? 'CANTONCTL_JWT_LOCALNET' : 'CANTONCTL_JWT_LOCAL',
+            experimental: false,
+            mode: 'bearer-token' as const,
+            network: networkName,
+            profileKind: resolvedProfile.kind,
+            profileName: resolvedProfile.name,
+            requiresExplicitExperimental: false,
+            warnings: [],
+          },
+          compatibility: {checks: [], failed: 0, passed: 1, profile: resolvedProfile, services: [], warned: 0},
+          credential: {mode: 'bearer-token' as const, network: networkName, source: 'fallback', token: `${networkName}-token`},
+          networkName,
+          profile: resolvedProfile,
+          profileContext: {} as never,
+        } as never
+      }),
+    }))
+
+    const createReadinessRunner = vi.fn(() => ({
+      run: vi.fn(async ({config: loadedConfig, profileName}: {config: CantonctlConfig; profileName?: string}) => {
+        const resolvedProfile = loadedConfig.profiles?.[profileName ?? loadedConfig['default-profile'] ?? 'sandbox']
+        if (!resolvedProfile) {
+          throw new Error('Expected readiness profile to exist')
+        }
+
+        return {
+          auth: {
+            credentialSource: 'fallback',
+            envVarName: 'CANTONCTL_JWT_LOCAL',
+            mode: 'bearer-token',
+            warnings: [],
+          },
+          canary: {checks: [], selectedSuites: [], skippedSuites: [], success: true},
+          compatibility: {failed: 0, passed: 1, warned: 0},
+          preflight: {
+            auth: {
+              credentialSource: 'fallback',
+              envVarName: 'CANTONCTL_JWT_LOCAL',
+              mode: 'bearer-token',
+              warnings: [],
+            },
+            checks: [],
+            compatibility: {failed: 0, passed: 1, warned: 0},
+            network: {checklist: [], name: 'local', reminders: [], resetExpectation: 'local-only', tier: 'local'},
+            profile: {
+              experimental: resolvedProfile.experimental,
+              kind: resolvedProfile.kind,
+              name: resolvedProfile.name,
+            },
+            success: true,
+          },
+          profile: {
+            experimental: resolvedProfile.experimental,
+            kind: resolvedProfile.kind,
+            name: resolvedProfile.name,
+          },
+          success: true,
+          summary: {failed: 0, passed: 1, skipped: 0, warned: 0},
+        } as never
+      }),
+    }))
+
+    const controller = createUiController({
+      createDoctor: vi.fn(() => ({
+        check: vi.fn(async () => ({
+          checks: [],
+          failed: 0,
+          passed: 1,
+          warned: 0,
+        }) as never),
+      })),
+      createLedgerClient: vi.fn(({baseUrl}: {baseUrl: string}) => ({
+        getParties: vi.fn(async () => ({partyDetails: []})),
+        getVersion: vi.fn(async () => {
+          if (baseUrl === 'http://localhost:7575') {
+            throw new Error('ledger unreachable')
+          }
+
+          return {version: undefined}
+        }),
+      }) as never),
+      createLocalnet: vi.fn(() => ({
+        down: vi.fn(async () => ({target: 'stop', workspace: {root: '/workspace-no-source'} as never})),
+        status: vi.fn(async () => ({
+          containers: [],
+          health: {
+            validatorReadyz: {
+              body: 'down',
+              healthy: false,
+              status: 0,
+              url: 'http://127.0.0.1:4903/api/validator/readyz',
+            },
+          },
+          profiles: {} as never,
+          selectedProfile: 'sv' as never,
+          services: {
+            ledger: {url: 'http://canton.localhost:4000/v2'},
+            validator: {url: 'http://wallet.localhost:4000/api/validator'},
+            wallet: {url: 'http://wallet.localhost:4000'},
+          },
+          workspace: {root: '/workspace-no-source'} as never,
+        }) as never),
+        up: vi.fn(async () => ({
+          containers: [],
+          health: {
+            validatorReadyz: {
+              body: 'down',
+              healthy: false,
+              status: 0,
+              url: 'http://127.0.0.1:4903/api/validator/readyz',
+            },
+          },
+          profiles: {} as never,
+          selectedProfile: 'sv' as never,
+          services: {
+            ledger: {url: 'http://canton.localhost:4000/v2'},
+            validator: {url: 'http://wallet.localhost:4000/api/validator'},
+            wallet: {url: 'http://wallet.localhost:4000'},
+          },
+          workspace: {root: '/workspace-no-source'} as never,
+        }) as never),
+      })),
+      createProcessRunner: vi.fn(() => ({} as never)),
+      createProfileRuntimeResolver: createRuntimeResolver,
+      createReadinessRunner,
+      cwd: '/repo',
+      findConfigPath: vi.fn(() => '/repo/cantonctl.yaml'),
+      loadConfig: vi.fn(async () => config),
+    })
+
+    const session = await controller.getSession()
+    expect(session.selectedProfile).toBe('sandbox')
+
+    const overview = await controller.getOverview()
+    expect(overview).toEqual(expect.objectContaining({
+      profile: {kind: 'sandbox', name: 'sandbox'},
+      readiness: {failed: 0, passed: 1, skipped: 0, success: true, warned: 0},
+    }))
+
+    const checks = await controller.getChecks()
+    expect(checks.profile).toEqual({kind: 'sandbox', name: 'sandbox'})
+
+    const profiles = await controller.getProfiles()
+    expect(profiles.selected.networkMappings).toEqual([])
+    expect(profiles.selected.imports.localnet).toBeUndefined()
+    expect(profiles.selected.imports.scan).toBeUndefined()
+    expect(profiles.selected.services).toEqual(expect.arrayContaining([
+      expect.objectContaining({name: 'ledger', status: 'unreachable', tone: 'fail'}),
+    ]))
+
+    const support = await controller.getSupport()
+    expect(support).toEqual({
+      defaults: {
+        diagnosticsOutputDir: path.join('/repo', '.cantonctl', 'diagnostics', 'sandbox'),
+        exportTargets: ['dapp-sdk', 'wallet-sdk', 'dapp-api'],
+        scanUrl: undefined,
+      },
+      profile: {kind: 'sandbox', name: 'sandbox'},
+    })
+
+    const sandboxRuntime = await controller.getRuntime()
+    expect(sandboxRuntime).toEqual({
+      autoPoll: true,
+      mode: 'sandbox',
+      profile: {kind: 'sandbox', name: 'sandbox'},
+      summary: {
+        healthDetail: 'Ledger unreachable.',
+        jsonApiPort: undefined,
+        ledgerUrl: 'http://localhost:7575',
+        partyCount: 0,
+        version: undefined,
+      },
+    })
+
+    const localnetRuntime = await controller.getRuntime({profileName: 'splice-localnet'})
+    expect(localnetRuntime).toEqual({
+      autoPoll: true,
+      mode: 'splice-localnet',
+      profile: {kind: 'splice-localnet', name: 'splice-localnet'},
+      serviceMap: {
+        edges: [
+          {from: 'workspace', label: 'sv', to: 'ledger'},
+          {from: 'workspace', label: 'sv', to: 'validator'},
+          {from: 'workspace', label: 'sv', to: 'wallet'},
+        ],
+        nodes: [
+          {
+            detail: '/workspace-no-source',
+            id: 'workspace',
+            kind: 'workspace',
+            label: 'LocalNet Workspace',
+            status: 'configured',
+            tone: 'info',
+            url: '/workspace-no-source',
+          },
+          {
+            id: 'ledger',
+            kind: 'service',
+            label: 'Ledger',
+            status: 'configured',
+            tone: 'info',
+            url: 'http://canton.localhost:4000/v2',
+          },
+          {
+            id: 'validator',
+            kind: 'service',
+            label: 'Validator',
+            status: 'unreachable',
+            tone: 'fail',
+            url: 'http://wallet.localhost:4000/api/validator',
+          },
+          {
+            id: 'wallet',
+            kind: 'service',
+            label: 'Wallet',
+            status: 'configured',
+            tone: 'info',
+            url: 'http://wallet.localhost:4000',
+          },
+        ],
+      },
+      summary: {
+        healthDetail: 'Validator readyz error.',
+        ledgerUrl: 'http://canton.localhost:4000/v2',
+        workspace: '/workspace-no-source',
+      },
+    })
+  })
+
+  it('covers topology fallback rendering for manifest-less graphs and anonymous party labels', async () => {
+    const config = createConfig()
+    config['default-profile'] = 'canton-multi'
+    config.profiles = {
+      'canton-multi': config.profiles?.['canton-multi'] as NormalizedProfile,
+    }
+
+    const topology = generateTopology({
+      cantonImage: 'ghcr.io/example/canton:0.5.3',
+      config,
+      projectName: config.project.name,
+    })
+
+    const controller = createUiController({
+      createLedgerClient: vi.fn(() => ({
+        getParties: vi.fn(async () => ({partyDetails: [{}]})),
+        getVersion: vi.fn(async () => ({version: undefined})),
+      }) as never),
+      cwd: '/repo',
+      detectTopology: vi.fn(async () => ({
+        ...topology,
+        manifest: undefined,
+      })),
+      findConfigPath: vi.fn(() => '/repo/cantonctl.yaml'),
+      loadConfig: vi.fn(async () => config),
+    })
+
+    const runtime = await controller.getRuntime({profileName: 'canton-multi'})
+    expect(runtime.mode).toBe('canton-multi')
+    expect(runtime.topology).toEqual({
+      exportJson: expect.stringContaining('"participants"'),
+      participants: topology.participants.map(participant => ({
+        healthy: true,
+        name: participant.name,
+        parties: ['party'],
+        ports: participant.ports,
+        version: '',
+      })),
+      synchronizer: topology.synchronizer,
+      topologyName: 'default',
+    })
+  })
+
+  it('uses the default config, runtime, readiness, and diagnostics factories against a real project config', async () => {
+    const workspace = await fs.mkdtemp(path.join(os.tmpdir(), 'cantonctl-ui-defaults-'))
+    const originalFetch = globalThis.fetch
+    const fetchMock = vi.fn(async (input: string | URL) => {
+      const url = String(input)
+      if (url === 'https://api.ipify.org?format=json') {
+        return {
+          json: async () => ({ip: '203.0.113.10'}),
+          ok: true,
+          status: 200,
+          text: async () => '{"ip":"203.0.113.10"}',
+        }
+      }
+
+      if (url.startsWith('https://remote-auth.example.com/')) {
+        return {
+          json: async () => ({}),
+          ok: !url.endsWith('/metrics'),
+          status: url.endsWith('/metrics') ? 404 : 200,
+          text: async () => 'ok',
+        }
+      }
+
+      throw new Error(`Unexpected fetch: ${url}`)
+    })
+
+    await fs.writeFile(path.join(workspace, 'cantonctl.yaml'), [
+      'version: 1',
+      'project:',
+      '  name: demo',
+      '  sdk-version: 3.4.11',
+      'default-profile: sandbox',
+      'profiles:',
+      '  sandbox:',
+      '    kind: sandbox',
+      '    ledger: {}',
+      '  remote-none:',
+      '    kind: remote-sv-network',
+      '    auth:',
+      '      kind: none',
+      '      url: https://remote-auth.example.com',
+      '    ledger:',
+      '      url: https://remote-ledger.example.com',
+      '    scan:',
+      '      url: https://remote-scan.example.com',
+    ].join('\n'), 'utf8')
+
+    globalThis.fetch = fetchMock as unknown as typeof globalThis.fetch
+
+    const controller = createUiController({
+      createDoctor: vi.fn(() => ({
+        check: vi.fn(async () => ({
+          checks: [],
+          failed: 0,
+          passed: 1,
+          warned: 0,
+        }) as never),
+      })),
+      createProcessRunner: vi.fn(() => ({} as never)),
+      cwd: workspace,
+    })
+
+    try {
+      const session = await controller.getSession()
+      expect(session.selectedProfile).toBe('sandbox')
+      expect(session.profiles).toEqual(expect.arrayContaining([
+        expect.objectContaining({name: 'sandbox'}),
+        expect.objectContaining({name: 'remote-none'}),
+      ]))
+
+      const checks = await controller.getChecks()
+      expect(checks).toEqual(expect.objectContaining({
+        auth: expect.objectContaining({authenticated: true, source: 'fallback'}),
+        preflight: expect.objectContaining({
+          network: expect.objectContaining({name: 'local', tier: 'local'}),
+          success: true,
+        }),
+        profile: {kind: 'sandbox', name: 'sandbox'},
+      }))
+
+      const remoteRuntime = await controller.getRuntime({profileName: 'remote-none'})
+      expect(remoteRuntime).toEqual({
+        autoPoll: false,
+        mode: 'remote',
+        profile: {kind: 'remote-sv-network', name: 'remote-none'},
+        serviceMap: {
+          edges: [
+            {from: 'auth', label: 'authenticates', to: 'ledger'},
+            {from: 'scan', label: 'indexes', to: 'ledger'},
+          ],
+          nodes: [
+            {
+              detail: 'none',
+              id: 'auth',
+              kind: 'service',
+              label: 'auth',
+              status: 'healthy',
+              tone: 'pass',
+              url: 'https://remote-auth.example.com',
+            },
+            {
+              detail: 'Ledger endpoint',
+              id: 'ledger',
+              kind: 'service',
+              label: 'ledger',
+              status: 'configured',
+              tone: 'info',
+              url: 'https://remote-ledger.example.com',
+            },
+            {
+              detail: 'Scan endpoint',
+              id: 'scan',
+              kind: 'service',
+              label: 'scan',
+              status: 'unreachable',
+              tone: 'fail',
+              url: 'https://remote-scan.example.com',
+            },
+          ],
+        },
+      })
+    } finally {
+      globalThis.fetch = originalFetch
+      await fs.rm(workspace, {force: true, recursive: true})
+    }
   })
 
   it('uses the default localnet detector and client wiring when explicit overrides are absent', async () => {

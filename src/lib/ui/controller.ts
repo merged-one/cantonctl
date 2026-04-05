@@ -84,7 +84,7 @@ export function createUiController(
   const cwd = deps.cwd ?? process.cwd()
   const env = deps.env ?? process.env
   const fetchFn = deps.fetch ?? globalThis.fetch
-  const loadProjectConfig = deps.loadConfig ?? ((options?: {dir?: string}) => loadConfig({dir: options?.dir ?? cwd}))
+  const loadProjectConfig = deps.loadConfig ?? (() => loadConfig({dir: cwd}))
   const resolveConfigPath = deps.findConfigPath ?? ((startDir: string) => findConfigPath(startDir))
   const createRuntimeResolver = deps.createProfileRuntimeResolver ?? (() => createProfileRuntimeResolver({env}))
   const createReadiness = deps.createReadinessRunner ?? (() => createReadinessRunner())
@@ -521,24 +521,19 @@ export function createUiController(
 
     let localnetStatus: LocalnetStatusResult | undefined
     if (context.profile.kind === 'splice-localnet' && context.profile.services.localnet?.workspace) {
+      const localnetService = services.find(service => service.name === 'localnet')!
       try {
         localnetStatus = await createLocalnetClient().status({
           profile: context.profile.services.localnet['source-profile'],
           workspace: context.profile.services.localnet.workspace,
         })
-        const localnetService = services.find(service => service.name === 'localnet')
-        if (localnetService) {
-          localnetService.detail = context.profile.services.localnet.workspace
-          localnetService.status = localnetStatus.health.validatorReadyz.healthy ? 'healthy' : 'unreachable'
-          localnetService.tone = localnetStatus.health.validatorReadyz.healthy ? 'pass' : 'fail'
-        }
+        localnetService.detail = context.profile.services.localnet.workspace
+        localnetService.status = localnetStatus.health.validatorReadyz.healthy ? 'healthy' : 'unreachable'
+        localnetService.tone = localnetStatus.health.validatorReadyz.healthy ? 'pass' : 'fail'
       } catch (error) {
-        const localnetService = services.find(service => service.name === 'localnet')
-        if (localnetService) {
-          localnetService.detail = error instanceof Error ? error.message : String(error)
-          localnetService.status = 'unreachable'
-          localnetService.tone = 'fail'
-        }
+        localnetService.detail = error instanceof Error ? error.message : String(error)
+        localnetService.status = 'unreachable'
+        localnetService.tone = 'fail'
       }
     }
 
