@@ -11,9 +11,13 @@ const fetchMock = vi.fn<typeof fetch>()
 
 beforeEach(() => {
   vi.stubGlobal('fetch', fetchMock)
+  window.__CANTONCTL_UI__ = {sessionToken: 'session-token'}
   window.localStorage.clear()
   fetchMock.mockImplementation(async (input, init) => {
     const url = typeof input === 'string' ? input : input.url
+    expect(init?.headers).toEqual(expect.objectContaining({
+      'X-Cantonctl-Ui-Session': 'session-token',
+    }))
 
     if (url.startsWith('/ui/session')) {
       return jsonResponse({
@@ -71,7 +75,6 @@ beforeEach(() => {
           ],
           profile: {kind: 'sandbox', name: 'sandbox'},
           readiness: {failed: 0, passed: 4, skipped: 1, success: true, warned: 0},
-          recentOutputs: {},
           services: [
             {detail: 'json-api-port 7575', name: 'ledger', stability: 'stable-external', status: 'healthy', tone: 'pass'},
           ],
@@ -151,7 +154,7 @@ beforeEach(() => {
           doctor: {checks: [], failed: 0, passed: 1, warned: 0},
           preflight: {
             checks: [],
-            network: {checklist: [], name: 'local', reminders: [], resetExpectation: 'n/a', tier: 'local'},
+            network: {checklist: [], name: 'local', reminders: [], resetExpectation: 'local-only', tier: 'local'},
             success: true,
           },
           profile: {kind: 'sandbox', name: 'sandbox'},
@@ -164,37 +167,12 @@ beforeEach(() => {
     if (url.startsWith('/ui/support')) {
       return jsonResponse({
         data: {
-          activity: [],
           defaults: {
             diagnosticsOutputDir: '/repo/.cantonctl/diagnostics/splice-devnet',
             exportTargets: ['dapp-sdk', 'wallet-sdk'],
             scanUrl: 'https://scan.example.com',
           },
           profile: {kind: 'remote-validator', name: 'splice-devnet'},
-        },
-        success: true,
-      })
-    }
-
-    if (url.startsWith('/ui/actions/support/export-sdk-config') && init?.method === 'POST') {
-      return jsonResponse({
-        data: {jobId: 'job-1'},
-        success: true,
-      }, 202)
-    }
-
-    if (url.startsWith('/ui/jobs/job-1')) {
-      return jsonResponse({
-        data: {
-          action: 'support/export-sdk-config',
-          createdAt: '2026-04-04T00:00:00.000Z',
-          id: 'job-1',
-          mutating: true,
-          preview: 'cantonctl export sdk-config --profile splice-devnet --target dapp-sdk --format json',
-          result: {format: 'json', rendered: '{"validator":"https://validator.example.com"}', target: 'dapp-sdk'},
-          status: 'success',
-          summary: 'Exported dapp-sdk config as json',
-          updatedAt: '2026-04-04T00:00:00.000Z',
         },
         success: true,
       })
@@ -209,13 +187,13 @@ afterEach(() => {
 })
 
 describe('App', () => {
-  it('renders the profile-centric control center, switches profiles, and runs a drawer action', async () => {
+  it('renders the read-only control center, switches profiles, and shows CLI handoff commands', async () => {
     const user = userEvent.setup()
     renderWithQueryClient(<App />)
 
     expect(await screen.findByText('Project-local control center')).toBeTruthy()
     expect(await screen.findByText('sandbox readiness')).toBeTruthy()
-    expect(screen.getByText('Passed')).toBeTruthy()
+    expect(screen.getByText('Visualization first')).toBeTruthy()
 
     await user.selectOptions(screen.getByLabelText('Selected profile'), 'splice-localnet')
     await user.click(screen.getByText('Runtime').closest('button')!)
@@ -223,21 +201,23 @@ describe('App', () => {
     expect(await screen.findByText('LocalNet Service Map')).toBeTruthy()
     expect(screen.getByText('LocalNet Workspace')).toBeTruthy()
     expect(screen.getByText('Validator readyz healthy.')).toBeTruthy()
+    expect(screen.getByText('Inspect the upstream LocalNet workspace status')).toBeTruthy()
+    expect(screen.getByText(/cantonctl localnet status --workspace \/workspace --json/)).toBeTruthy()
 
     await user.selectOptions(screen.getByLabelText('Selected profile'), 'splice-devnet')
+    await user.click(screen.getAllByText('Profiles')[0].closest('button')!)
+    expect(await screen.findByText('Credential missing')).toBeTruthy()
+    expect(screen.getByText('Resolve credentials for the selected remote profile')).toBeTruthy()
+    expect(screen.getByText(/cantonctl auth login devnet/)).toBeTruthy()
+
     await user.click(screen.getByText('Support').closest('button')!)
-    expect(await screen.findByText('Export')).toBeTruthy()
-
-    await user.click(screen.getByRole('button', {name: 'Export'}))
-    expect(await screen.findByText('Export SDK Config')).toBeTruthy()
-    expect(screen.getByText(/cantonctl export sdk-config --profile splice-devnet/)).toBeTruthy()
-
-    await user.click(screen.getByRole('button', {name: 'Confirm'}))
-    expect(await screen.findByText('Exported dapp-sdk config as json')).toBeTruthy()
+    expect(await screen.findByText('CLI-only Support Actions')).toBeTruthy()
+    expect(screen.getByText('Write a diagnostics bundle from the CLI')).toBeTruthy()
+    expect(screen.getByText(/cantonctl diagnostics bundle --profile splice-devnet/)).toBeTruthy()
 
     await waitFor(() => {
-      expect(fetchMock).toHaveBeenCalledWith('/ui/actions/support/export-sdk-config?profile=splice-devnet', expect.objectContaining({
-        method: 'POST',
+      expect(fetchMock).toHaveBeenCalledWith('/ui/support?profile=splice-devnet', expect.objectContaining({
+        headers: expect.objectContaining({'X-Cantonctl-Ui-Session': 'session-token'}),
       }))
     })
   })

@@ -3,35 +3,23 @@ import * as path from 'node:path'
 
 import * as yaml from 'js-yaml'
 
-import {type CanaryRunner, createCanaryRunner, selectStablePublicCanarySuites} from '../canary/run.js'
 import {createCompatibilityReport, listProfiles, resolveProfile, summarizeProfileServices} from '../compat.js'
 import {findConfigPath, loadConfig, type CantonctlConfig} from '../config.js'
 import type {NormalizedProfile, ServiceName} from '../config-profile.js'
-import {createCredentialStore, type CredentialStore, type KeychainBackend} from '../credential-store.js'
-import {createDiagnosticsBundleWriter, type DiagnosticsBundleWriter} from '../diagnostics/bundle.js'
 import {createDiagnosticsCollector, type DiagnosticsCollector} from '../diagnostics/collect.js'
-import {createNetworkDiscoveryFetcher, type NetworkDiscoveryFetcher} from '../discovery/fetch.js'
-import {synthesizeProfileFromDiscovery, mergeProfileIntoConfigYaml} from '../discovery/synthesize.js'
-import {createDoctor, type Doctor} from '../doctor.js'
+import {createDoctor} from '../doctor.js'
 import {CantonctlError, ErrorCode} from '../errors.js'
-import {renderSdkConfigEnv, renderSdkConfigJson} from '../export/formatters.js'
-import {createSdkConfigExporter, type SdkConfigExporter, type SdkConfigTarget} from '../export/sdk-config.js'
 import {createSandboxToken} from '../jwt.js'
-import {createBackendWithFallback} from '../keytar-backend.js'
 import {createLedgerClient, type LedgerClient} from '../ledger-client.js'
 import {createLocalnet, type Localnet, type LocalnetStatusResult} from '../localnet.js'
-import {mergeLocalnetProfileIntoConfigYaml, synthesizeProfileFromLocalnetWorkspace} from '../localnet-import.js'
 import {createLocalnetWorkspaceDetector, type LocalnetWorkspaceDetector} from '../localnet-workspace.js'
 import {createOutput} from '../output.js'
-import {type PreflightRunner, createPreflightChecks} from '../preflight/checks.js'
 import {createProcessRunner} from '../process-runner.js'
 import {createReadinessRunner, type ReadinessRunner} from '../readiness.js'
-import {createProfileRuntimeResolver, resolveProfileNetworkName, type ProfileRuntimeResolver} from '../profile-runtime.js'
+import {createProfileRuntimeResolver, type ProfileRuntimeResolver} from '../profile-runtime.js'
 import {serializeTopologyManifest, type GeneratedTopology, detectTopology} from '../topology.js'
 
 import type {
-  UiActionKind,
-  UiActivityEntry,
   UiAuthState,
   UiChecksData,
   UiOverviewData,
@@ -46,46 +34,30 @@ import type {
   UiSupportData,
   UiTone,
 } from './contracts.js'
-import {createUiJobStore, type UiJobStore} from './jobs.js'
-
-interface UiActionOptions {
-  payload?: Record<string, unknown>
-  profileName?: string
-}
 
 export interface UiController {
   getChecks(options?: {profileName?: string}): Promise<UiChecksData>
-  getJob(id: string): ReturnType<UiJobStore['get']>
   getOverview(options?: {profileName?: string}): Promise<UiOverviewData>
   getProfiles(options?: {profileName?: string}): Promise<UiProfilesData>
   getRuntime(options?: {profileName?: string}): Promise<UiRuntimeData>
   getSession(options?: {requestedProfile?: string}): Promise<UiSessionData>
   getSupport(options?: {profileName?: string}): Promise<UiSupportData>
-  startAction(kind: UiActionKind, options?: UiActionOptions): Promise<{jobId: string}>
 }
 
 export interface UiControllerDeps {
-  createBackendWithFallback?: typeof createBackendWithFallback
-  createCanaryRunner?: () => CanaryRunner
-  createCredentialStore?: (deps: {backend: KeychainBackend; env?: Record<string, string | undefined>}) => CredentialStore
-  createDiagnosticsBundleWriter?: () => DiagnosticsBundleWriter
   createDiagnosticsCollector?: () => DiagnosticsCollector
   createDoctor?: typeof createDoctor
   createLedgerClient?: (options: {baseUrl: string; token: string}) => LedgerClient
   createLocalnet?: () => Localnet
   createLocalnetWorkspaceDetector?: () => LocalnetWorkspaceDetector
-  createNetworkDiscoveryFetcher?: () => NetworkDiscoveryFetcher
-  createPreflightRunner?: () => PreflightRunner
   createProcessRunner?: typeof createProcessRunner
   createProfileRuntimeResolver?: () => ProfileRuntimeResolver
   createReadinessRunner?: () => ReadinessRunner
-  createSdkConfigExporter?: () => SdkConfigExporter
   cwd?: string
   detectTopology?: typeof detectTopology
   env?: Record<string, string | undefined>
   fetch?: typeof globalThis.fetch
   findConfigPath?: (startDir: string) => string | undefined
-  jobStore?: UiJobStore
   loadConfig?: (options?: {dir?: string}) => Promise<CantonctlConfig>
 }
 
@@ -116,15 +88,8 @@ export function createUiController(
   const resolveConfigPath = deps.findConfigPath ?? ((startDir: string) => findConfigPath(startDir))
   const createRuntimeResolver = deps.createProfileRuntimeResolver ?? (() => createProfileRuntimeResolver({env}))
   const createReadiness = deps.createReadinessRunner ?? (() => createReadinessRunner())
-  const createPreflight = deps.createPreflightRunner ?? (() => createPreflightChecks())
-  const createCanary = deps.createCanaryRunner ?? (() => createCanaryRunner())
   const createDoctorInstance = deps.createDoctor ?? createDoctor
   const createDiagnostics = deps.createDiagnosticsCollector ?? (() => createDiagnosticsCollector({fetch: fetchFn}))
-  const createBundleWriter = deps.createDiagnosticsBundleWriter ?? (() => createDiagnosticsBundleWriter())
-  const createDiscovery = deps.createNetworkDiscoveryFetcher ?? (() => createNetworkDiscoveryFetcher())
-  const createExporter = deps.createSdkConfigExporter ?? (() => createSdkConfigExporter())
-  const createBackend = deps.createBackendWithFallback ?? createBackendWithFallback
-  const createStore = deps.createCredentialStore ?? createCredentialStore
   const createLedger = deps.createLedgerClient ?? createLedgerClient
   const createRunner = deps.createProcessRunner ?? createProcessRunner
   const detectProjectTopology = deps.detectTopology ?? detectTopology
@@ -141,7 +106,6 @@ export function createUiController(
     }>,
     runner: createRunner(),
   }))
-  const jobs = deps.jobStore ?? createUiJobStore()
 
   return {
     async getSession(options = {}) {
@@ -180,7 +144,6 @@ export function createUiController(
         runner: createRunner(),
       }).check()
       const status = await buildProfileStatusSnapshot(context)
-      const activity = toActivityEntries(jobs.list())
 
       return {
         advisories: [
@@ -208,10 +171,6 @@ export function createUiController(
         readiness: {
           ...readiness.summary,
           success: readiness.success,
-        },
-        recentOutputs: {
-          diagnostics: activity.find(entry => entry.action === 'support/diagnostics-bundle'),
-          sdkConfig: activity.find(entry => entry.action === 'support/export-sdk-config'),
         },
         services: status.services,
       }
@@ -462,7 +421,6 @@ export function createUiController(
     async getSupport(options = {}) {
       const context = await resolveProfileContext(options.profileName)
       return {
-        activity: toActivityEntries(jobs.list()),
         defaults: {
           diagnosticsOutputDir: path.join(cwd, '.cantonctl', 'diagnostics', context.profile.name),
           exportTargets: ['dapp-sdk', 'wallet-sdk', 'dapp-api'],
@@ -473,27 +431,6 @@ export function createUiController(
           name: context.profile.name,
         },
       }
-    },
-
-    async startAction(kind, options = {}) {
-      const preview = await buildActionPreview(kind, options)
-      const job = jobs.start(
-        {
-          action: kind,
-          mutating: kind !== 'support/discover-network',
-          preview,
-        },
-        async () => {
-          const result = await runAction(kind, options)
-          return result
-        },
-      )
-
-      return {jobId: job.id}
-    },
-
-    getJob(id) {
-      return jobs.get(id)
     },
   }
 
@@ -642,340 +579,6 @@ export function createUiController(
       participants,
       synchronizer: topology.synchronizer,
       topologyName: topology.manifest?.metadata.topologyName ?? 'default',
-    }
-  }
-
-  async function runAction(
-    kind: UiActionKind,
-    options: UiActionOptions,
-  ): Promise<{artifactPath?: string; result: unknown; summary?: string}> {
-    switch (kind) {
-      case 'auth/login':
-        return runAuthLogin(options)
-      case 'auth/logout':
-        return runAuthLogout(options)
-      case 'localnet/up':
-        return runLocalnetCommand('up', options)
-      case 'localnet/down':
-        return runLocalnetCommand('down', options)
-      case 'profiles/import-localnet':
-        return runImportLocalnet(options)
-      case 'profiles/import-scan':
-        return runImportScan(options)
-      case 'support/diagnostics-bundle':
-        return runDiagnosticsBundle(options)
-      case 'support/discover-network':
-        return runDiscoverNetwork(options)
-      case 'support/export-sdk-config':
-        return runExportSdkConfig(options)
-    }
-  }
-
-  async function buildActionPreview(kind: UiActionKind, options: UiActionOptions): Promise<string> {
-    switch (kind) {
-      case 'auth/login': {
-        const context = await resolveProfileContext(options.profileName)
-        const runtime = await createRuntimeResolver().resolve({
-          config: context.config,
-          profileName: context.profileName,
-        })
-        return `cantonctl auth login ${runtime.networkName}${options.payload?.token ? ' --token <redacted>' : ''}`
-      }
-
-      case 'auth/logout': {
-        const context = await resolveProfileContext(options.profileName)
-        const runtime = await createRuntimeResolver().resolve({
-          config: context.config,
-          profileName: context.profileName,
-        })
-        return `cantonctl auth logout ${runtime.networkName}`
-      }
-
-      case 'localnet/up':
-      case 'localnet/down': {
-        const context = await resolveProfileContext(options.profileName)
-        const workspace = requireLocalnetWorkspace(context.profile)
-        const profile = context.profile.services.localnet?.['source-profile']
-        return `cantonctl localnet ${kind.split('/')[1]} --workspace ${workspace}${profile ? ` --profile ${profile}` : ''}`
-      }
-
-      case 'profiles/import-localnet':
-        return `cantonctl profiles import-localnet --workspace ${String(options.payload?.workspace ?? '<workspace>')}${options.payload?.write ? ' --write' : ''}`
-
-      case 'profiles/import-scan':
-        return `cantonctl profiles import-scan --scan-url ${String(options.payload?.scanUrl ?? '<scan-url>')} --kind ${String(options.payload?.kind ?? '<kind>')}${options.payload?.write ? ' --write' : ''}`
-
-      case 'support/diagnostics-bundle': {
-        const context = await resolveProfileContext(options.profileName)
-        return `cantonctl diagnostics bundle --profile ${context.profile.name}${options.payload?.output ? ` --output ${String(options.payload.output)}` : ''}`
-      }
-
-      case 'support/discover-network':
-        return `cantonctl discover network --scan-url ${String(options.payload?.scanUrl ?? '<scan-url>')}`
-
-      case 'support/export-sdk-config': {
-        const context = await resolveProfileContext(options.profileName)
-        return `cantonctl export sdk-config --profile ${context.profile.name} --target ${String(options.payload?.target ?? 'dapp-sdk')} --format ${String(options.payload?.format ?? 'json')}`
-      }
-    }
-  }
-
-  async function runAuthLogin(options: UiActionOptions) {
-    const context = await resolveProfileContext(options.profileName)
-    const runtime = await createRuntimeResolver().resolve({
-      config: context.config,
-      profileName: context.profileName,
-    })
-    const token = typeof options.payload?.token === 'string' ? options.payload.token : undefined
-
-    if (runtime.credential.source === 'fallback' && !token) {
-      return {
-        result: {
-          mode: runtime.auth.mode,
-          network: runtime.networkName,
-          persisted: false,
-          source: 'generated',
-        },
-        summary: `Using local fallback auth for ${runtime.networkName}`,
-      }
-    }
-
-    if (!token) {
-      throw new CantonctlError(ErrorCode.DEPLOY_AUTH_FAILED, {
-        suggestion: `Enter a bearer token for ${runtime.networkName}.`,
-      })
-    }
-
-    const ledgerUrl = context.profile.services.ledger?.url
-    if (ledgerUrl) {
-      try {
-        await createLedger({
-          baseUrl: ledgerUrl,
-          token,
-        }).getVersion()
-      } catch {
-        // Match CLI behavior: best-effort verification before storing.
-      }
-    }
-
-    const {backend, isKeychain} = await createBackend()
-    await createStore({backend, env}).store(runtime.networkName, token, {mode: runtime.auth.mode})
-
-    return {
-      result: {
-        mode: runtime.auth.mode,
-        network: runtime.networkName,
-        persisted: true,
-        source: isKeychain ? 'keychain' : 'memory',
-      },
-      summary: `Stored credentials for ${runtime.networkName}`,
-    }
-  }
-
-  async function runAuthLogout(options: UiActionOptions) {
-    const context = await resolveProfileContext(options.profileName)
-    const runtime = await createRuntimeResolver().resolve({
-      config: context.config,
-      profileName: context.profileName,
-    })
-    const {backend} = await createBackend()
-    const removed = await createStore({backend, env}).remove(runtime.networkName)
-
-    return {
-      result: {
-        network: runtime.networkName,
-        removed,
-      },
-      summary: removed
-        ? `Removed credentials for ${runtime.networkName}`
-        : `No credentials stored for ${runtime.networkName}`,
-    }
-  }
-
-  async function runLocalnetCommand(command: 'down' | 'up', options: UiActionOptions) {
-    const context = await resolveProfileContext(options.profileName)
-    const workspace = requireLocalnetWorkspace(context.profile)
-    const profile = context.profile.services.localnet?.['source-profile']
-    const localnet = createLocalnetClient()
-
-    if (command === 'up') {
-      const result = await localnet.up({profile, workspace})
-      return {
-        result,
-        summary: `Started LocalNet workspace ${workspace}`,
-      }
-    }
-
-    const result = await localnet.down({workspace})
-    return {
-      result,
-      summary: `Stopped LocalNet workspace ${workspace}`,
-    }
-  }
-
-  async function runImportLocalnet(options: UiActionOptions) {
-    const workspace = expectString(options.payload?.workspace, 'workspace')
-    const detector = createWorkspaceDetector()
-    const discovered = await detector.detect(workspace)
-    const synthesized = synthesizeProfileFromLocalnetWorkspace({
-      name: typeof options.payload?.name === 'string' ? options.payload.name : undefined,
-      networkName: typeof options.payload?.networkName === 'string' ? options.payload.networkName : undefined,
-      sourceProfile: typeof options.payload?.sourceProfile === 'string'
-        ? options.payload.sourceProfile as 'app-provider' | 'app-user' | 'sv'
-        : undefined,
-      workspace: discovered,
-    })
-
-    let artifactPath: string | undefined
-    if (options.payload?.write) {
-      const {configPath} = await loadUiConfig()
-      const merged = mergeLocalnetProfileIntoConfigYaml({
-        existingConfigYaml: fs.readFileSync(configPath, 'utf8'),
-        synthesized,
-      })
-      fs.writeFileSync(configPath, merged, 'utf8')
-      artifactPath = configPath
-    }
-
-    return {
-      artifactPath,
-      result: {
-        networkName: synthesized.networkName,
-        profile: synthesized.profile,
-        profileName: synthesized.name,
-        sourceProfile: synthesized.sourceProfile,
-        warnings: synthesized.warnings,
-        workspace: discovered.root,
-        write: Boolean(options.payload?.write),
-        yaml: synthesized.yaml,
-      },
-      summary: artifactPath
-        ? `Imported ${synthesized.name} into ${artifactPath}`
-        : `Previewed ${synthesized.name} from ${discovered.root}`,
-    }
-  }
-
-  async function runImportScan(options: UiActionOptions) {
-    const scanUrl = expectString(options.payload?.scanUrl, 'scanUrl')
-    const kind = expectString(options.payload?.kind, 'kind') as 'remote-sv-network' | 'remote-validator'
-    const discovery = await createDiscovery().fetch({scanUrl})
-    const synthesized = synthesizeProfileFromDiscovery({
-      discovery,
-      kind,
-      name: typeof options.payload?.name === 'string' ? options.payload.name : undefined,
-    })
-
-    let artifactPath: string | undefined
-    if (options.payload?.write) {
-      const {configPath} = await loadUiConfig()
-      const merged = mergeProfileIntoConfigYaml({
-        existingConfigYaml: fs.readFileSync(configPath, 'utf8'),
-        synthesized,
-      })
-      fs.writeFileSync(configPath, merged, 'utf8')
-      artifactPath = configPath
-    }
-
-    return {
-      artifactPath,
-      result: {
-        discovery,
-        profile: synthesized.profile,
-        profileName: synthesized.name,
-        warnings: synthesized.warnings,
-        write: Boolean(options.payload?.write),
-        yaml: synthesized.yaml,
-      },
-      summary: artifactPath
-        ? `Imported ${synthesized.name} into ${artifactPath}`
-        : `Previewed ${synthesized.name} from scan discovery`,
-    }
-  }
-
-  async function runDiagnosticsBundle(options: UiActionOptions) {
-    const context = await resolveProfileContext(options.profileName)
-    const snapshot = await createDiagnostics().collect({
-      config: context.config,
-      profileName: context.profileName,
-    })
-    const outputDir = typeof options.payload?.output === 'string'
-      ? options.payload.output
-      : path.join(cwd, '.cantonctl', 'diagnostics', context.profile.name)
-    const bundle = await createBundleWriter().write({
-      outputDir,
-      snapshot,
-    })
-
-    return {
-      artifactPath: bundle.outputDir,
-      result: {
-        bundle,
-        snapshot,
-      },
-      summary: `Wrote diagnostics bundle to ${bundle.outputDir}`,
-    }
-  }
-
-  async function runDiscoverNetwork(options: UiActionOptions) {
-    const scanUrl = typeof options.payload?.scanUrl === 'string'
-      ? options.payload.scanUrl
-      : await defaultScanUrl(options.profileName)
-    const token = await resolveOptionalProfileToken(options.profileName)
-    const discovery = await createDiscovery().fetch({scanUrl, token})
-    return {
-      result: discovery,
-      summary: `Fetched network discovery from ${discovery.scanUrl}`,
-    }
-  }
-
-  async function runExportSdkConfig(options: UiActionOptions) {
-    const context = await resolveProfileContext(options.profileName)
-    const target = (typeof options.payload?.target === 'string'
-      ? options.payload.target
-      : 'dapp-sdk') as SdkConfigTarget
-    const format = typeof options.payload?.format === 'string' ? options.payload.format : 'json'
-    const exported = await createExporter().exportConfig({
-      config: context.config,
-      profileName: context.profileName,
-      target,
-    })
-    const rendered = format === 'env'
-      ? renderSdkConfigEnv(exported)
-      : renderSdkConfigJson(exported)
-
-    return {
-      result: {
-        config: exported,
-        format,
-        rendered,
-        target,
-      },
-      summary: `Exported ${target} config as ${format}`,
-    }
-  }
-
-  async function defaultScanUrl(profileName?: string): Promise<string> {
-    const context = await resolveProfileContext(profileName)
-    const scanUrl = context.profile.services.scan?.url
-    if (!scanUrl) {
-      throw new CantonctlError(ErrorCode.SERVICE_NOT_CONFIGURED, {
-        suggestion: 'Enter a scan URL or choose a profile with a configured scan endpoint.',
-      })
-    }
-
-    return scanUrl
-  }
-
-  async function resolveOptionalProfileToken(profileName?: string): Promise<string | undefined> {
-    try {
-      const context = await resolveProfileContext(profileName)
-      const runtime = await createRuntimeResolver().resolve({
-        config: context.config,
-        profileName: context.profileName,
-      })
-      return runtime.credential.token
-    } catch {
-      return undefined
     }
   }
 
@@ -1145,40 +748,6 @@ function stripUndefined<T>(value: T): T {
   }
 
   return value
-}
-
-function requireLocalnetWorkspace(profile: NormalizedProfile): string {
-  const workspace = profile.services.localnet?.workspace
-  if (!workspace) {
-    throw new CantonctlError(ErrorCode.SERVICE_NOT_CONFIGURED, {
-      suggestion: 'Import a LocalNet workspace first so this profile records its upstream workspace path.',
-    })
-  }
-
-  return workspace
-}
-
-function expectString(value: unknown, field: string): string {
-  if (typeof value === 'string' && value.length > 0) {
-    return value
-  }
-
-  throw new CantonctlError(ErrorCode.CONFIG_SCHEMA_VIOLATION, {
-    suggestion: `Provide a value for "${field}".`,
-  })
-}
-
-function toActivityEntries(records: ReturnType<UiJobStore['list']>): UiActivityEntry[] {
-  return records.map(record => ({
-    action: record.action,
-    artifactPath: record.artifactPath,
-    createdAt: record.createdAt,
-    id: record.id,
-    mutating: record.mutating,
-    preview: record.preview,
-    status: record.status,
-    summary: record.summary,
-  }))
 }
 
 function buildRemoteServiceMap(

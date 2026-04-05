@@ -1,6 +1,6 @@
 import type {
-  UiActivityEntry,
   UiApiEnvelope,
+  UiBootstrapData,
   UiChecksData,
   UiOverviewData,
   UiProfilesData,
@@ -21,14 +21,10 @@ export class UiApiError extends Error {
   }
 }
 
-export interface UiJobData extends UiActivityEntry {
-  error?: {
-    code: string
-    message: string
-    suggestion?: string
+declare global {
+  interface Window {
+    __CANTONCTL_UI__?: UiBootstrapData
   }
-  result?: unknown
-  updatedAt: string
 }
 
 export async function fetchSession(profile?: string): Promise<UiSessionData> {
@@ -51,7 +47,10 @@ export async function fetchChecks(profile: string): Promise<UiChecksData> {
   return fetchEnvelope(`/ui/checks${withProfile(profile)}`)
 }
 
-export async function fetchCheckSection<T>(profile: string, section: 'auth' | 'canary' | 'compatibility' | 'doctor' | 'preflight'): Promise<T> {
+export async function fetchCheckSection<T>(
+  profile: string,
+  section: 'auth' | 'canary' | 'compatibility' | 'doctor' | 'preflight',
+): Promise<T> {
   return fetchEnvelope(`/ui/checks/${section}${withProfile(profile)}`)
 }
 
@@ -59,26 +58,14 @@ export async function fetchSupport(profile: string): Promise<UiSupportData> {
   return fetchEnvelope(`/ui/support${withProfile(profile)}`)
 }
 
-export async function startAction(
-  actionPath: string,
-  options: {
-    payload?: Record<string, unknown>
-    profile?: string
-  },
-): Promise<{jobId: string}> {
-  return fetchEnvelope(`/ui/actions/${actionPath}${withProfile(options.profile)}`, {
-    body: JSON.stringify(options.payload ?? {}),
-    headers: {'Content-Type': 'application/json'},
-    method: 'POST',
-  })
-}
-
-export async function fetchJob(jobId: string): Promise<UiJobData> {
-  return fetchEnvelope(`/ui/jobs/${jobId}`)
-}
-
 async function fetchEnvelope<T>(url: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(url, init)
+  const response = await fetch(url, {
+    ...init,
+    headers: {
+      'X-Cantonctl-Ui-Session': getSessionToken(),
+      ...(init?.headers ?? {}),
+    },
+  })
   const body = await response.json() as UiApiEnvelope<T>
 
   if (!response.ok || !body.success || body.data === undefined) {
@@ -94,4 +81,13 @@ async function fetchEnvelope<T>(url: string, init?: RequestInit): Promise<T> {
 function withProfile(profile?: string): string {
   if (!profile) return ''
   return `?profile=${encodeURIComponent(profile)}`
+}
+
+function getSessionToken(): string {
+  const token = window.__CANTONCTL_UI__?.sessionToken
+  if (!token) {
+    throw new UiApiError('UI bootstrap session token is missing.')
+  }
+
+  return token
 }

@@ -42,7 +42,7 @@ src/lib/
   dev-server.ts       ← Sandbox lifecycle + hot-reload
   dev-server-full.ts  ← `dev --net` local multi-node Docker runtime
   docker.ts           ← Docker Compose lifecycle management
-  ui/*.ts             ← Private UI controller, job store, and localhost bridge
+  ui/*.ts             ← Private read-only UI controller and hardened localhost bridge
   builder.ts          ← Build orchestration + DAR caching + watch
   test-runner.ts      ← Test execution
   deployer.ts         ← Advisory DAR deploy wrapper

@@ -1,15 +1,10 @@
 import {describe, expect, it, vi} from 'vitest'
 
-import type {CanaryRunner} from '../canary/run.js'
 import type {CantonctlConfig} from '../config.js'
-import {createInMemoryBackend} from '../credential-store.js'
 import type {DiagnosticsCollector, DiagnosticsSnapshot} from '../diagnostics/collect.js'
 import type {Doctor} from '../doctor.js'
-import type {SdkConfigExporter} from '../export/sdk-config.js'
 import type {Localnet, LocalnetStatusResult} from '../localnet.js'
 import type {LocalnetProfileName} from '../localnet-workspace.js'
-import type {PreflightRunner} from '../preflight/checks.js'
-import type {PreflightReport} from '../preflight/output.js'
 import type {ReadinessReport, ReadinessRunner} from '../readiness.js'
 import type {ProfileRuntimeResolver, ResolvedProfileRuntime} from '../profile-runtime.js'
 import {generateTopology} from '../topology.js'
@@ -166,40 +161,6 @@ function createDiagnostics(): DiagnosticsCollector {
   }
 }
 
-function createExporter(): SdkConfigExporter {
-  return {
-    exportConfig: vi.fn(async ({target}) => ({
-      target,
-      validatorUrl: 'https://validator.example.com',
-    }) as never),
-  }
-}
-
-function createCanary(): CanaryRunner {
-  return {
-    run: vi.fn(async () => ({
-      checks: [],
-      profile: {kind: 'remote-validator', name: 'splice-devnet'},
-      success: true,
-    })),
-  }
-}
-
-function createPreflight(): PreflightRunner {
-  const run: PreflightRunner['run'] = async () => ({
-    auth: {credentialSource: 'fallback', envVarName: 'JWT', mode: 'bearer-token', warnings: []},
-    checks: [],
-    compatibility: {failed: 0, passed: 1, warned: 0},
-    network: {checklist: [], name: 'local', reminders: [], resetExpectation: 'local-only', tier: 'local'},
-    profile: {experimental: false, kind: 'sandbox', name: 'sandbox'},
-    success: true,
-  } satisfies PreflightReport)
-
-  return {
-    run: vi.fn(run),
-  }
-}
-
 function createLocalnetClient(): Localnet {
   const createStatusResult = (
     services: LocalnetStatusResult['services'],
@@ -256,12 +217,9 @@ function createLocalnetClient(): Localnet {
 describe('ui controller', () => {
   it('builds session summaries and respects requested profiles', async () => {
     const controller = createUiController({
-      createBackendWithFallback: async () => ({backend: createInMemoryBackend(), isKeychain: false}),
-      createCanaryRunner: () => createCanary(),
       createDiagnosticsCollector: () => createDiagnostics(),
       createDoctor: () => createDoctorInstance(),
       createLocalnet: () => createLocalnetClient(),
-      createPreflightRunner: () => createPreflight(),
       createProfileRuntimeResolver: () => createRuntimeResolver(),
       createReadinessRunner: () => createReadiness(),
       cwd: '/repo',
@@ -278,18 +236,13 @@ describe('ui controller', () => {
     ]))
   })
 
-  it('renders splice-localnet runtime state and supports sdk export actions', async () => {
-    const backend = createInMemoryBackend()
+  it('renders splice-localnet runtime state and support defaults', async () => {
     const controller = createUiController({
-      createBackendWithFallback: async () => ({backend, isKeychain: true}),
-      createCanaryRunner: () => createCanary(),
       createDiagnosticsCollector: () => createDiagnostics(),
       createDoctor: () => createDoctorInstance(),
       createLocalnet: () => createLocalnetClient(),
-      createPreflightRunner: () => createPreflight(),
       createProfileRuntimeResolver: () => createRuntimeResolver(),
       createReadinessRunner: () => createReadiness(),
-      createSdkConfigExporter: () => createExporter(),
       cwd: '/repo',
       detectTopology: async () => generateTopology({
         cantonImage: 'ghcr.io/digital-asset/decentralized-canton-sync/docker/canton:0.5.3',
@@ -307,34 +260,11 @@ describe('ui controller', () => {
       expect.objectContaining({label: 'Validator', status: 'healthy'}),
     ]))
 
-    const started = await controller.startAction('support/export-sdk-config', {
-      payload: {format: 'json', target: 'dapp-sdk'},
-      profileName: 'splice-devnet',
+    const support = await controller.getSupport({profileName: 'splice-devnet'})
+    expect(support.defaults).toEqual({
+      diagnosticsOutputDir: '/repo/.cantonctl/diagnostics/splice-devnet',
+      exportTargets: ['dapp-sdk', 'wallet-sdk', 'dapp-api'],
+      scanUrl: 'https://scan.example.com',
     })
-    const job = await waitForJob(controller, started.jobId)
-    expect(job).toEqual(expect.objectContaining({
-      result: expect.objectContaining({
-        format: 'json',
-        target: 'dapp-sdk',
-      }),
-      status: 'success',
-      summary: 'Exported dapp-sdk config as json',
-    }))
   })
 })
-
-async function waitForJob(
-  controller: ReturnType<typeof createUiController>,
-  id: string,
-) {
-  for (let attempt = 0; attempt < 25; attempt++) {
-    const job = controller.getJob(id)
-    if (job && job.status !== 'running') {
-      return job
-    }
-
-    await new Promise(resolve => setTimeout(resolve, 0))
-  }
-
-  throw new Error(`Job ${id} did not settle`)
-}

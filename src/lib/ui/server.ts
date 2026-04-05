@@ -1,14 +1,21 @@
+import {randomUUID} from 'node:crypto'
 import * as fs from 'node:fs'
 import * as http from 'node:http'
 import * as path from 'node:path'
 
 import {CantonctlError, ErrorCode} from '../errors.js'
 
-import type {UiApiEnvelope} from './contracts.js'
+import type {UiApiEnvelope, UiBootstrapData} from './contracts.js'
 import type {UiController} from './controller.js'
-import {toUiApiError} from './jobs.js'
 
 const API_PREFIX = '/ui'
+const SESSION_HEADER = 'x-cantonctl-ui-session'
+
+interface UiRequestPolicy {
+  allowedHostnames: Set<string>
+  port: number
+  sessionToken: string
+}
 
 export interface UiServer {
   start(options?: {host?: string; port?: number}): Promise<{host: string; port: number; url: string}>
@@ -27,6 +34,7 @@ export function createUiServer(deps: UiServerDeps): UiServer {
   const controller = deps.controller
   const createServerImpl = deps.createServer ?? http.createServer
   const fsImpl = deps.fs ?? fs
+  let requestPolicy: UiRequestPolicy | undefined
   let server: http.Server | undefined
 
   return {
@@ -34,7 +42,12 @@ export function createUiServer(deps: UiServerDeps): UiServer {
       ensureAssetsDir(assetsDir, fsImpl)
 
       server = createServerImpl((request, response) => {
-        void handleRequest(request, response, {assetsDir, controller, fs: fsImpl})
+        void handleRequest(request, response, {
+          assetsDir,
+          controller,
+          fs: fsImpl,
+          requestPolicy,
+        })
       })
 
       const host = options.host ?? '127.0.0.1'
@@ -52,6 +65,12 @@ export function createUiServer(deps: UiServerDeps): UiServer {
         throw new CantonctlError(ErrorCode.SANDBOX_START_FAILED, {
           suggestion: 'The UI server did not bind to a TCP port.',
         })
+      }
+
+      requestPolicy = {
+        allowedHostnames: createAllowedHostnames(host),
+        port: address.port,
+        sessionToken: randomUUID(),
       }
 
       return {
@@ -73,6 +92,7 @@ export function createUiServer(deps: UiServerDeps): UiServer {
           resolve()
         })
       })
+      requestPolicy = undefined
       server = undefined
     },
   }
@@ -85,18 +105,47 @@ async function handleRequest(
     assetsDir: string
     controller: UiController
     fs: typeof fs
+    requestPolicy?: UiRequestPolicy
   },
 ): Promise<void> {
   try {
+    if (!deps.requestPolicy) {
+      writeJson(response, 503, {
+        error: {code: 'UI_NOT_READY', message: 'UI server is still starting.'},
+        success: false,
+      })
+      return
+    }
+
+    const hostError = validateLocalRequest(request, deps.requestPolicy)
+    if (hostError) {
+      writeJson(response, 403, {
+        error: hostError,
+        success: false,
+      })
+      return
+    }
+
     const method = request.method ?? 'GET'
     const url = new URL(request.url ?? '/', 'http://127.0.0.1')
 
     if (url.pathname.startsWith(API_PREFIX)) {
-      await handleApiRequest(method, url, request, response, deps.controller)
+      const apiError = validateApiRequest(request, deps.requestPolicy)
+      if (apiError) {
+        writeJson(response, 403, {
+          error: apiError,
+          success: false,
+        })
+        return
+      }
+
+      await handleApiRequest(method, url, response, deps.controller)
       return
     }
 
-    await serveStatic(url.pathname, response, deps.assetsDir, deps.fs)
+    await serveStatic(url.pathname, response, deps.assetsDir, deps.fs, {
+      sessionToken: deps.requestPolicy.sessionToken,
+    })
   } catch (error) {
     writeJson(response, 500, {
       error: toUiApiError(error),
@@ -108,117 +157,75 @@ async function handleRequest(
 async function handleApiRequest(
   method: string,
   url: URL,
-  request: http.IncomingMessage,
   response: http.ServerResponse,
   controller: UiController,
 ): Promise<void> {
   const profileName = url.searchParams.get('profile') ?? undefined
 
-  if (method === 'GET') {
-    switch (url.pathname) {
-      case '/ui/session':
-        writeJson(response, 200, {data: await controller.getSession({requestedProfile: profileName}), success: true})
-        return
-      case '/ui/overview':
-        writeJson(response, 200, {data: await controller.getOverview({profileName}), success: true})
-        return
-      case '/ui/profiles':
-        writeJson(response, 200, {data: await controller.getProfiles({profileName}), success: true})
-        return
-      case '/ui/runtime':
-        writeJson(response, 200, {data: await controller.getRuntime({profileName}), success: true})
-        return
-      case '/ui/checks': {
-        writeJson(response, 200, {data: await controller.getChecks({profileName}), success: true})
-        return
-      }
-
-      case '/ui/checks/auth': {
-        const checks = await controller.getChecks({profileName})
-        writeJson(response, 200, {data: checks.auth, success: true})
-        return
-      }
-
-      case '/ui/checks/compatibility': {
-        const checks = await controller.getChecks({profileName})
-        writeJson(response, 200, {data: checks.compatibility, success: true})
-        return
-      }
-
-      case '/ui/checks/preflight': {
-        const checks = await controller.getChecks({profileName})
-        writeJson(response, 200, {data: checks.preflight, success: true})
-        return
-      }
-
-      case '/ui/checks/canary': {
-        const checks = await controller.getChecks({profileName})
-        writeJson(response, 200, {data: checks.canary, success: true})
-        return
-      }
-
-      case '/ui/checks/doctor': {
-        const checks = await controller.getChecks({profileName})
-        writeJson(response, 200, {data: checks.doctor, success: true})
-        return
-      }
-
-      case '/ui/support':
-        writeJson(response, 200, {data: await controller.getSupport({profileName}), success: true})
-        return
-      default:
-        break
-    }
-
-    if (url.pathname.startsWith('/ui/jobs/')) {
-      const id = url.pathname.slice('/ui/jobs/'.length)
-      const job = controller.getJob(id)
-      if (!job) {
-        writeJson(response, 404, {
-          error: {
-            code: ErrorCode.SERVICE_NOT_CONFIGURED,
-            message: 'Job not found.',
-          },
-          success: false,
-        })
-        return
-      }
-
-      writeJson(response, 200, {data: job, success: true})
-      return
-    }
-  }
-
-  if (method === 'POST' && url.pathname.startsWith('/ui/actions/')) {
-    const payload = await readJsonBody(request)
-    const action = url.pathname.slice('/ui/actions/'.length) as Parameters<UiController['startAction']>[0]
-    const started = await controller.startAction(action, {payload, profileName})
-    writeJson(response, 202, {data: started, success: true})
+  if (method !== 'GET') {
+    writeJson(response, 405, {
+      error: {
+        code: 'UI_METHOD_NOT_ALLOWED',
+        message: 'Only GET is supported by the hardened UI bridge.',
+      },
+      success: false,
+    })
     return
   }
 
-  writeJson(response, 404, {
-    error: {
-      code: ErrorCode.SERVICE_NOT_CONFIGURED,
-      message: 'Route not found.',
-    },
-    success: false,
-  })
-}
-
-async function readJsonBody(request: http.IncomingMessage): Promise<Record<string, unknown>> {
-  const chunks: Buffer[] = []
-
-  for await (const chunk of request) {
-    chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk))
+  switch (url.pathname) {
+    case '/ui/session':
+      writeJson(response, 200, {data: await controller.getSession({requestedProfile: profileName}), success: true})
+      return
+    case '/ui/overview':
+      writeJson(response, 200, {data: await controller.getOverview({profileName}), success: true})
+      return
+    case '/ui/profiles':
+      writeJson(response, 200, {data: await controller.getProfiles({profileName}), success: true})
+      return
+    case '/ui/runtime':
+      writeJson(response, 200, {data: await controller.getRuntime({profileName}), success: true})
+      return
+    case '/ui/checks':
+      writeJson(response, 200, {data: await controller.getChecks({profileName}), success: true})
+      return
+    case '/ui/checks/auth': {
+      const checks = await controller.getChecks({profileName})
+      writeJson(response, 200, {data: checks.auth, success: true})
+      return
+    }
+    case '/ui/checks/compatibility': {
+      const checks = await controller.getChecks({profileName})
+      writeJson(response, 200, {data: checks.compatibility, success: true})
+      return
+    }
+    case '/ui/checks/preflight': {
+      const checks = await controller.getChecks({profileName})
+      writeJson(response, 200, {data: checks.preflight, success: true})
+      return
+    }
+    case '/ui/checks/canary': {
+      const checks = await controller.getChecks({profileName})
+      writeJson(response, 200, {data: checks.canary, success: true})
+      return
+    }
+    case '/ui/checks/doctor': {
+      const checks = await controller.getChecks({profileName})
+      writeJson(response, 200, {data: checks.doctor, success: true})
+      return
+    }
+    case '/ui/support':
+      writeJson(response, 200, {data: await controller.getSupport({profileName}), success: true})
+      return
+    default:
+      writeJson(response, 404, {
+        error: {
+          code: ErrorCode.SERVICE_NOT_CONFIGURED,
+          message: 'Route not found.',
+        },
+        success: false,
+      })
   }
-
-  if (chunks.length === 0) {
-    return {}
-  }
-
-  const body = Buffer.concat(chunks).toString('utf8')
-  return JSON.parse(body) as Record<string, unknown>
 }
 
 async function serveStatic(
@@ -226,6 +233,7 @@ async function serveStatic(
   response: http.ServerResponse,
   assetsDir: string,
   fsImpl: typeof fs,
+  bootstrap: UiBootstrapData,
 ): Promise<void> {
   const normalizedPath = pathname === '/' ? '/index.html' : pathname
   const filePath = path.join(assetsDir, normalizedPath.replace(/^\/+/, ''))
@@ -239,11 +247,89 @@ async function serveStatic(
     ? resolved
     : path.join(assetsDir, 'index.html')
 
+  if (path.basename(targetPath) === 'index.html') {
+    const html = await fsImpl.promises.readFile(targetPath, 'utf8')
+    writeHtml(response, 200, injectBootstrap(html, bootstrap))
+    return
+  }
+
   const body = await fsImpl.promises.readFile(targetPath)
-  response.setHeader('Cache-Control', 'no-store')
+  setCommonHeaders(response)
   response.setHeader('Content-Type', contentType(targetPath))
   response.statusCode = 200
   response.end(body)
+}
+
+function validateLocalRequest(
+  request: http.IncomingMessage,
+  policy: UiRequestPolicy,
+): {code: string; message: string} | null {
+  if (!matchesLocalOrigin(request.headers.host, policy)) {
+    return {
+      code: 'UI_FORBIDDEN_HOST',
+      message: 'UI requests must target the local control-center origin.',
+    }
+  }
+
+  const origin = request.headers.origin
+  if (origin && !matchesLocalOrigin(origin, policy)) {
+    return {
+      code: 'UI_FORBIDDEN_ORIGIN',
+      message: 'UI requests must originate from the local control-center origin.',
+    }
+  }
+
+  return null
+}
+
+function validateApiRequest(
+  request: http.IncomingMessage,
+  policy: UiRequestPolicy,
+): {code: string; message: string} | null {
+  const token = request.headers[SESSION_HEADER]
+  const sessionToken = Array.isArray(token) ? token[0] : token
+  if (sessionToken !== policy.sessionToken) {
+    return {
+      code: 'UI_INVALID_SESSION',
+      message: 'Missing or invalid UI session token.',
+    }
+  }
+
+  return null
+}
+
+function matchesLocalOrigin(value: string | undefined, policy: UiRequestPolicy): boolean {
+  if (!value) return false
+
+  try {
+    const target = value.includes('://')
+      ? new URL(value)
+      : new URL(`http://${value}`)
+    const port = target.port ? Number(target.port) : 80
+    return policy.allowedHostnames.has(target.hostname) && port === policy.port
+  } catch {
+    return false
+  }
+}
+
+function createAllowedHostnames(host: string): Set<string> {
+  const allowed = new Set<string>([host])
+  if (host === '127.0.0.1') {
+    allowed.add('localhost')
+  }
+  if (host === 'localhost') {
+    allowed.add('127.0.0.1')
+  }
+  return allowed
+}
+
+function injectBootstrap(html: string, bootstrap: UiBootstrapData): string {
+  const script = `<script>window.__CANTONCTL_UI__=${JSON.stringify(bootstrap)};</script>`
+  if (html.includes('</head>')) {
+    return html.replace('</head>', `${script}</head>`)
+  }
+
+  return `${script}${html}`
 }
 
 function writeJson<T>(
@@ -251,17 +337,33 @@ function writeJson<T>(
   statusCode: number,
   payload: UiApiEnvelope<T>,
 ): void {
+  setCommonHeaders(response)
   response.statusCode = statusCode
-  response.setHeader('Cache-Control', 'no-store')
   response.setHeader('Content-Type', 'application/json; charset=utf-8')
   response.end(`${JSON.stringify(payload)}\n`)
 }
 
-function writeText(response: http.ServerResponse, statusCode: number, body: string): void {
+function writeHtml(response: http.ServerResponse, statusCode: number, body: string): void {
+  setCommonHeaders(response)
   response.statusCode = statusCode
-  response.setHeader('Cache-Control', 'no-store')
+  response.setHeader('Content-Security-Policy', "default-src 'self'; connect-src 'self'; img-src 'self' data:; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; base-uri 'none'; frame-ancestors 'none'")
+  response.setHeader('Content-Type', 'text/html; charset=utf-8')
+  response.end(body)
+}
+
+function writeText(response: http.ServerResponse, statusCode: number, body: string): void {
+  setCommonHeaders(response)
+  response.statusCode = statusCode
   response.setHeader('Content-Type', 'text/plain; charset=utf-8')
   response.end(body)
+}
+
+function setCommonHeaders(response: http.ServerResponse): void {
+  response.setHeader('Cache-Control', 'no-store')
+  response.setHeader('Cross-Origin-Resource-Policy', 'same-origin')
+  response.setHeader('Referrer-Policy', 'no-referrer')
+  response.setHeader('X-Content-Type-Options', 'nosniff')
+  response.setHeader('X-Frame-Options', 'DENY')
 }
 
 function contentType(filePath: string): string {
@@ -300,6 +402,28 @@ function mapServerError(error: unknown, port: number): Error {
   }
 
   return error instanceof Error ? error : new Error(String(error))
+}
+
+function toUiApiError(error: unknown): {code: string; message: string; suggestion?: string} {
+  if (error instanceof CantonctlError) {
+    return {
+      code: error.code,
+      message: error.message,
+      suggestion: error.suggestion || undefined,
+    }
+  }
+
+  if (error instanceof Error) {
+    return {
+      code: 'UNEXPECTED',
+      message: error.message,
+    }
+  }
+
+  return {
+    code: 'UNEXPECTED',
+    message: String(error),
+  }
 }
 
 export function resolveUiAssetsDir(cwd = process.cwd()): string {

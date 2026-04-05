@@ -3,7 +3,6 @@ import React, {useEffect, useState, type ReactNode} from 'react'
 import {useQuery, useQueryClient} from '@tanstack/react-query'
 
 import type {
-  UiActivityEntry,
   UiChecksData,
   UiOverviewData,
   UiProfileSummary,
@@ -14,35 +13,21 @@ import type {
 import {
   fetchCheckSection,
   fetchChecks,
-  fetchJob,
   fetchOverview,
   fetchProfiles,
   fetchRuntime,
   fetchSession,
   fetchSupport,
-  startAction,
-  type UiJobData,
 } from './api'
 import {Card, EmptyState, JsonPanel, SectionTitle, TonePill} from './components/primitives'
 import {resolveInitialProfileSelection} from './profile-selection'
 
 type View = 'checks' | 'overview' | 'profiles' | 'runtime' | 'support'
-type ActionKind =
-  | 'auth/login'
-  | 'auth/logout'
-  | 'localnet/down'
-  | 'localnet/up'
-  | 'profiles/import-localnet'
-  | 'profiles/import-scan'
-  | 'support/diagnostics-bundle'
-  | 'support/discover-network'
-  | 'support/export-sdk-config'
 
-interface DrawerState {
-  action: ActionKind
-  draft: Record<string, unknown>
-  job?: UiJobData
-  submitting: boolean
+interface SuggestedCommand {
+  command: string
+  description: string
+  tone: UiTone
 }
 
 const VIEWS: Array<{description: string; id: View; label: string}> = [
@@ -50,27 +35,14 @@ const VIEWS: Array<{description: string; id: View; label: string}> = [
   {description: 'Profile detail, validation, imports, and auth.', id: 'profiles', label: 'Profiles'},
   {description: 'Runtime topology or service dependencies.', id: 'runtime', label: 'Runtime'},
   {description: 'Auth, compatibility, preflight, canary, and doctor.', id: 'checks', label: 'Checks'},
-  {description: 'Diagnostics, discovery, SDK config export, and activity.', id: 'support', label: 'Support'},
+  {description: 'Diagnostics posture, discovery inputs, and SDK export targets.', id: 'support', label: 'Support'},
 ]
-
-const DRAWER_TITLES: Record<ActionKind, string> = {
-  'auth/login': 'Authenticate Profile',
-  'auth/logout': 'Remove Stored Credentials',
-  'localnet/down': 'Stop LocalNet Workspace',
-  'localnet/up': 'Start LocalNet Workspace',
-  'profiles/import-localnet': 'Import LocalNet Workspace',
-  'profiles/import-scan': 'Import Scan Discovery',
-  'support/diagnostics-bundle': 'Create Diagnostics Bundle',
-  'support/discover-network': 'Discover Network',
-  'support/export-sdk-config': 'Export SDK Config',
-}
 
 export function App() {
   const queryClient = useQueryClient()
   const commandProfile = new URLSearchParams(window.location.search).get('profile') ?? undefined
   const [view, setView] = useState<View>('overview')
   const [selectedProfile, setSelectedProfile] = useState<string>()
-  const [drawer, setDrawer] = useState<DrawerState | null>(null)
 
   const sessionQuery = useQuery({
     placeholderData: previous => previous,
@@ -302,7 +274,6 @@ export function App() {
             <ProfilesView
               data={profilesQuery.data}
               loading={profilesQuery.isLoading}
-              onOpenAction={(action, draft) => setDrawer({action, draft, submitting: false})}
             />
           ) : null}
 
@@ -310,7 +281,6 @@ export function App() {
             <RuntimeView
               data={runtimeQuery.data}
               loading={runtimeQuery.isLoading}
-              onOpenAction={(action, draft) => setDrawer({action, draft, submitting: false})}
             />
           ) : null}
 
@@ -331,51 +301,23 @@ export function App() {
             <SupportView
               data={supportQuery.data}
               loading={supportQuery.isLoading}
-              onOpenAction={(action, draft) => setDrawer({action, draft, submitting: false})}
             />
           ) : null}
         </main>
 
         <aside className="ui-card flex min-h-[40rem] flex-col">
           <div className="border-b border-white/5 px-5 py-4">
-            <p className="text-xs font-semibold uppercase tracking-[0.2em] text-[var(--text-soft)]">Action Drawer</p>
-            <h2 className="mt-2 text-xl font-semibold">{drawer ? DRAWER_TITLES[drawer.action] : 'Safe actions only'}</h2>
+            <p className="text-xs font-semibold uppercase tracking-[0.2em] text-[var(--text-soft)]">CLI Companion</p>
+            <h2 className="mt-2 text-xl font-semibold">Read-only UI, explicit CLI handoff</h2>
           </div>
           <div className="flex-1 p-5">
-            {drawer ? (
-              <DrawerContent
-                activeProfile={activeProfileSummary}
-                drawer={drawer}
-                onClose={() => setDrawer(null)}
-                onDraftChange={(nextDraft) => setDrawer(current => current ? {...current, draft: nextDraft} : current)}
-                onRun={async () => {
-                  if (!activeProfile) return
-                  setDrawer(current => current ? {...current, submitting: true} : current)
-                  const started = await startAction(drawer.action, {payload: drawer.draft, profile: activeProfile})
-                  const job = await pollJob(started.jobId)
-                  setDrawer(current => current ? {...current, job, submitting: false} : current)
-                  await Promise.all([
-                    queryClient.invalidateQueries({queryKey: ['ui', 'session']}),
-                    queryClient.invalidateQueries({queryKey: ['ui', 'overview', activeProfile]}),
-                    queryClient.invalidateQueries({queryKey: ['ui', 'profiles', activeProfile]}),
-                    queryClient.invalidateQueries({queryKey: ['ui', 'runtime', activeProfile]}),
-                    queryClient.invalidateQueries({queryKey: ['ui', 'checks', activeProfile]}),
-                    queryClient.invalidateQueries({queryKey: ['ui', 'support', activeProfile]}),
-                    queryClient.invalidateQueries({queryKey: ['ui', 'checks', 'auth', activeProfile]}),
-                    queryClient.invalidateQueries({queryKey: ['ui', 'checks', 'compatibility', activeProfile]}),
-                    queryClient.invalidateQueries({queryKey: ['ui', 'checks', 'preflight', activeProfile]}),
-                    queryClient.invalidateQueries({queryKey: ['ui', 'checks', 'canary', activeProfile]}),
-                    queryClient.invalidateQueries({queryKey: ['ui', 'checks', 'doctor', activeProfile]}),
-                  ])
-                }}
-                supportData={supportQuery.data}
-              />
-            ) : (
-              <EmptyState
-                body="Open a profile-aware action from Profiles, Runtime, or Support. The drawer keeps the command preview visible and shows the structured result before the raw JSON payload."
-                title="No Action Selected"
-              />
-            )}
+            <CommandRail
+              activeProfile={activeProfileSummary}
+              profilesData={profilesQuery.data}
+              runtimeData={runtimeQuery.data}
+              supportData={supportQuery.data}
+              view={view}
+            />
           </div>
         </aside>
       </div>
@@ -416,12 +358,11 @@ function OverviewView(props: {
         </div>
       </Card>
 
-      <Card title="Recent Outputs">
-        <SectionTitle eyebrow="Session artifacts" title="What this UI produced" />
-        <div className="mt-5 space-y-3">
-          <RecentOutputCard entry={props.data.recentOutputs.diagnostics} fallback="No diagnostics bundle created in this session yet." title="Diagnostics bundle" />
-          <RecentOutputCard entry={props.data.recentOutputs.sdkConfig} fallback="No SDK config export has run in this session yet." title="SDK config export" />
-        </div>
+      <Card title="Scope">
+        <SectionTitle eyebrow="Narrow slice" title="Visualization first" />
+        <p className="mt-5 text-sm leading-6 text-[var(--text-muted)]">
+          This UI is intentionally read-only. Use it to inspect profile state, readiness, runtime topology, and support posture, then hand off to the CLI for any auth, import, LocalNet, diagnostics, or export action.
+        </p>
       </Card>
 
       <Card title="Service Summary">
@@ -482,7 +423,6 @@ function OverviewView(props: {
 function ProfilesView(props: {
   data?: ReturnType<typeof fetchProfiles> extends Promise<infer T> ? T : never
   loading: boolean
-  onOpenAction: (action: ActionKind, draft: Record<string, unknown>) => void
 }) {
   if (props.loading && !props.data) {
     return <SkeletonPanels />
@@ -558,43 +498,12 @@ function ProfilesView(props: {
 
         <div className="grid gap-4 xl:grid-cols-2">
           <Card title="Imports">
-            <SectionTitle
-              action={(
-                <div className="flex gap-2">
-                  <button
-                    className="rounded-2xl border border-white/10 bg-white/5 px-3 py-2 text-sm font-semibold"
-                    onClick={() => props.onOpenAction('profiles/import-localnet', {
-                      name: selected.kind === 'splice-localnet' ? selected.name : 'splice-localnet',
-                      networkName: selected.networkMappings[0] ?? 'localnet',
-                      sourceProfile: selected.imports.localnet?.sourceProfile ?? 'sv',
-                      workspace: selected.imports.localnet?.workspace ?? '',
-                      write: false,
-                    })}
-                    type="button"
-                  >
-                    Import LocalNet
-                  </button>
-                  <button
-                    className="rounded-2xl border border-white/10 bg-white/5 px-3 py-2 text-sm font-semibold"
-                    onClick={() => props.onOpenAction('profiles/import-scan', {
-                      kind: selected.kind === 'remote-sv-network' ? 'remote-sv-network' : 'remote-validator',
-                      name: selected.name,
-                      scanUrl: selected.imports.scan?.url ?? '',
-                      write: false,
-                    })}
-                    type="button"
-                  >
-                    Import Scan
-                  </button>
-                </div>
-              )}
-              eyebrow="Bootstrap"
-              title="Profile materialization"
-            />
+            <SectionTitle eyebrow="Bootstrap" title="Profile materialization" />
             <div className="mt-5 space-y-3 text-sm text-[var(--text-muted)]">
               <p>LocalNet workspace: {selected.imports.localnet?.workspace ?? 'Not imported yet.'}</p>
               <p>LocalNet source profile: {selected.imports.localnet?.sourceProfile ?? 'n/a'}</p>
               <p>Scan endpoint: {selected.imports.scan?.url ?? 'No scan endpoint configured.'}</p>
+              <p>The CLI companion rail shows the exact import commands for this profile.</p>
             </div>
           </Card>
 
@@ -608,22 +517,7 @@ function ProfilesView(props: {
               {usesFallback ? (
                 <p>Local profiles use the fallback token path. Login does not require a remote credential.</p>
               ) : null}
-            </div>
-            <div className="mt-5 flex gap-2">
-              <button
-                className="rounded-2xl border border-[var(--accent)]/35 bg-[var(--accent-soft)] px-3 py-2 text-sm font-semibold"
-                onClick={() => props.onOpenAction('auth/login', {token: ''})}
-                type="button"
-              >
-                Login
-              </button>
-              <button
-                className="rounded-2xl border border-white/10 bg-white/5 px-3 py-2 text-sm font-semibold"
-                onClick={() => props.onOpenAction('auth/logout', {})}
-                type="button"
-              >
-                Logout
-              </button>
+              <p>Auth changes stay CLI-only so the UI does not expose a localhost mutation surface.</p>
             </div>
           </Card>
         </div>
@@ -635,7 +529,6 @@ function ProfilesView(props: {
 function RuntimeView(props: {
   data?: UiRuntimeData
   loading: boolean
-  onOpenAction: (action: ActionKind, draft: Record<string, unknown>) => void
 }) {
   if (props.loading && !props.data) {
     return <SkeletonPanels />
@@ -659,24 +552,6 @@ function RuntimeView(props: {
         ) : null}
         {props.data.summary?.healthDetail ? (
           <p className="mt-4 text-sm text-[var(--text-muted)]">{props.data.summary.healthDetail}</p>
-        ) : null}
-        {props.data.mode === 'splice-localnet' ? (
-          <div className="mt-5 flex gap-2">
-            <button
-              className="rounded-2xl border border-[var(--accent)]/35 bg-[var(--accent-soft)] px-3 py-2 text-sm font-semibold"
-              onClick={() => props.onOpenAction('localnet/up', {})}
-              type="button"
-            >
-              LocalNet up
-            </button>
-            <button
-              className="rounded-2xl border border-white/10 bg-white/5 px-3 py-2 text-sm font-semibold"
-              onClick={() => props.onOpenAction('localnet/down', {})}
-              type="button"
-            >
-              LocalNet down
-            </button>
-          </div>
         ) : null}
       </Card>
 
@@ -874,7 +749,6 @@ function ChecksView(props: {
 function SupportView(props: {
   data?: UiSupportData
   loading: boolean
-  onOpenAction: (action: ActionKind, draft: Record<string, unknown>) => void
 }) {
   if (props.loading && !props.data) {
     return <SkeletonPanels />
@@ -888,249 +762,68 @@ function SupportView(props: {
     <div className="space-y-4">
       <div className="grid gap-4 xl:grid-cols-3">
         <Card title="Diagnostics Bundle">
-          <SectionTitle
-            eyebrow="Bundle"
-            title="Create a read-only support snapshot"
-            action={(
-              <button
-                className="rounded-2xl border border-[var(--accent)]/35 bg-[var(--accent-soft)] px-3 py-2 text-sm font-semibold"
-                onClick={() => props.onOpenAction('support/diagnostics-bundle', {output: props.data?.defaults.diagnosticsOutputDir ?? ''})}
-                type="button"
-              >
-                Create bundle
-              </button>
-            )}
-          />
+          <SectionTitle eyebrow="Bundle" title="Project-local output target" />
           <p className="mt-4 text-sm text-[var(--text-muted)]">{props.data.defaults.diagnosticsOutputDir}</p>
         </Card>
 
         <Card title="Discovery">
-          <SectionTitle
-            eyebrow="Scan"
-            title="Fetch stable/public network metadata"
-            action={(
-              <button
-                className="rounded-2xl border border-white/10 bg-white/5 px-3 py-2 text-sm font-semibold"
-                onClick={() => props.onOpenAction('support/discover-network', {scanUrl: props.data?.defaults.scanUrl ?? ''})}
-                type="button"
-              >
-                Discover
-              </button>
-            )}
-          />
-          <p className="mt-4 text-sm text-[var(--text-muted)]">{props.data.defaults.scanUrl ?? 'Provide a scan URL in the drawer.'}</p>
+          <SectionTitle eyebrow="Scan" title="Stable/public metadata source" />
+          <p className="mt-4 text-sm text-[var(--text-muted)]">{props.data.defaults.scanUrl ?? 'No scan URL is configured for this profile.'}</p>
         </Card>
 
         <Card title="SDK Export">
-          <SectionTitle
-            eyebrow="Official SDKs"
-            title="Preview derived configuration"
-            action={(
-              <button
-                className="rounded-2xl border border-white/10 bg-white/5 px-3 py-2 text-sm font-semibold"
-                onClick={() => props.onOpenAction('support/export-sdk-config', {format: 'json', target: 'dapp-sdk'})}
-                type="button"
-              >
-                Export
-              </button>
-            )}
-          />
+          <SectionTitle eyebrow="Official SDKs" title="Derived CLI export targets" />
           <p className="mt-4 text-sm text-[var(--text-muted)]">{props.data.defaults.exportTargets.join(', ')}</p>
         </Card>
       </div>
 
-      <Card title="Session Activity">
-        {props.data.activity.length > 0 ? (
-          <div className="space-y-3">
-            {props.data.activity.map(entry => (
-              <div className="ui-card-soft rounded-2xl p-4" key={entry.id}>
-                <div className="flex flex-wrap items-center justify-between gap-3">
-                  <div>
-                    <div className="font-semibold">{entry.action}</div>
-                    <div className="mt-1 text-xs uppercase tracking-[0.16em] text-[var(--text-soft)]">{formatTimestamp(entry.createdAt)}</div>
-                  </div>
-                  <TonePill tone={entry.status === 'success' ? 'pass' : entry.status === 'error' ? 'fail' : 'info'}>
-                    {entry.status}
-                  </TonePill>
-                </div>
-                <p className="mt-3 text-sm text-[var(--text-muted)]">{entry.preview}</p>
-                {entry.summary ? <p className="mt-2 text-sm text-[var(--signal)]">{entry.summary}</p> : null}
-                {entry.artifactPath ? <p className="mt-2 break-all text-xs text-[var(--signal)]">{entry.artifactPath}</p> : null}
-              </div>
-            ))}
-          </div>
-        ) : (
-          <EmptyState body="Actions you run from this control center will appear here with timestamps, previews, status, and artifact paths." title="No Activity Yet" />
-        )}
+      <Card title="CLI-only Support Actions">
+        <EmptyState
+          body="Diagnostics bundles, discovery fetches, and SDK config exports stay CLI-only in this hardened UI. Use the command companion rail to jump from the visualization into the exact command."
+          title="Explicit Handoff"
+        />
       </Card>
     </div>
   )
 }
 
-function DrawerContent(props: {
+function CommandRail(props: {
   activeProfile?: UiProfileSummary
-  drawer: DrawerState
-  onClose: () => void
-  onDraftChange: (draft: Record<string, unknown>) => void
-  onRun: () => Promise<void>
+  profilesData?: ReturnType<typeof fetchProfiles> extends Promise<infer T> ? T : never
+  runtimeData?: UiRuntimeData
   supportData?: UiSupportData
+  view: View
 }) {
-  const preview = buildDrawerPreview(props.drawer.action, props.drawer.draft, props.activeProfile)
+  const commands = buildSuggestedCommands(props)
+
+  if (!props.activeProfile) {
+    return (
+      <EmptyState
+        body="Select a profile to see the exact CLI commands that correspond to the current view."
+        title="No Profile Selected"
+      />
+    )
+  }
 
   return (
-    <div className="flex h-full flex-col justify-between gap-5">
-      <div className="space-y-4">
-        <div className="flex items-center justify-between gap-3">
-          <TonePill tone="info">command preview</TonePill>
-          <button className="text-sm text-[var(--text-muted)]" onClick={props.onClose} type="button">Close</button>
-        </div>
-        <pre className="rounded-2xl border border-white/10 bg-black/20 p-4 text-xs leading-6 text-[var(--signal)]">{preview}</pre>
-        <DrawerForm
-          action={props.drawer.action}
-          draft={props.drawer.draft}
-          onDraftChange={props.onDraftChange}
-          supportData={props.supportData}
-        />
-        {props.drawer.job ? (
-          <div className="space-y-4">
-            <div className="ui-card-soft rounded-3xl p-4">
-              <div className="flex items-center justify-between gap-3">
-                <div className="font-semibold">{props.drawer.job.action}</div>
-                <TonePill tone={props.drawer.job.status === 'success' ? 'pass' : props.drawer.job.status === 'error' ? 'fail' : 'info'}>
-                  {props.drawer.job.status}
-                </TonePill>
-              </div>
-              {props.drawer.job.summary ? <p className="mt-3 text-sm text-[var(--text-muted)]">{props.drawer.job.summary}</p> : null}
-              {props.drawer.job.error ? (
-                <p className="mt-3 text-sm text-[color:var(--fail)]">
-                  {props.drawer.job.error.code}: {props.drawer.job.error.message}
-                </p>
-              ) : null}
-              {props.drawer.job.artifactPath ? <p className="mt-3 break-all text-xs text-[var(--signal)]">{props.drawer.job.artifactPath}</p> : null}
-            </div>
-            <JsonPanel value={props.drawer.job.result ?? props.drawer.job} />
+    <div className="space-y-4">
+      <EmptyState
+        body="The UI stays read-only. Use these commands for explicit auth, import, LocalNet, diagnostics, and export operations outside the browser."
+        title="CLI-only Execution"
+      />
+      {commands.map(command => (
+        <div className="ui-card-soft rounded-3xl p-4" key={`${command.command}-${command.description}`}>
+          <div className="flex items-center justify-between gap-3">
+            <div className="text-sm font-semibold">{command.description}</div>
+            <TonePill tone={command.tone}>{command.tone}</TonePill>
           </div>
-        ) : null}
-      </div>
-
-      <button
-        className="rounded-2xl border border-[var(--accent)]/35 bg-[var(--accent-soft)] px-4 py-3 text-sm font-semibold transition hover:border-[var(--accent)]/50 disabled:cursor-not-allowed disabled:opacity-60"
-        disabled={props.drawer.submitting}
-        onClick={() => {
-          void props.onRun()
-        }}
-        type="button"
-      >
-        {props.drawer.submitting ? 'Running…' : 'Confirm'}
-      </button>
+          <pre className="mt-4 overflow-x-auto rounded-2xl border border-white/10 bg-black/20 p-4 text-xs leading-6 text-[var(--signal)]">
+            {command.command}
+          </pre>
+        </div>
+      ))}
     </div>
   )
-}
-
-function DrawerForm(props: {
-  action: ActionKind
-  draft: Record<string, unknown>
-  onDraftChange: (draft: Record<string, unknown>) => void
-  supportData?: UiSupportData
-}) {
-  const update = (field: string, value: unknown) => props.onDraftChange({...props.draft, [field]: value})
-
-  switch (props.action) {
-    case 'auth/login':
-      return (
-        <FormField label="Token">
-          <textarea
-            className="min-h-28 w-full rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-sm"
-            onChange={event => update('token', event.target.value)}
-            placeholder="Paste bearer token"
-            value={String(props.draft.token ?? '')}
-          />
-        </FormField>
-      )
-
-    case 'profiles/import-localnet':
-      return (
-        <div className="space-y-4">
-          <FormField label="Workspace">
-            <input className="w-full rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-sm" onChange={event => update('workspace', event.target.value)} value={String(props.draft.workspace ?? '')} />
-          </FormField>
-          <div className="grid gap-4 md:grid-cols-2">
-            <FormField label="Source profile">
-              <select className="w-full rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-sm" onChange={event => update('sourceProfile', event.target.value)} value={String(props.draft.sourceProfile ?? 'sv')}>
-                <option value="sv">sv</option>
-                <option value="app-provider">app-provider</option>
-                <option value="app-user">app-user</option>
-              </select>
-            </FormField>
-            <FormField label="Write to config">
-              <label className="flex items-center gap-3 rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-sm">
-                <input checked={Boolean(props.draft.write)} onChange={event => update('write', event.target.checked)} type="checkbox" />
-                Update `cantonctl.yaml`
-              </label>
-            </FormField>
-          </div>
-        </div>
-      )
-
-    case 'profiles/import-scan':
-    case 'support/discover-network':
-      return (
-        <div className="space-y-4">
-          <FormField label="Scan URL">
-            <input className="w-full rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-sm" onChange={event => update('scanUrl', event.target.value)} value={String(props.draft.scanUrl ?? props.supportData?.defaults.scanUrl ?? '')} />
-          </FormField>
-          {props.action === 'profiles/import-scan' ? (
-            <div className="grid gap-4 md:grid-cols-2">
-              <FormField label="Kind">
-                <select className="w-full rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-sm" onChange={event => update('kind', event.target.value)} value={String(props.draft.kind ?? 'remote-validator')}>
-                  <option value="remote-validator">remote-validator</option>
-                  <option value="remote-sv-network">remote-sv-network</option>
-                </select>
-              </FormField>
-              <FormField label="Write to config">
-                <label className="flex items-center gap-3 rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-sm">
-                  <input checked={Boolean(props.draft.write)} onChange={event => update('write', event.target.checked)} type="checkbox" />
-                  Update `cantonctl.yaml`
-                </label>
-              </FormField>
-            </div>
-          ) : null}
-        </div>
-      )
-
-    case 'support/diagnostics-bundle':
-      return (
-        <FormField label="Output directory">
-          <input className="w-full rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-sm" onChange={event => update('output', event.target.value)} value={String(props.draft.output ?? props.supportData?.defaults.diagnosticsOutputDir ?? '')} />
-        </FormField>
-      )
-
-    case 'support/export-sdk-config':
-      return (
-        <div className="grid gap-4 md:grid-cols-2">
-          <FormField label="Target">
-            <select className="w-full rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-sm" onChange={event => update('target', event.target.value)} value={String(props.draft.target ?? 'dapp-sdk')}>
-              {props.supportData?.defaults.exportTargets.map(target => (
-                <option key={target} value={target}>{target}</option>
-              ))}
-            </select>
-          </FormField>
-          <FormField label="Format">
-            <select className="w-full rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-sm" onChange={event => update('format', event.target.value)} value={String(props.draft.format ?? 'json')}>
-              <option value="json">json</option>
-              <option value="env">env</option>
-            </select>
-          </FormField>
-        </div>
-      )
-
-    default:
-      return (
-        <p className="rounded-2xl border border-white/10 bg-black/20 p-4 text-sm text-[var(--text-muted)]">
-          This action has no extra fields. Review the command preview and confirm when ready.
-        </p>
-      )
-  }
 }
 
 function CheckCard(props: {children: ReactNode; onRerun: () => void; title: string; tone: UiTone}) {
@@ -1161,31 +854,6 @@ function Metric(props: {label: string; tone?: UiTone; value: number | string}) {
   )
 }
 
-function RecentOutputCard(props: {entry?: UiActivityEntry; fallback: string; title: string}) {
-  return (
-    <div className="ui-card-soft rounded-2xl p-4">
-      <div className="text-sm font-semibold">{props.title}</div>
-      {props.entry ? (
-        <>
-          <p className="mt-3 text-sm text-[var(--text-muted)]">{props.entry.summary ?? props.entry.preview}</p>
-          {props.entry.artifactPath ? <p className="mt-2 break-all text-xs text-[var(--signal)]">{props.entry.artifactPath}</p> : null}
-        </>
-      ) : (
-        <p className="mt-3 text-sm text-[var(--text-muted)]">{props.fallback}</p>
-      )}
-    </div>
-  )
-}
-
-function FormField(props: {children: ReactNode; label: string}) {
-  return (
-    <label className="block">
-      <div className="mb-2 text-xs font-semibold uppercase tracking-[0.18em] text-[var(--text-soft)]">{props.label}</div>
-      {props.children}
-    </label>
-  )
-}
-
 function SkeletonPanels() {
   return (
     <div className="grid gap-4 md:grid-cols-2">
@@ -1196,44 +864,175 @@ function SkeletonPanels() {
   )
 }
 
-function buildDrawerPreview(
-  action: ActionKind,
-  draft: Record<string, unknown>,
-  profile?: UiProfileSummary,
-): string {
-  switch (action) {
-    case 'auth/login':
-      return `cantonctl auth login ${profile?.networkName ?? '<network>'}${draft.token ? ' --token <redacted>' : ''}`
-    case 'auth/logout':
-      return `cantonctl auth logout ${profile?.networkName ?? '<network>'}`
-    case 'localnet/up':
-      return `cantonctl localnet up --workspace <imported-workspace>`
-    case 'localnet/down':
-      return `cantonctl localnet down --workspace <imported-workspace>`
-    case 'profiles/import-localnet':
-      return `cantonctl profiles import-localnet --workspace ${String(draft.workspace ?? '<workspace>')}${draft.write ? ' --write' : ''}`
-    case 'profiles/import-scan':
-      return `cantonctl profiles import-scan --scan-url ${String(draft.scanUrl ?? '<scan-url>')} --kind ${String(draft.kind ?? '<kind>')}${draft.write ? ' --write' : ''}`
-    case 'support/diagnostics-bundle':
-      return `cantonctl diagnostics bundle --profile ${profile?.name ?? '<profile>'}${draft.output ? ` --output ${String(draft.output)}` : ''}`
-    case 'support/discover-network':
-      return `cantonctl discover network --scan-url ${String(draft.scanUrl ?? '<scan-url>')}`
-    case 'support/export-sdk-config':
-      return `cantonctl export sdk-config --profile ${profile?.name ?? '<profile>'} --target ${String(draft.target ?? 'dapp-sdk')} --format ${String(draft.format ?? 'json')}`
-  }
-}
+function buildSuggestedCommands(props: {
+  activeProfile?: UiProfileSummary
+  profilesData?: ReturnType<typeof fetchProfiles> extends Promise<infer T> ? T : never
+  runtimeData?: UiRuntimeData
+  supportData?: UiSupportData
+  view: View
+}): SuggestedCommand[] {
+  const profile = props.activeProfile
+  if (!profile) return []
 
-async function pollJob(jobId: string): Promise<UiJobData> {
-  for (let attempt = 0; attempt < 120; attempt++) {
-    const job = await fetchJob(jobId)
-    if (job.status !== 'running') {
-      return job
+  switch (props.view) {
+    case 'overview':
+      return [
+        {
+          command: `cantonctl readiness --profile ${profile.name}`,
+          description: 'Run the composed readiness gate',
+          tone: 'pass',
+        },
+        {
+          command: `cantonctl status --profile ${profile.name} --json`,
+          description: 'Inspect resolved service posture',
+          tone: 'info',
+        },
+        {
+          command: 'cantonctl doctor --json',
+          description: 'Check machine-local prerequisites',
+          tone: 'warn',
+        },
+        ...(profile.services.includes('scan')
+          ? [{
+            command: `cantonctl canary stable-public --profile ${profile.name} --json`,
+            description: 'Exercise stable/public remote checks',
+            tone: 'info' as const,
+          }]
+          : []),
+      ]
+
+    case 'profiles': {
+      const commands: SuggestedCommand[] = [
+        {
+          command: `cantonctl profiles show ${profile.name} --json`,
+          description: 'Inspect the resolved profile definition',
+          tone: 'info',
+        },
+        {
+          command: 'cantonctl profiles validate --json',
+          description: 'Validate the canonical project config',
+          tone: 'pass',
+        },
+      ]
+
+      const detail = props.profilesData?.selected
+      if (detail?.imports.localnet?.workspace) {
+        commands.push({
+          command: `cantonctl profiles import-localnet --workspace ${detail.imports.localnet.workspace} --write`,
+          description: 'Refresh the imported LocalNet profile from its workspace',
+          tone: 'warn',
+        })
+      }
+
+      if (detail?.imports.scan?.url && (detail.kind === 'remote-sv-network' || detail.kind === 'remote-validator')) {
+        commands.push({
+          command: `cantonctl profiles import-scan --scan-url ${detail.imports.scan.url} --kind ${detail.kind} --write`,
+          description: 'Refresh the remote profile from scan discovery',
+          tone: 'warn',
+        })
+      }
+
+      if (!profile.auth.authenticated && profile.kind === 'remote-validator') {
+        commands.push({
+          command: `cantonctl auth login ${profile.networkName}`,
+          description: 'Resolve credentials for the selected remote profile',
+          tone: 'fail',
+        })
+      }
+
+      return commands
     }
 
-    await new Promise(resolve => setTimeout(resolve, 500))
-  }
+    case 'runtime':
+      if (props.runtimeData?.mode === 'canton-multi') {
+        return [
+          {
+            command: `cantonctl topology show --profile ${profile.name} --json`,
+            description: 'Inspect the local multi-participant topology',
+            tone: 'pass',
+          },
+          {
+            command: `cantonctl topology export --profile ${profile.name}`,
+            description: 'Export the topology manifest for tooling or review',
+            tone: 'info',
+          },
+        ]
+      }
 
-  throw new Error(`Job ${jobId} timed out`)
+      if (props.runtimeData?.mode === 'splice-localnet') {
+        const workspace = props.runtimeData.summary?.workspace ?? '<workspace>'
+        return [
+          {
+            command: `cantonctl localnet status --workspace ${workspace} --json`,
+            description: 'Inspect the upstream LocalNet workspace status',
+            tone: 'pass',
+          },
+          {
+            command: `cantonctl localnet up --workspace ${workspace}`,
+            description: 'Start the LocalNet workspace outside the browser',
+            tone: 'warn',
+          },
+          {
+            command: `cantonctl localnet down --workspace ${workspace}`,
+            description: 'Stop the LocalNet workspace outside the browser',
+            tone: 'warn',
+          },
+        ]
+      }
+
+      return [
+        {
+          command: `cantonctl status --profile ${profile.name} --json`,
+          description: 'Refresh runtime state for the selected profile',
+          tone: 'info',
+        },
+      ]
+
+    case 'checks':
+      return [
+        {
+          command: `cantonctl readiness --profile ${profile.name} --json`,
+          description: 'Run the full readiness report',
+          tone: 'pass',
+        },
+        {
+          command: `cantonctl preflight --profile ${profile.name} --json`,
+          description: 'Inspect preflight checks directly',
+          tone: 'warn',
+        },
+        {
+          command: `cantonctl compat check --profile ${profile.name} --json`,
+          description: 'Inspect compatibility details directly',
+          tone: 'info',
+        },
+        {
+          command: 'cantonctl doctor --json',
+          description: 'Re-run machine-local diagnostics',
+          tone: 'warn',
+        },
+      ]
+
+    case 'support':
+      return [
+        {
+          command: `cantonctl diagnostics bundle --profile ${profile.name} --output ${props.supportData?.defaults.diagnosticsOutputDir ?? '.cantonctl/diagnostics'}`,
+          description: 'Write a diagnostics bundle from the CLI',
+          tone: 'warn',
+        },
+        ...(props.supportData?.defaults.scanUrl
+          ? [{
+            command: `cantonctl discover network --scan-url ${props.supportData.defaults.scanUrl} --json`,
+            description: 'Fetch stable/public discovery metadata',
+            tone: 'info' as const,
+          }]
+          : []),
+        {
+          command: `cantonctl export sdk-config --profile ${profile.name} --target dapp-sdk --format json`,
+          description: 'Render derived SDK config from the CLI',
+          tone: 'pass',
+        },
+      ]
+  }
 }
 
 function refreshEverything(
@@ -1281,8 +1080,4 @@ function formatRelativeTime(timestamp: number): string {
   if (diffMinutes < 60) return `${diffMinutes}m ago`
   const diffHours = Math.round(diffMinutes / 60)
   return `${diffHours}h ago`
-}
-
-function formatTimestamp(timestamp: string): string {
-  return new Date(timestamp).toLocaleString()
 }

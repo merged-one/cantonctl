@@ -15,6 +15,10 @@ export interface UiApiEnvelope<T> {
   success: boolean
 }
 
+export interface UiBootstrapData {
+  sessionToken: string
+}
+
 export interface UiAuthState {
   authenticated: boolean
   mode: string
@@ -64,17 +68,6 @@ export interface UiServiceStatus {
   tone: UiTone
 }
 
-export interface UiActivityEntry {
-  action: string
-  artifactPath?: string
-  createdAt: string
-  id: string
-  mutating: boolean
-  preview: string
-  status: 'error' | 'running' | 'success'
-  summary?: string
-}
-
 export interface UiOverviewData {
   advisories: UiAdvisory[]
   environmentPath: Array<{
@@ -86,10 +79,6 @@ export interface UiOverviewData {
   profile: {
     kind: ProfileKind
     name: string
-  }
-  recentOutputs: {
-    diagnostics?: UiActivityEntry
-    sdkConfig?: UiActivityEntry
   }
   readiness: {
     failed: number
@@ -251,7 +240,6 @@ export interface UiChecksData {
 }
 
 export interface UiSupportData {
-  activity: UiActivityEntry[]
   defaults: {
     diagnosticsOutputDir: string
     exportTargets: string[]
@@ -261,29 +249,4 @@ export interface UiSupportData {
     kind: ProfileKind
     name: string
   }
-}
-
-export type UiActionKind =
-  | 'auth/login'
-  | 'auth/logout'
-  | 'localnet/down'
-  | 'localnet/up'
-  | 'profiles/import-localnet'
-  | 'profiles/import-scan'
-  | 'support/diagnostics-bundle'
-  | 'support/discover-network'
-  | 'support/export-sdk-config'
-
-export interface UiJobRecord {
-  action: UiActionKind
-  artifactPath?: string
-  createdAt: string
-  error?: UiApiError
-  id: string
-  mutating: boolean
-  preview: string
-  result?: unknown
-  status: 'error' | 'running' | 'success'
-  summary?: string
-  updatedAt: string
 }

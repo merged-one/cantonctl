@@ -105,7 +105,7 @@ The profile model is the product backbone. It is what lets `cantonctl` stay focu
 | `cantonctl dev` | Start the local sandbox wrapper with hot reload | Delegates to DPM/daml |
 | `cantonctl dev --net` | Start the Canton-only multi-node Docker topology | Canton-only local realism |
 | `cantonctl localnet up/down/status` | Wrap the official Splice LocalNet workspace | Quickstart-aware wrapper |
-| `cantonctl ui` | Start the localhost profile-centric control center | Human-only control-plane UI |
+| `cantonctl ui` | Start the hardened read-only localhost control center | Human-only control-plane UI |
 | `cantonctl build` | Compile Daml and optionally codegen bindings | Delegates to DPM/daml |
 | `cantonctl test` | Run Daml Script tests with structured output | Delegates to DPM/daml |
 | `cantonctl deploy <network>` | Run the advisory DAR deploy wrapper for ledger-capable targets | Not a validator control plane |
