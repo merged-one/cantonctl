@@ -186,6 +186,36 @@ describe('preflight checks', () => {
     ]))
   })
 
+  it('warns when the resolved auth profile is marked experimental', async () => {
+    const report = await createPreflightChecks({
+      createProfileRuntimeResolver: createRuntimeResolver({
+        auth: {
+          description: 'Use an explicitly experimental auth mode.',
+          envVarName: 'CANTONCTL_JWT_DEVNET',
+          experimental: true,
+          mode: 'env-or-keychain-jwt',
+          network: 'devnet',
+          requiresExplicitExperimental: true,
+          warnings: ['Experimental auth profile in use.'],
+        },
+      }),
+      createScanAdapter: vi.fn().mockReturnValue({
+        getDsoInfo: vi.fn().mockResolvedValue({}),
+        metadata: {baseUrl: 'https://scan.devnet.example.com'},
+      }),
+      fetch: vi.fn().mockResolvedValue(new Response('', {status: 404})),
+      lookupEgressIp: vi.fn().mockResolvedValue('203.0.113.10'),
+    }).run({config: createConfig(), profileName: 'splice-devnet'})
+
+    expect(report.checks).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        detail: 'Use an explicitly experimental auth mode. CANTONCTL_JWT_DEVNET',
+        name: 'Auth mode',
+        status: 'warn',
+      }),
+    ]))
+  })
+
   it('fails when the scan endpoint cannot be reached', async () => {
     const runner = createPreflightChecks({
       createProfileRuntimeResolver: createRuntimeResolver(),

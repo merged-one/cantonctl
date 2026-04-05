@@ -1,8 +1,9 @@
 import * as nodeFs from 'node:fs'
+import {tmpdir} from 'node:os'
 import * as path from 'node:path'
 import {fileURLToPath} from 'node:url'
 
-import {describe, expect, it} from 'vitest'
+import {describe, expect, it, vi} from 'vitest'
 
 import {loadConfig, type ConfigFileSystem} from './config.js'
 import {CantonctlError, ErrorCode} from './errors.js'
@@ -24,6 +25,36 @@ const PINNED_SDK_VERSION = (() => {
   return version.replace(/^v/, '').split('-')[0]
 })()
 const TEMPLATE_ROOT = fileURLToPath(new URL('../../assets/templates/', import.meta.url))
+
+async function importFreshScaffoldModule() {
+  vi.resetModules()
+  return import('./scaffold.js')
+}
+
+async function withPatchedFile<T>(
+  filePath: string,
+  content: string | undefined,
+  run: () => Promise<T> | T,
+): Promise<T> {
+  const existed = nodeFs.existsSync(filePath)
+  const original = existed ? nodeFs.readFileSync(filePath, 'utf8') : undefined
+
+  if (content === undefined) {
+    nodeFs.rmSync(filePath, {force: true})
+  } else {
+    nodeFs.writeFileSync(filePath, content, 'utf8')
+  }
+
+  try {
+    return await run()
+  } finally {
+    if (existed && original !== undefined) {
+      nodeFs.writeFileSync(filePath, original, 'utf8')
+    } else if (!existed) {
+      nodeFs.rmSync(filePath, {force: true})
+    }
+  }
+}
 
 interface WrittenFile {
   content: string
@@ -162,6 +193,25 @@ describe('scaffoldProject', () => {
     }
   })
 
+  it('uses the native filesystem when no fs override is provided', () => {
+    const rootDir = nodeFs.mkdtempSync(path.join(tmpdir(), 'cantonctl-scaffold-native-'))
+    const projectDir = path.join(rootDir, 'native-app')
+
+    try {
+      const result = scaffoldProject({
+        dir: projectDir,
+        name: 'native-app',
+        template: 'splice-dapp-sdk',
+      })
+
+      expect(result.projectDir).toBe(projectDir)
+      expect(nodeFs.existsSync(path.join(projectDir, 'cantonctl.yaml'))).toBe(true)
+      expect(nodeFs.existsSync(path.join(projectDir, 'daml', 'Main.daml'))).toBe(true)
+    } finally {
+      nodeFs.rmSync(rootDir, {force: true, recursive: true})
+    }
+  })
+
   it('ignores non-file entries while walking bundled template files', () => {
     const symlinkPath = path.join(TEMPLATE_ROOT, 'splice-dapp-sdk', 'files', 'symlink.tmp-test')
     nodeFs.symlinkSync(path.join(TEMPLATE_ROOT, 'splice-dapp-sdk', 'files', 'daml', 'Main.daml'), symlinkPath)
@@ -191,6 +241,26 @@ describe('generateConfig', () => {
       }))
     }
   })
+
+  it('falls back to the sandbox-only preset when a template manifest omits configPreset', async () => {
+    const manifestPath = path.join(TEMPLATE_ROOT, 'splice-dapp-sdk', 'template.json')
+    const sandboxConfig = await withPatchedFile(
+      manifestPath,
+      JSON.stringify({
+        description: 'patched manifest',
+        extraDirectories: [],
+        gitignore: [],
+      }),
+      async () => {
+        const scaffoldModule = await importFreshScaffoldModule()
+        return scaffoldModule.generateConfig('sandbox-only', 'splice-dapp-sdk')
+      },
+    )
+
+    expect(sandboxConfig).toContain('default-profile: sandbox')
+    expect(sandboxConfig).not.toContain('splice-devnet:')
+    expect(sandboxConfig).not.toContain('devnet:')
+  })
 })
 
 describe('template sources', () => {
@@ -204,5 +274,60 @@ describe('template sources', () => {
     expect(generateDamlTest('splice-dapp-sdk')).toContain('script do')
     expect(generateDamlTest('splice-scan-reader')).toContain('script do')
     expect(generateDamlTest('splice-token-app')).toContain('script do')
+  })
+
+  it('throws when a bundled rendered template file is missing', () => {
+    const templateFilePath = path.join(TEMPLATE_ROOT, 'splice-dapp-sdk', 'files', 'daml', 'Main.daml')
+    const original = nodeFs.readFileSync(templateFilePath, 'utf8')
+    nodeFs.rmSync(templateFilePath, {force: true})
+
+    try {
+      expect(() => generateDamlSource('splice-dapp-sdk')).toThrow(CantonctlError)
+    } finally {
+      nodeFs.writeFileSync(templateFilePath, original, 'utf8')
+    }
+  })
+
+  it('fails module initialization when a bundled template manifest is missing', async () => {
+    const manifestPath = path.join(TEMPLATE_ROOT, 'splice-dapp-sdk', 'template.json')
+
+    await withPatchedFile(manifestPath, undefined, async () => {
+      await expect(importFreshScaffoldModule()).rejects.toMatchObject({
+        code: ErrorCode.CONFIG_SCHEMA_VIOLATION,
+      })
+    })
+  })
+
+  it('normalizes non-Error manifest parse failures into structured config errors', async () => {
+    const parseSpy = vi.spyOn(JSON, 'parse').mockImplementation(() => {
+      throw 'bad manifest'
+    })
+
+    try {
+      await expect(importFreshScaffoldModule()).rejects.toSatisfy((error: unknown) =>
+        typeof error === 'object'
+        && error !== null
+        && 'code' in error
+        && (error as {code: string}).code === ErrorCode.CONFIG_SCHEMA_VIOLATION
+        && (!('cause' in error) || (error as {cause?: unknown}).cause === undefined),
+      )
+    } finally {
+      parseSpy.mockRestore()
+    }
+  })
+
+  it('preserves the underlying error cause when a bundled manifest is invalid JSON', async () => {
+    const manifestPath = path.join(TEMPLATE_ROOT, 'splice-dapp-sdk', 'template.json')
+
+    await withPatchedFile(manifestPath, '{not-json', async () => {
+      await expect(importFreshScaffoldModule()).rejects.toSatisfy((error: unknown) =>
+        typeof error === 'object'
+        && error !== null
+        && 'code' in error
+        && (error as {code: string}).code === ErrorCode.CONFIG_SCHEMA_VIOLATION
+        && 'cause' in error
+        && (error as {cause?: unknown}).cause instanceof Error,
+      )
+    })
   })
 })

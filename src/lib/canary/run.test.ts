@@ -1,6 +1,6 @@
 import {describe, expect, it, vi} from 'vitest'
 
-import {createCanaryRunner, STABLE_PUBLIC_CANARY_SUITES} from './run.js'
+import {createCanaryRunner, selectStablePublicCanarySuites, STABLE_PUBLIC_CANARY_SUITES} from './run.js'
 import type {ProfileRuntimeResolver} from '../profile-runtime.js'
 import type {CantonctlConfig} from '../config.js'
 
@@ -69,6 +69,14 @@ function createResolver(): () => ProfileRuntimeResolver {
 }
 
 describe('stable-public canary runner', () => {
+  it('selects token-standard when that stable/public endpoint is configured', () => {
+    expect(selectStablePublicCanarySuites({
+      services: {
+        tokenStandard: {url: 'https://tokens.example.com'},
+      },
+    } as never)).toEqual(['token-standard'])
+  })
+
   it('defaults to only stable/public suites', async () => {
     const runner = createCanaryRunner({
       createAnsAdapter: vi.fn().mockReturnValue({
@@ -119,4 +127,3 @@ describe('stable-public canary runner', () => {
     ])
   })
 })
-

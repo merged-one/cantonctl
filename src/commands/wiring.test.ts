@@ -1,5 +1,8 @@
-import {describe, expect, it} from 'vitest'
+import * as path from 'node:path'
 
+import {describe, expect, it, vi} from 'vitest'
+
+import * as configModule from '../lib/config.js'
 import type {CantonctlConfig} from '../lib/config.js'
 import {createOutput} from '../lib/output.js'
 import type {KeychainBackend} from '../lib/credential-store.js'
@@ -7,6 +10,7 @@ import AuthLogin from './auth/login.js'
 import AuthLogout from './auth/logout.js'
 import AuthStatus from './auth/status.js'
 import Build from './build.js'
+import CodegenSync from './codegen/sync.js'
 import Deploy from './deploy.js'
 import Dev from './dev.js'
 import Doctor from './doctor.js'
@@ -62,6 +66,7 @@ describe('command wiring', () => {
           projectDir: this.getProjectDir(),
           runner,
           sdk,
+          watcher: this.createWatcher(),
         }
       }
     }
@@ -95,6 +100,7 @@ describe('command wiring', () => {
       projectDir: process.cwd(),
       runner: expect.objectContaining({run: expect.any(Function)}),
       sdk: expect.objectContaining({build: expect.any(Function)}),
+      watcher: expect.any(Function),
     }))
     expect(new TestHarness([], {} as never).expose()).toEqual(expect.objectContaining({
       hooks: expect.objectContaining({emit: expect.any(Function)}),
@@ -106,38 +112,57 @@ describe('command wiring', () => {
     }))
   })
 
-  it('wires auth command factories', () => {
+  it('wires auth command factories', async () => {
+    const loadConfigSpy = vi.spyOn(configModule, 'loadConfig').mockResolvedValue(createConfig())
+
     class LoginHarness extends AuthLogin {
-      public expose() {
+      public async expose() {
+        const prompt = this.createReadlineInterface({input: process.stdin, output: process.stderr})
+        prompt.close()
         return {
+          backend: await this.createBackend(),
           client: this.createLedgerClient({baseUrl: 'https://ledger.example.com', token: 'jwt'}),
+          config: await this.loadCommandConfig(),
           store: this.createCredentialStore(createBackend()),
         }
       }
     }
 
     class LogoutHarness extends AuthLogout {
-      public expose() {
-        return this.createCredentialStore(createBackend())
+      public async expose() {
+        return {
+          backend: await this.createBackend(),
+          store: this.createCredentialStore(createBackend()),
+        }
       }
     }
 
     class StatusHarness extends AuthStatus {
-      public expose() {
-        return this.createCredentialStore(createBackend())
+      public async expose() {
+        return {
+          backend: await this.createBackend(),
+          config: await this.loadCommandConfig(),
+          store: this.createCredentialStore(createBackend()),
+        }
       }
     }
 
-    expect(new LoginHarness([], {} as never).expose()).toEqual(expect.objectContaining({
+    expect(await new LoginHarness([], {} as never).expose()).toEqual(expect.objectContaining({
+      backend: expect.objectContaining({backend: expect.any(Object), isKeychain: expect.any(Boolean)}),
       client: expect.objectContaining({getVersion: expect.any(Function)}),
+      config: createConfig(),
       store: expect.objectContaining({store: expect.any(Function)}),
     }))
-    expect(new LogoutHarness([], {} as never).expose()).toEqual(expect.objectContaining({
-      remove: expect.any(Function),
+    expect(await new LogoutHarness([], {} as never).expose()).toEqual(expect.objectContaining({
+      backend: expect.objectContaining({backend: expect.any(Object)}),
+      store: expect.objectContaining({remove: expect.any(Function)}),
     }))
-    expect(new StatusHarness([], {} as never).expose()).toEqual(expect.objectContaining({
-      resolveRecord: expect.any(Function),
+    expect(await new StatusHarness([], {} as never).expose()).toEqual(expect.objectContaining({
+      backend: expect.objectContaining({backend: expect.any(Object), isKeychain: expect.any(Boolean)}),
+      config: createConfig(),
+      store: expect.objectContaining({resolveRecord: expect.any(Function)}),
     }))
+    expect(loadConfigSpy).toHaveBeenCalledTimes(2)
   })
 
   it('wires control-plane command factories', async () => {
@@ -203,6 +228,15 @@ describe('command wiring', () => {
       }
     }
 
+    class CodegenSyncHarness extends CodegenSync {
+      public expose() {
+        return {
+          cwd: this.getCommandCwd(),
+          runner: this.createRunner(),
+        }
+      }
+    }
+
     class DoctorHarness extends Doctor {
       public expose() {
         return {
@@ -246,9 +280,14 @@ describe('command wiring', () => {
     expect(new LocalnetDownHarness([], {} as never).expose()).toEqual(expect.objectContaining({
       down: expect.any(Function),
     }))
-    expect(new ProfilesImportLocalnetHarness([], {} as never).expose()).toEqual(expect.objectContaining({
+    const localnetDetector = new ProfilesImportLocalnetHarness([], {} as never).expose()
+    expect(localnetDetector).toEqual(expect.objectContaining({
       detect: expect.any(Function),
     }))
+    await expect(localnetDetector.detect(path.resolve(process.cwd(), 'test/fixtures/localnet-workspace/quickstart')))
+      .resolves.toEqual(expect.objectContaining({
+        root: path.resolve(process.cwd(), 'test/fixtures/localnet-workspace/quickstart'),
+      }))
 
     expect(new DoctorHarness([], {} as never).expose()).toEqual({
       runner: expect.objectContaining({run: expect.any(Function)}),
@@ -259,6 +298,10 @@ describe('command wiring', () => {
     }))
     expect(new StatusHarness([], {} as never).expose()).toEqual(expect.objectContaining({
       client: expect.objectContaining({getVersion: expect.any(Function)}),
+    }))
+    expect(new CodegenSyncHarness([], {} as never).expose()).toEqual(expect.objectContaining({
+      cwd: process.cwd(),
+      runner: expect.objectContaining({run: expect.any(Function)}),
     }))
   })
 })

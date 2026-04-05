@@ -29,7 +29,7 @@ import Preflight from './preflight.js'
 import ProfilesImportLocalnet from './profiles/import-localnet.js'
 import ProfilesImportScan from './profiles/import-scan.js'
 import PromoteDiff from './promote/diff.js'
-import Readiness from './readiness.js'
+import Readiness, {renderReadinessReport} from './readiness.js'
 import ResetChecklist from './reset/checklist.js'
 import UpgradeCheck from './upgrade/check.js'
 
@@ -294,6 +294,10 @@ function createReadinessReport(success: boolean) {
 
 function parseJson(stdout: string): Record<string, unknown> {
   return JSON.parse(stdout.trim()) as Record<string, unknown>
+}
+
+function combinedOutput(result: {stderr: string; stdout: string}): string {
+  return `${result.stdout}\n${result.stderr}`
 }
 
 describe('companion command surface', () => {
@@ -651,6 +655,15 @@ describe('companion command surface', () => {
     ].join('\n'), 'utf8')
     process.chdir(projectDir)
 
+    const humanWrite = await captureOutput(() => TestProfilesImportLocalnet.run([
+      '--workspace',
+      '../quickstart',
+      '--write',
+    ], {root: CLI_ROOT}))
+    expect(humanWrite.error).toBeUndefined()
+    expect(humanWrite.stdout).toContain('Updated ')
+    expect(humanWrite.stdout).toContain('cantonctl.yaml')
+
     const json = await captureOutput(() => TestProfilesImportLocalnet.run([
       '--workspace',
       '../quickstart',
@@ -724,6 +737,7 @@ describe('companion command surface', () => {
     const run = vi.fn()
       .mockResolvedValueOnce(createReadinessReport(true))
       .mockResolvedValueOnce(createReadinessReport(false))
+      .mockResolvedValueOnce(createReadinessReport(false))
     vi.spyOn(readinessModule, 'createReadinessRunner').mockReturnValue({run})
 
     const human = await captureOutput(() => Readiness.run([], {root: CLI_ROOT}))
@@ -731,6 +745,11 @@ describe('companion command surface', () => {
     expect(human.stdout).toContain('Profile: splice-devnet')
     expect(human.stdout).toContain('Canary suites: scan, ans')
     expect(human.stdout).toContain('Readiness passed')
+
+    const humanFailure = await captureOutput(() => Readiness.run([], {root: CLI_ROOT}))
+    expect(humanFailure.error).toBeDefined()
+    expect(combinedOutput(humanFailure)).toContain('scan: Scan returned HTTP 500.')
+    expect(combinedOutput(humanFailure)).toContain('Readiness found blocking issues.')
 
     const jsonFailure = await captureOutput(() => Readiness.run(['--json'], {root: CLI_ROOT}))
     expect(jsonFailure.error).toBeDefined()
@@ -756,6 +775,53 @@ describe('companion command surface', () => {
 
     createRunnerSpy.mockReturnValueOnce({run: vi.fn().mockRejectedValue(new Error('readiness boom'))})
     await expect(Readiness.run(['--json'], {root: CLI_ROOT})).rejects.toThrow('readiness boom')
+  })
+
+  it('renders readiness reports with empty suite selections and pluralized summary text', () => {
+    const logs: string[] = []
+    const warnings: string[] = []
+    const successes: string[] = []
+
+    renderReadinessReport({
+      error: vi.fn(),
+      info: vi.fn(),
+      log: vi.fn((message: string) => { logs.push(message) }),
+      result: vi.fn(),
+      success: vi.fn((message: string) => { successes.push(message) }),
+      table: vi.fn(),
+      warn: vi.fn((message: string) => { warnings.push(message) }),
+    }, {
+      auth: {
+        credentialSource: 'stored',
+        envVarName: 'CANTONCTL_JWT_SPLICE_DEVNET',
+        mode: 'env-or-keychain-jwt',
+        warnings: [],
+      },
+      canary: {
+        checks: [],
+        selectedSuites: [],
+        skippedSuites: ['scan'],
+        success: true,
+      },
+      compatibility: {failed: 0, passed: 3, warned: 0},
+      preflight: createPreflightReport(true),
+      profile: {
+        experimental: false,
+        kind: 'remote-validator',
+        name: 'splice-devnet',
+      },
+      success: true,
+      summary: {
+        failed: 0,
+        passed: 3,
+        skipped: 1,
+        warned: 2,
+      },
+    })
+
+    expect(logs).toContain('Canary suites: none')
+    expect(warnings).toEqual([])
+    expect(successes).toContain('Readiness passed with 2 warnings and 1 skipped item.')
   })
 
   it('renders promotion diffs in human mode and fails in json mode', async () => {

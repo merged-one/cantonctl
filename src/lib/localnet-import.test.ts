@@ -177,4 +177,110 @@ describe('mergeLocalnetProfileIntoConfigYaml', () => {
       validator: {url: 'http://wallet.localhost:4000/api/validator'},
     })
   })
+
+  it('replaces non-record profiles and networks blocks with canonical maps', () => {
+    const merged = mergeLocalnetProfileIntoConfigYaml({
+      existingConfigYaml: [
+        'version: 1',
+        'profiles: []',
+        'networks: []',
+      ].join('\n'),
+      synthesized: synthesizeProfileFromLocalnetWorkspace({
+        workspace: createWorkspace({
+          scan: 'http://scan.localhost:4000/api/scan',
+          version: '0.5.4',
+        }),
+      }),
+    })
+
+    const parsed = yaml.load(merged) as {
+      networks: Record<string, {profile: string}>
+      profiles: Record<string, Record<string, unknown>>
+    }
+
+    expect(parsed.networks).toEqual({
+      localnet: {profile: 'splice-localnet'},
+    })
+    expect(parsed.profiles['splice-localnet']).toEqual(expect.objectContaining({
+      kind: 'splice-localnet',
+    }))
+  })
+
+  it('replaces null profile and network blocks with canonical maps', () => {
+    const merged = mergeLocalnetProfileIntoConfigYaml({
+      existingConfigYaml: [
+        'version: 1',
+        'profiles: null',
+        'networks: null',
+      ].join('\n'),
+      synthesized: synthesizeProfileFromLocalnetWorkspace({
+        workspace: createWorkspace({
+          scan: 'http://scan.localhost:4000/api/scan',
+          version: '0.5.4',
+        }),
+      }),
+    })
+
+    const parsed = yaml.load(merged) as {
+      networks: Record<string, {profile: string}>
+      profiles: Record<string, Record<string, unknown>>
+    }
+
+    expect(parsed.networks.localnet).toEqual({profile: 'splice-localnet'})
+    expect(parsed.profiles['splice-localnet']).toEqual(expect.objectContaining({
+      kind: 'splice-localnet',
+    }))
+  })
+
+  it('replaces primitive profile and network blocks with canonical maps', () => {
+    const merged = mergeLocalnetProfileIntoConfigYaml({
+      existingConfigYaml: [
+        'version: 1',
+        'profiles: 42',
+        'networks: 42',
+      ].join('\n'),
+      synthesized: synthesizeProfileFromLocalnetWorkspace({
+        workspace: createWorkspace({
+          scan: 'http://scan.localhost:4000/api/scan',
+          version: '0.5.4',
+        }),
+      }),
+    })
+
+    const parsed = yaml.load(merged) as {
+      networks: Record<string, {profile: string}>
+      profiles: Record<string, Record<string, unknown>>
+    }
+
+    expect(parsed.networks.localnet).toEqual({profile: 'splice-localnet'})
+    expect(parsed.profiles['splice-localnet']).toEqual(expect.objectContaining({
+      kind: 'splice-localnet',
+    }))
+  })
+
+  it('initializes an empty config document before merging the imported profile', () => {
+    const merged = mergeLocalnetProfileIntoConfigYaml({
+      existingConfigYaml: '',
+      synthesized: synthesizeProfileFromLocalnetWorkspace({
+        workspace: createWorkspace({
+          scan: 'http://scan.localhost:4000/api/scan',
+          version: '0.5.4',
+        }),
+      }),
+    })
+
+    const parsed = yaml.load(merged) as {
+      networks: Record<string, {profile: string}>
+      profiles: Record<string, Record<string, unknown>>
+    }
+
+    expect(parsed).toEqual({
+      networks: {
+        localnet: {profile: 'splice-localnet'},
+      },
+      profiles: {
+        'splice-localnet': expect.objectContaining({kind: 'splice-localnet'}),
+      },
+    })
+  })
 })
