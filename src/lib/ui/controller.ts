@@ -620,17 +620,17 @@ export function createUiController(
   }
 }
 
-function resolveRequestedProfileName(config: CantonctlConfig, profileName?: string): string | undefined {
+export function resolveRequestedProfileName(config: CantonctlConfig, profileName?: string): string | undefined {
   if (profileName) return profileName
   if (config['default-profile']) return config['default-profile']
   return Object.keys(config.profiles ?? {})[0]
 }
 
-function buildStorageKey(configPath: string): string {
+export function buildStorageKey(configPath: string): string {
   return `cantonctl-ui:${configPath}`
 }
 
-function deriveReadinessBadge(options: {
+export function deriveReadinessBadge(options: {
   authenticated: boolean
   compatibilityFailed: number
   compatibilityWarned: number
@@ -656,7 +656,7 @@ function deriveReadinessBadge(options: {
   return {detail: options.local ? 'Local runtime' : 'Ready', tone: options.local ? 'info' : 'pass'}
 }
 
-function buildEnvironmentPath(
+export function buildEnvironmentPath(
   config: CantonctlConfig,
   selectedProfileName: string,
 ): UiOverviewData['environmentPath'] {
@@ -692,11 +692,11 @@ function buildEnvironmentPath(
     }))
 }
 
-function isLocalProfile(kind: NormalizedProfile['kind']): boolean {
+export function isLocalProfile(kind: NormalizedProfile['kind']): boolean {
   return kind === 'sandbox' || kind === 'canton-multi' || kind === 'splice-localnet'
 }
 
-function shouldCheckLocalEndpoint(endpoint: string): boolean {
+export function shouldCheckLocalEndpoint(endpoint: string): boolean {
   try {
     const url = new URL(endpoint)
     return (
@@ -709,7 +709,7 @@ function shouldCheckLocalEndpoint(endpoint: string): boolean {
   }
 }
 
-function renderProfileYaml(profile: NormalizedProfile, networkMappings: string[]): string {
+export function renderProfileYaml(profile: NormalizedProfile, networkMappings: string[]): string {
   const document = stripUndefined({
     networks: networkMappings.length > 0
       ? Object.fromEntries(networkMappings.map(networkName => [networkName, {profile: profile.name}]))
@@ -733,7 +733,7 @@ function renderProfileYaml(profile: NormalizedProfile, networkMappings: string[]
   return yaml.dump(document, {lineWidth: 120}).trim()
 }
 
-function stripUndefined<T>(value: T): T {
+export function stripUndefined<T>(value: T): T {
   if (Array.isArray(value)) {
     return value
       .map(item => stripUndefined(item))
@@ -750,7 +750,7 @@ function stripUndefined<T>(value: T): T {
   return value
 }
 
-function buildRemoteServiceMap(
+export function buildRemoteServiceMap(
   profile: NormalizedProfile,
   diagnostics: Awaited<ReturnType<DiagnosticsCollector['collect']>>,
 ): {edges: UiRuntimeEdge[]; nodes: UiRuntimeNode[]} {
@@ -803,7 +803,7 @@ function buildRemoteServiceMap(
   return {edges, nodes}
 }
 
-function toHealthSummary(status: 'auth-required' | 'healthy' | 'not-exposed' | 'unreachable'): {status: string; tone: UiTone} {
+export function toHealthSummary(status: 'auth-required' | 'healthy' | 'not-exposed' | 'unreachable'): {status: string; tone: UiTone} {
   switch (status) {
     case 'healthy':
       return {status: 'healthy', tone: 'pass'}

@@ -80,21 +80,13 @@ export default class Ui extends Command {
   }
 
   protected async openBrowser(url: string): Promise<void> {
-    const command = process.platform === 'darwin'
+    const command = this.platform() === 'darwin'
       ? {args: [url], command: 'open'}
-      : process.platform === 'win32'
+      : this.platform() === 'win32'
         ? {args: ['/c', 'start', '', url], command: 'cmd'}
         : {args: [url], command: 'xdg-open'}
 
-    await new Promise<void>((resolve) => {
-      const child = spawn(command.command, command.args, {
-        detached: true,
-        stdio: 'ignore',
-      })
-      child.on('error', () => resolve())
-      child.unref()
-      resolve()
-    })
+    await this.spawnDetached(command.command, command.args)
   }
 
   protected async waitForShutdown(server: UiServer): Promise<void> {
@@ -105,8 +97,28 @@ export default class Ui extends Command {
           .catch(reject)
       }
 
-      process.once('SIGINT', shutdown)
-      process.once('SIGTERM', shutdown)
+      this.onceSignal('SIGINT', shutdown)
+      this.onceSignal('SIGTERM', shutdown)
+    })
+  }
+
+  protected platform(): NodeJS.Platform {
+    return process.platform
+  }
+
+  protected onceSignal(signal: NodeJS.Signals, handler: () => void): void {
+    process.once(signal, handler)
+  }
+
+  protected async spawnDetached(command: string, args: string[]): Promise<void> {
+    await new Promise<void>((resolve) => {
+      const child = spawn(command, args, {
+        detached: true,
+        stdio: 'ignore',
+      })
+      child.on('error', () => resolve())
+      child.unref()
+      resolve()
     })
   }
 }

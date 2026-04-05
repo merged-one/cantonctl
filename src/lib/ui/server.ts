@@ -11,7 +11,7 @@ import type {UiController} from './controller.js'
 const API_PREFIX = '/ui'
 const SESSION_HEADER = 'x-cantonctl-ui-session'
 
-interface UiRequestPolicy {
+export interface UiRequestPolicy {
   allowedHostnames: Set<string>
   port: number
   sessionToken: string
@@ -98,7 +98,7 @@ export function createUiServer(deps: UiServerDeps): UiServer {
   }
 }
 
-async function handleRequest(
+export async function handleRequest(
   request: http.IncomingMessage,
   response: http.ServerResponse,
   deps: {
@@ -228,7 +228,7 @@ async function handleApiRequest(
   }
 }
 
-async function serveStatic(
+export async function serveStatic(
   pathname: string,
   response: http.ServerResponse,
   assetsDir: string,
@@ -260,7 +260,7 @@ async function serveStatic(
   response.end(body)
 }
 
-function validateLocalRequest(
+export function validateLocalRequest(
   request: http.IncomingMessage,
   policy: UiRequestPolicy,
 ): {code: string; message: string} | null {
@@ -282,7 +282,7 @@ function validateLocalRequest(
   return null
 }
 
-function validateApiRequest(
+export function validateApiRequest(
   request: http.IncomingMessage,
   policy: UiRequestPolicy,
 ): {code: string; message: string} | null {
@@ -298,7 +298,7 @@ function validateApiRequest(
   return null
 }
 
-function matchesLocalOrigin(value: string | undefined, policy: UiRequestPolicy): boolean {
+export function matchesLocalOrigin(value: string | undefined, policy: UiRequestPolicy): boolean {
   if (!value) return false
 
   try {
@@ -312,7 +312,7 @@ function matchesLocalOrigin(value: string | undefined, policy: UiRequestPolicy):
   }
 }
 
-function createAllowedHostnames(host: string): Set<string> {
+export function createAllowedHostnames(host: string): Set<string> {
   const allowed = new Set<string>([host])
   if (host === '127.0.0.1') {
     allowed.add('localhost')
@@ -323,7 +323,7 @@ function createAllowedHostnames(host: string): Set<string> {
   return allowed
 }
 
-function injectBootstrap(html: string, bootstrap: UiBootstrapData): string {
+export function injectBootstrap(html: string, bootstrap: UiBootstrapData): string {
   const script = `<script>window.__CANTONCTL_UI__=${JSON.stringify(bootstrap)};</script>`
   if (html.includes('</head>')) {
     return html.replace('</head>', `${script}</head>`)
@@ -366,7 +366,7 @@ function setCommonHeaders(response: http.ServerResponse): void {
   response.setHeader('X-Frame-Options', 'DENY')
 }
 
-function contentType(filePath: string): string {
+export function contentType(filePath: string): string {
   switch (path.extname(filePath)) {
     case '.css':
       return 'text/css; charset=utf-8'
@@ -394,7 +394,7 @@ function ensureAssetsDir(assetsDir: string, fsImpl: typeof fs): void {
   })
 }
 
-function mapServerError(error: unknown, port: number): Error {
+export function mapServerError(error: unknown, port: number): Error {
   if (error && typeof error === 'object' && 'code' in error && error.code === 'EADDRINUSE') {
     return new CantonctlError(ErrorCode.SANDBOX_PORT_IN_USE, {
       suggestion: `Port ${port} is already in use. Re-run with --port <n>.`,
@@ -404,7 +404,7 @@ function mapServerError(error: unknown, port: number): Error {
   return error instanceof Error ? error : new Error(String(error))
 }
 
-function toUiApiError(error: unknown): {code: string; message: string; suggestion?: string} {
+export function toUiApiError(error: unknown): {code: string; message: string; suggestion?: string} {
   if (error instanceof CantonctlError) {
     return {
       code: error.code,
