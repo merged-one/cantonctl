@@ -25,6 +25,7 @@ import {createLifecycleDiff} from './lifecycle/diff.js'
 import {createUpgradeChecker} from './lifecycle/upgrade.js'
 import {classifyNetworkTier, resolveNetworkPolicy} from './preflight/network-policy.js'
 import {renderPreflightReport, summarizePreflightDetail} from './preflight/output.js'
+import {createProfileStatusInventory} from './runtime-inventory.js'
 
 const TEMP_DIRS: string[] = []
 
@@ -58,7 +59,7 @@ function createRuntime(overrides: {
   services?: Record<string, unknown>
   token?: string
 } = {}): ResolvedRuntime {
-  const services = overrides.services ?? {
+  const serviceConfigs = overrides.services ?? {
     ans: {url: 'https://ans.example.com'},
     auth: {kind: 'jwt', url: 'https://auth.example.com'},
     ledger: {url: 'https://ledger.example.com'},
@@ -70,9 +71,11 @@ function createRuntime(overrides: {
     experimental: overrides.experimental ?? false,
     kind: overrides.kind ?? 'remote-validator',
     name: 'splice-devnet',
-    services,
+    services: serviceConfigs,
   } as ResolvedRuntime['profile']
   const compatibilityServices = overrides.compatibilityServices ?? summarizeProfileServices(profile)
+  const capabilities = summarizeProfileCapabilities(profile)
+  const runtimeServices = summarizeProfileServices(profile)
 
   return {
     auth: {
@@ -92,22 +95,30 @@ function createRuntime(overrides: {
       services: compatibilityServices,
       warned: overrides.compatibilityWarned ?? 0,
     },
-    capabilities: summarizeProfileCapabilities(profile),
+    capabilities,
     credential: {
       mode: overrides.authMode ?? 'env-or-keychain-jwt',
       network: overrides.networkName ?? 'splice-devnet',
       source: overrides.credentialSource ?? 'stored',
       token: overrides.token,
     },
+    inventory: createProfileStatusInventory({
+      inspection: {
+        capabilities,
+        profile,
+        resolvedFrom: 'argument',
+        services: runtimeServices,
+      },
+    }),
     networkName: overrides.networkName ?? 'splice-devnet',
     profile,
     profileContext: {
       experimental: profile.experimental,
       kind: profile.kind,
       name: profile.name,
-      services,
+      services: serviceConfigs,
     },
-    services: summarizeProfileServices(profile),
+    services: runtimeServices,
   } as ResolvedRuntime
 }
 

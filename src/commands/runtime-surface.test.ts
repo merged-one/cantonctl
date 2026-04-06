@@ -185,6 +185,17 @@ describe('runtime command surface', () => {
     expect(json.success).toBe(true)
     expect(json.data).toEqual(expect.objectContaining({
       healthy: true,
+      inventory: expect.objectContaining({
+        profile: expect.objectContaining({kind: 'sandbox', name: 'sandbox'}),
+        schemaVersion: 1,
+        services: expect.arrayContaining([
+          expect.objectContaining({
+            name: 'ledger',
+            runtimeProvenance: 'derived-local-default',
+            status: 'healthy',
+          }),
+        ]),
+      }),
       profile: expect.objectContaining({kind: 'sandbox', name: 'sandbox'}),
       services: [
         expect.objectContaining({
@@ -1207,12 +1218,21 @@ describe('runtime command surface', () => {
     const json = parseJson(result.stdout)
     expect(json.data).toEqual(expect.objectContaining({
       healthy: true,
+      inventory: expect.objectContaining({
+        services: [
+          expect.objectContaining({
+            endpoint: 'https://ledger.example.com',
+            name: 'ledger',
+            runtimeProvenance: 'remote-discovery',
+          }),
+        ],
+      }),
       mode: 'single-node',
       network: 'devnet',
       parties: [],
       services: [
         expect.objectContaining({
-          detail: 'remote ledger endpoint',
+          detail: 'Ledger endpoint',
           endpoint: 'https://ledger.example.com',
           name: 'ledger',
         }),

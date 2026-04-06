@@ -50,6 +50,16 @@ Resolved profile inspection now includes manifest-backed control-plane metadata 
 - endpoint provenance
 - official SDK-backed out-of-scope capability markers where applicable
 
+`cantonctl status --json` now emits the authoritative schema-versioned runtime inventory for sandbox, generated `dev --net` topologies, and remote profile/network targets, including:
+
+- service and capability health
+- runtime provenance
+- operator/internal warnings
+- management eligibility
+- drift hints between resolved profile intent and discovered runtime state
+
+`cantonctl localnet up|status --json` emits the same inventory contract for official LocalNet workspace discovery.
+
 Local topology design for `dev --net` is separate and lives under the top-level `topologies:` config section.
 
 ## Current Control-Plane Coverage

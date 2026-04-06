@@ -19,6 +19,23 @@ cantonctl status [flags]
 - ledger version and party list when available
 - multi-node summaries for the Canton-only topology
 
+## JSON Contract
+
+`status --json` includes a schema-versioned `inventory` block that is the authoritative machine-readable runtime inventory for later control-plane work.
+
+- `inventory.schemaVersion`: current inventory contract version
+- `inventory.services[]`: service-level endpoint, health, runtime provenance, warnings, and drift hints
+- `inventory.capabilities[]`: capability-level ownership, management eligibility, stability, warnings, and drift hints
+- `inventory.drift[]`: aggregated profile-versus-runtime mismatches
+
+Runtime provenance distinguishes configured endpoints from discovered runtime data:
+
+- `declared`, `legacy-network`, and `derived-local-default` for config-backed resolution
+- `generated-topology` for `dev --net` runtime discovery
+- `remote-discovery` for remote network targets
+
+Human output stays concise. The richer inventory details live in JSON.
+
 ## Flags
 
 | Flag | Description |

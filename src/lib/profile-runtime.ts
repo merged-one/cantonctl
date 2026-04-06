@@ -12,6 +12,7 @@ import {
 import {type AuthProfileMode, type ResolvedAuthProfile, resolveAuthProfile} from './auth-profile.js'
 import {createSandboxToken} from './jwt.js'
 import {createBackendWithFallback} from './keytar-backend.js'
+import {createProfileStatusInventory, type RuntimeInventory} from './runtime-inventory.js'
 import {resolveStableSpliceProfile} from './splice-public.js'
 
 export interface RuntimeCredential {
@@ -26,6 +27,7 @@ export interface ResolvedProfileRuntime {
   capabilities: ProfileCapabilitySummary[]
   compatibility: CompatibilityReport
   credential: RuntimeCredential
+  inventory: RuntimeInventory
   networkName: string
   profile: NormalizedProfile
   profileContext: ReturnType<typeof resolveStableSpliceProfile>
@@ -78,6 +80,7 @@ export function createProfileRuntimeResolver(
         capabilities: inspection.capabilities,
         compatibility,
         credential,
+        inventory: createProfileStatusInventory({inspection}),
         networkName,
         profile,
         profileContext: resolveStableSpliceProfile(options.config, profile.name),
