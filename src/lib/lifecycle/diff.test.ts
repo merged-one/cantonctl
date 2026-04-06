@@ -3,6 +3,8 @@ import {describe, expect, it, vi} from 'vitest'
 import {createLifecycleDiff} from './diff.js'
 import {createUpgradeChecker} from './upgrade.js'
 import {createResetHelper} from './reset.js'
+import {summarizeProfileCapabilities} from '../control-plane.js'
+import {summarizeProfileServices} from '../compat.js'
 import type {ProfileRuntimeResolver} from '../profile-runtime.js'
 import type {CantonctlConfig} from '../config.js'
 
@@ -21,14 +23,61 @@ function createResolver(values: Array<Awaited<ReturnType<ProfileRuntimeResolver[
   })
 }
 
+function createRuntime(options: {
+  authEnvVarName: string
+  credentialSource: 'env' | 'fallback' | 'missing' | 'stored'
+  networkName: string
+  profile: Awaited<ReturnType<ProfileRuntimeResolver['resolve']>>['profile']
+  token?: string
+}): Awaited<ReturnType<ProfileRuntimeResolver['resolve']>> {
+  return {
+    auth: {
+      description: '',
+      envVarName: options.authEnvVarName,
+      experimental: false,
+      mode: 'env-or-keychain-jwt',
+      network: options.networkName,
+      requiresExplicitExperimental: false,
+      warnings: [],
+    },
+    capabilities: summarizeProfileCapabilities(options.profile),
+    compatibility: {
+      checks: [],
+      failed: 0,
+      passed: 2,
+      profile: {
+        experimental: options.profile.experimental,
+        kind: options.profile.kind,
+        name: options.profile.name,
+      },
+      services: summarizeProfileServices(options.profile),
+      warned: 0,
+    },
+    credential: {
+      mode: 'env-or-keychain-jwt',
+      network: options.networkName,
+      source: options.credentialSource,
+      token: options.token,
+    },
+    networkName: options.networkName,
+    profile: options.profile,
+    profileContext: {
+      experimental: options.profile.experimental,
+      kind: options.profile.kind,
+      name: options.profile.name,
+      services: options.profile.services,
+    },
+    services: summarizeProfileServices(options.profile),
+  }
+}
+
 describe('lifecycle helpers', () => {
   it('diffs environments and surfaces reset-sensitive promotions', async () => {
     const diff = createLifecycleDiff({
       createProfileRuntimeResolver: createResolver([
-        {
-          auth: {description: '', envVarName: 'CANTONCTL_JWT_SPLICE_DEVNET', experimental: false, mode: 'env-or-keychain-jwt', network: 'splice-devnet', requiresExplicitExperimental: false, warnings: []},
-          compatibility: {checks: [], failed: 0, passed: 2, profile: {experimental: false, kind: 'remote-validator', name: 'splice-devnet'}, services: [], warned: 0},
-          credential: {mode: 'env-or-keychain-jwt', network: 'splice-devnet', source: 'stored', token: 'devnet-token'},
+        createRuntime({
+          authEnvVarName: 'CANTONCTL_JWT_SPLICE_DEVNET',
+          credentialSource: 'stored',
           networkName: 'splice-devnet',
           profile: {
             experimental: false,
@@ -40,21 +89,11 @@ describe('lifecycle helpers', () => {
               scan: {url: 'https://scan.devnet.example.com'},
             },
           },
-          profileContext: {
-            experimental: false,
-            kind: 'remote-validator',
-            name: 'splice-devnet',
-            services: {
-              auth: {kind: 'jwt'},
-              ledger: {url: 'https://ledger.devnet.example.com'},
-              scan: {url: 'https://scan.devnet.example.com'},
-            },
-          },
-        },
-        {
-          auth: {description: '', envVarName: 'CANTONCTL_JWT_SPLICE_TESTNET', experimental: false, mode: 'env-or-keychain-jwt', network: 'splice-testnet', requiresExplicitExperimental: false, warnings: []},
-          compatibility: {checks: [], failed: 0, passed: 2, profile: {experimental: false, kind: 'remote-validator', name: 'splice-testnet'}, services: [], warned: 0},
-          credential: {mode: 'env-or-keychain-jwt', network: 'splice-testnet', source: 'stored', token: 'testnet-token'},
+          token: 'devnet-token',
+        }),
+        createRuntime({
+          authEnvVarName: 'CANTONCTL_JWT_SPLICE_TESTNET',
+          credentialSource: 'stored',
           networkName: 'splice-testnet',
           profile: {
             experimental: false,
@@ -66,17 +105,8 @@ describe('lifecycle helpers', () => {
               scan: {url: 'https://scan.testnet.example.com'},
             },
           },
-          profileContext: {
-            experimental: false,
-            kind: 'remote-validator',
-            name: 'splice-testnet',
-            services: {
-              auth: {kind: 'jwt'},
-              ledger: {url: 'https://ledger.testnet.example.com'},
-              scan: {url: 'https://scan.testnet.example.com'},
-            },
-          },
-        },
+          token: 'testnet-token',
+        }),
       ]),
     })
 
@@ -96,27 +126,35 @@ describe('lifecycle helpers', () => {
     const upgrade = createUpgradeChecker({
       createProfileRuntimeResolver: createResolver([
         {
-          auth: {description: '', envVarName: 'CANTONCTL_JWT_SPLICE_MAINNET', experimental: false, mode: 'env-or-keychain-jwt', network: 'splice-mainnet', requiresExplicitExperimental: false, warnings: []},
-          compatibility: {checks: [], failed: 1, passed: 1, profile: {experimental: false, kind: 'remote-validator', name: 'splice-mainnet'}, services: [], warned: 0},
-          credential: {mode: 'env-or-keychain-jwt', network: 'splice-mainnet', source: 'missing'},
-          networkName: 'splice-mainnet',
-          profile: {
-            experimental: false,
-            kind: 'remote-validator',
-            name: 'splice-mainnet',
-            services: {
-              auth: {kind: 'jwt'},
-              ledger: {url: 'https://ledger.mainnet.example.com'},
+          ...createRuntime({
+            authEnvVarName: 'CANTONCTL_JWT_SPLICE_MAINNET',
+            credentialSource: 'missing',
+            networkName: 'splice-mainnet',
+            profile: {
+              experimental: false,
+              kind: 'remote-validator',
+              name: 'splice-mainnet',
+              services: {
+                auth: {kind: 'jwt'},
+                ledger: {url: 'https://ledger.mainnet.example.com'},
+              },
             },
-          },
-          profileContext: {
-            experimental: false,
-            kind: 'remote-validator',
-            name: 'splice-mainnet',
-            services: {
-              auth: {kind: 'jwt'},
-              ledger: {url: 'https://ledger.mainnet.example.com'},
-            },
+          }),
+          compatibility: {
+            checks: [],
+            failed: 1,
+            passed: 1,
+            profile: {experimental: false, kind: 'remote-validator', name: 'splice-mainnet'},
+            services: summarizeProfileServices({
+              experimental: false,
+              kind: 'remote-validator',
+              name: 'splice-mainnet',
+              services: {
+                auth: {kind: 'jwt'},
+                ledger: {url: 'https://ledger.mainnet.example.com'},
+              },
+            }),
+            warned: 0,
           },
         },
       ]),
@@ -148,4 +186,3 @@ describe('lifecycle helpers', () => {
     }))
   })
 })
-

@@ -17,6 +17,7 @@ describe('normalizeConfigProfiles', () => {
 
     expect(result.defaultProfile).toBe('local')
     expect(result.profiles.local).toEqual({
+      definitionSource: 'legacy-network',
       experimental: false,
       kind: 'sandbox',
       name: 'local',
@@ -61,10 +62,12 @@ describe('normalizeConfigProfiles', () => {
       port: 5001,
       'json-api-port': 7575,
     })
+    expect(result.profiles.sandbox.definitionSource).toBe('profiles')
     expect(result.profiles.validator.services.auth).toEqual({
       issuer: 'https://login.example.com',
       kind: 'oidc',
     })
+    expect(result.profiles.validator.definitionSource).toBe('profiles')
     expect(result.networks.local).toEqual({
       port: 5001,
       'json-api-port': 7575,
@@ -127,6 +130,7 @@ describe('normalizeConfigProfiles', () => {
     })
 
     expect(result.defaultProfile).toBe('splice')
+    expect(result.profiles.splice.definitionSource).toBe('profiles')
     expect(result.networks.local).toEqual({
       port: 5001,
       'json-api-port': 7575,

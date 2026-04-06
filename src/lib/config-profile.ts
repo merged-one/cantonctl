@@ -2,6 +2,7 @@ import {CantonctlError, ErrorCode} from './errors.js'
 
 export type NetworkAuthMode = 'jwt' | 'shared-secret' | 'none'
 export type LegacyNetworkType = 'sandbox' | 'remote' | 'docker'
+export type ProfileDefinitionSource = 'profiles' | 'legacy-network'
 export type ProfileKind =
   | 'sandbox'
   | 'canton-multi'
@@ -84,6 +85,7 @@ export interface ProfileServices {
 }
 
 export interface NormalizedProfile {
+  definitionSource?: ProfileDefinitionSource
   experimental: boolean
   kind: ProfileKind
   name: string
@@ -208,6 +210,7 @@ function formatIssues(issues: Issue[]): string {
 
 function normalizeProfile(name: string, profile: RawProfileConfig): NormalizedProfile {
   return {
+    definitionSource: 'profiles',
     experimental: profile.experimental ?? false,
     kind: profile.kind,
     name,
@@ -226,6 +229,7 @@ function normalizeProfile(name: string, profile: RawProfileConfig): NormalizedPr
 
 function normalizeLegacyNetworkProfile(name: string, network: LegacyNetworkConfig): NormalizedProfile {
   return {
+    definitionSource: 'legacy-network',
     experimental: false,
     kind: legacyNetworkTypeToProfileKind(network.type),
     name,

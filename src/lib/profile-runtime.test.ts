@@ -98,6 +98,23 @@ describe('profile runtime', () => {
       source: 'stored',
       token: 'stored-token',
     }))
+    expect(runtime.services).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        controlPlane: expect.objectContaining({
+          lifecycleOwner: 'official-remote-runtime',
+          managementClass: 'plan-only',
+          mutationScope: 'managed',
+        }),
+        name: 'validator',
+      }),
+    ]))
+    expect(runtime.capabilities).toEqual([expect.objectContaining({
+      controlPlane: expect.objectContaining({
+        lifecycleOwner: 'external-sdk',
+        mutationScope: 'out-of-scope',
+      }),
+      name: 'wallet-integration',
+    })])
     expect(summarizeCredentialSource(runtime.credential)).toBe('resolved from keychain')
   })
 
@@ -137,6 +154,18 @@ describe('profile runtime', () => {
       source: 'fallback',
       token: 'sandbox-token',
     })
+    expect(runtime.capabilities).toEqual([])
+    expect(runtime.services).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        controlPlane: expect.objectContaining({
+          endpointProvenance: 'derived-local-default',
+          lifecycleOwner: 'official-local-runtime',
+          managementClass: 'apply-capable',
+          mutationScope: 'managed',
+        }),
+        name: 'ledger',
+      }),
+    ]))
     expect(fallbackToken).toHaveBeenCalledOnce()
   })
 

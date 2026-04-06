@@ -14,6 +14,7 @@ cantonctl status [flags]
 
 - resolved profile or network target
 - configured service endpoints
+- derived control-plane ownership and management metadata in JSON service entries
 - ledger health when a ledger-capable target is available
 - ledger version and party list when available
 - multi-node summaries for the Canton-only topology

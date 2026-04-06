@@ -6,6 +6,7 @@
  */
 
 import * as fs from 'node:fs'
+import * as net from 'node:net'
 import * as os from 'node:os'
 import * as path from 'node:path'
 import {execSync} from 'node:child_process'
@@ -159,4 +160,75 @@ export function createE2eTempDir(prefix: string): string {
   }
 
   return fs.mkdtempSync(path.join(os.tmpdir(), prefix))
+}
+
+async function canBindE2ePort(port: number): Promise<boolean> {
+  return new Promise((resolve) => {
+    const server = net.createServer()
+
+    server.once('error', () => {
+      resolve(false)
+    })
+
+    server.listen(port, '0.0.0.0', () => {
+      server.close(() => resolve(true))
+    })
+  })
+}
+
+function getAllocatedDockerHostPorts(): Set<number> {
+  try {
+    const output = execSync("docker ps --format '{{.Ports}}'", {
+      stdio: 'pipe',
+      timeout: 10_000,
+    }).toString()
+
+    const ports = new Set<number>()
+    for (const match of output.matchAll(/:(\d+)(?:-(\d+))?->/g)) {
+      const start = Number.parseInt(match[1] ?? '0', 10)
+      const end = Number.parseInt(match[2] ?? match[1] ?? '0', 10)
+
+      for (let port = start; port <= end; port += 1) {
+        ports.add(port)
+      }
+    }
+
+    return ports
+  } catch {
+    return new Set<number>()
+  }
+}
+
+/**
+ * Find a free consecutive host port block for Docker-backed E2E suites.
+ *
+ * Docker E2E jobs reuse the host Docker daemon across suites and Node versions,
+ * so fixed host ports can collide with stale containers from earlier runs.
+ * Reserving a free block up front keeps each suite isolated while preserving
+ * the stable offset layout expected by the topology fixtures.
+ */
+export async function findAvailableE2ePortBase(
+  span: number,
+  options: {end?: number; start?: number; step?: number} = {},
+): Promise<number> {
+  const start = options.start ?? 20_000
+  const end = options.end ?? 40_000
+  const step = options.step ?? 100
+  const dockerHostPorts = getAllocatedDockerHostPorts()
+
+  for (let base = start; base + span <= end; base += step) {
+    const ports = Array.from({length: span}, (_, index) => base + index)
+
+    if (ports.some(port => dockerHostPorts.has(port))) {
+      continue
+    }
+
+    const availability = await Promise.all(ports.map(port => canBindE2ePort(port)))
+
+    if (availability.every(Boolean)) {
+      return base
+    }
+  }
+
+  throw new Error(`Could not find a free E2E port block of size ${span} between ${start} and ${end}.`)
 }

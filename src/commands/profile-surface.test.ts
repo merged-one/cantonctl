@@ -210,13 +210,43 @@ describe('profile command surface', () => {
     expect(json.success).toBe(true)
     expect(json.data).toEqual(expect.objectContaining({
       profile: expect.objectContaining({
+        definitionSource: 'profiles',
         kind: 'remote-validator',
         name: 'splice-devnet',
       }),
+      capabilities: [expect.objectContaining({
+        controlPlane: expect.objectContaining({
+          lifecycleOwner: 'external-sdk',
+          mutationScope: 'out-of-scope',
+        }),
+        name: 'wallet-integration',
+      })],
       services: expect.arrayContaining([
-        expect.objectContaining({name: 'ledger'}),
-        expect.objectContaining({name: 'scanProxy'}),
-        expect.objectContaining({name: 'validator'}),
+        expect.objectContaining({
+          controlPlane: expect.objectContaining({
+            lifecycleOwner: 'official-remote-runtime',
+            managementClass: 'plan-only',
+            mutationScope: 'managed',
+          }),
+          name: 'ledger',
+        }),
+        expect.objectContaining({
+          controlPlane: expect.objectContaining({
+            lifecycleOwner: 'official-remote-runtime',
+            managementClass: 'read-only',
+            mutationScope: 'observed',
+          }),
+          name: 'scanProxy',
+        }),
+        expect.objectContaining({
+          controlPlane: expect.objectContaining({
+            lifecycleOwner: 'official-remote-runtime',
+            managementClass: 'plan-only',
+            mutationScope: 'managed',
+            operatorSurface: true,
+          }),
+          name: 'validator',
+        }),
       ]),
     }))
   })
@@ -231,8 +261,27 @@ describe('profile command surface', () => {
     const result = await captureOutput(() => TestProfilesShow.run(['splice-devnet'], {root: CLI_ROOT}))
     expect(result.error).toBeUndefined()
     expect(result.stdout).toContain('Profile: splice-devnet')
+    expect(result.stdout).toContain('Definition source: profiles')
     expect(result.stdout).toContain('scanProxy')
+    expect(result.stdout).toContain('official-remote-runtime')
+    expect(result.stdout).toContain('wallet-integration')
     expect(result.stdout).toContain('validator')
+  })
+
+  it('omits the capability table for profiles without SDK-owned integrations', async () => {
+    class TestProfilesShow extends ProfilesShow {
+      protected override async loadProjectConfig(): Promise<CantonctlConfig> {
+        return createConfig()
+      }
+    }
+
+    const result = await captureOutput(() => TestProfilesShow.run(['sandbox'], {root: CLI_ROOT}))
+    expect(result.error).toBeUndefined()
+    expect(result.stdout).toContain('Profile: sandbox')
+    expect(result.stdout).toContain('Definition source: profiles')
+    expect(result.stdout).toContain('ledger')
+    expect(result.stdout).not.toContain('Pinned SDKs')
+    expect(result.stdout).not.toContain('wallet-integration')
   })
 
   it('renders experimental profiles with config-only services in human mode', async () => {

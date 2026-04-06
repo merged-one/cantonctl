@@ -3,10 +3,18 @@ import type {
   NormalizedProfile,
   ServiceName,
 } from './config-profile.js'
+import {
+  summarizeProfileCapabilities,
+  summarizeServiceControlPlane,
+  getServiceSourceIds,
+  getServiceStability,
+  type ControlPlaneCapabilitySummary,
+  type ControlPlaneServiceMetadata,
+} from './control-plane.js'
 import {CantonctlError, ErrorCode} from './errors.js'
 import type {CheckStatus} from './doctor.js'
 import type {UpstreamSourceId, UpstreamStabilityClass} from './upstream/manifest.js'
-import {getPinnedCantonSdkVersion, getUpstreamSource} from './upstream/manifest.js'
+import {getPinnedCantonSdkVersion} from './upstream/manifest.js'
 
 export interface ProfileListEntry {
   experimental: boolean
@@ -22,12 +30,22 @@ export interface ResolvedProfile {
 }
 
 export interface ProfileServiceSummary {
+  controlPlane: ControlPlaneServiceMetadata
   detail: string
   endpoint?: string
   name: ServiceName
   sourceIds: UpstreamSourceId[]
   stability: UpstreamStabilityClass | 'config-only'
 }
+
+export interface ProfileInspection {
+  capabilities: ControlPlaneCapabilitySummary[]
+  profile: NormalizedProfile
+  resolvedFrom: ResolvedProfile['source']
+  services: ProfileServiceSummary[]
+}
+
+export type ProfileCapabilitySummary = ControlPlaneCapabilitySummary
 
 export interface CompatibilityCheck {
   actual?: string
@@ -57,27 +75,6 @@ const SERVICE_ORDER: ServiceName[] = [
   'validator',
   'localnet',
 ]
-
-const TOKEN_STANDARD_SOURCE_IDS: UpstreamSourceId[] = [
-  'splice-token-metadata-openapi',
-  'splice-token-allocation-openapi',
-  'splice-token-allocation-instruction-openapi',
-  'splice-token-transfer-instruction-openapi',
-  'splice-token-metadata-daml',
-  'splice-token-holding-daml',
-  'splice-token-allocation-daml',
-  'splice-token-allocation-instruction-daml',
-  'splice-token-transfer-instruction-daml',
-]
-
-const SERVICE_SOURCE_IDS: Partial<Record<ServiceName, UpstreamSourceId[]>> = {
-  ans: ['splice-ans-external-openapi'],
-  ledger: ['canton-json-ledger-api-openapi'],
-  scan: ['splice-scan-external-openapi'],
-  scanProxy: ['splice-scan-proxy-openapi'],
-  tokenStandard: TOKEN_STANDARD_SOURCE_IDS,
-  validator: ['splice-validator-internal-openapi'],
-}
 
 export function listProfiles(config: CantonctlConfig): ProfileListEntry[] {
   const defaultProfile = config['default-profile']
@@ -143,17 +140,27 @@ export function resolveProfile(config: CantonctlConfig, name?: string): Resolved
 
 export function summarizeProfileServices(profile: NormalizedProfile): ProfileServiceSummary[] {
   return getConfiguredServiceNames(profile).map((name) => {
-    const sourceIds = SERVICE_SOURCE_IDS[name] ?? []
-    const firstSource = sourceIds[0] ? getUpstreamSource(sourceIds[0]) : null
+    const sourceIds = getServiceSourceIds(name)
 
     return {
+      controlPlane: summarizeServiceControlPlane(profile, name),
       detail: buildServiceDetail(profile, name),
       endpoint: getServiceEndpoint(profile, name),
       name,
       sourceIds,
-      stability: firstSource?.stability ?? 'config-only',
+      stability: getServiceStability(sourceIds),
     }
   })
+}
+
+export function inspectProfile(config: CantonctlConfig, profileName?: string): ProfileInspection {
+  const {profile, source} = resolveProfile(config, profileName)
+  return {
+    capabilities: summarizeProfileCapabilities(profile),
+    profile,
+    resolvedFrom: source,
+    services: summarizeProfileServices(profile),
+  }
 }
 
 export function createCompatibilityReport(config: CantonctlConfig, profileName?: string): CompatibilityReport {

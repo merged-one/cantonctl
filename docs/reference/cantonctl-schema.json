@@ -33,6 +33,10 @@
       },
       "additionalProperties": false
     },
+    "default-profile": {
+      "type": "string",
+      "description": "Default resolved runtime profile when commands omit --profile"
+    },
     "parties": {
       "type": "array",
       "description": "Party definitions for auto-provisioning on cantonctl dev",
@@ -55,35 +59,233 @@
     },
     "networks": {
       "type": "object",
-      "description": "Network definitions keyed by name",
+      "description": "Legacy-compatible network aliases keyed by name. New control-plane work should prefer profiles.",
+      "additionalProperties": {
+        "oneOf": [
+          {
+            "type": "object",
+            "required": ["type"],
+            "properties": {
+              "type": {
+                "type": "string",
+                "description": "Legacy network type",
+                "enum": ["sandbox", "remote", "docker"]
+              },
+              "port": {
+                "type": "number",
+                "description": "Canton participant port",
+                "default": 5001
+              },
+              "json-api-port": {
+                "type": "number",
+                "description": "JSON Ledger API port",
+                "default": 7575
+              },
+              "url": {
+                "type": "string",
+                "description": "Remote network URL (for type: remote)",
+                "format": "uri"
+              },
+              "auth": {
+                "type": "string",
+                "description": "Authentication method",
+                "enum": ["jwt", "shared-secret", "none"]
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "required": ["profile"],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "description": "Optional legacy alias intent",
+                "enum": ["ledger", "splice"]
+              },
+              "profile": {
+                "type": "string",
+                "description": "Resolved profile name"
+              }
+            },
+            "additionalProperties": false
+          }
+        ]
+      }
+    },
+    "profiles": {
+      "type": "object",
+      "description": "Canonical runtime profiles keyed by name",
       "additionalProperties": {
         "type": "object",
-        "required": ["type"],
+        "required": ["kind"],
         "properties": {
-          "type": {
+          "experimental": {
+            "type": "boolean",
+            "description": "Marks non-default or still-evolving runtime surfaces"
+          },
+          "kind": {
             "type": "string",
-            "description": "Network type",
-            "enum": ["sandbox", "remote", "docker"]
+            "description": "Runtime profile kind",
+            "enum": ["sandbox", "canton-multi", "splice-localnet", "remote-validator", "remote-sv-network"]
           },
-          "port": {
-            "type": "number",
-            "description": "Canton participant port",
-            "default": 5001
-          },
-          "json-api-port": {
-            "type": "number",
-            "description": "JSON Ledger API port",
-            "default": 7575
-          },
-          "url": {
-            "type": "string",
-            "description": "Remote network URL (for type: remote)",
-            "format": "uri"
+          "ans": {
+            "type": "object",
+            "required": ["url"],
+            "properties": {
+              "url": {
+                "type": "string",
+                "format": "uri"
+              }
+            },
+            "additionalProperties": false
           },
           "auth": {
+            "type": "object",
+            "required": ["kind"],
+            "properties": {
+              "audience": {
+                "type": "string"
+              },
+              "issuer": {
+                "type": "string"
+              },
+              "kind": {
+                "type": "string",
+                "enum": ["jwt", "shared-secret", "none", "oidc"]
+              },
+              "url": {
+                "type": "string",
+                "format": "uri"
+              }
+            },
+            "additionalProperties": false
+          },
+          "ledger": {
+            "type": "object",
+            "properties": {
+              "auth": {
+                "type": "string",
+                "enum": ["jwt", "shared-secret", "none"]
+              },
+              "json-api-port": {
+                "type": "number"
+              },
+              "port": {
+                "type": "number"
+              },
+              "url": {
+                "type": "string",
+                "format": "uri"
+              }
+            },
+            "additionalProperties": false
+          },
+          "localnet": {
+            "type": "object",
+            "properties": {
+              "base-port": {
+                "type": "number"
+              },
+              "canton-image": {
+                "type": "string"
+              },
+              "distribution": {
+                "type": "string"
+              },
+              "version": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": false
+          },
+          "scan": {
+            "type": "object",
+            "required": ["url"],
+            "properties": {
+              "url": {
+                "type": "string",
+                "format": "uri"
+              }
+            },
+            "additionalProperties": false
+          },
+          "scanProxy": {
+            "type": "object",
+            "required": ["url"],
+            "properties": {
+              "url": {
+                "type": "string",
+                "format": "uri"
+              }
+            },
+            "additionalProperties": false
+          },
+          "tokenStandard": {
+            "type": "object",
+            "required": ["url"],
+            "properties": {
+              "url": {
+                "type": "string",
+                "format": "uri"
+              }
+            },
+            "additionalProperties": false
+          },
+          "validator": {
+            "type": "object",
+            "required": ["url"],
+            "properties": {
+              "url": {
+                "type": "string",
+                "format": "uri"
+              }
+            },
+            "additionalProperties": false
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "topologies": {
+      "type": "object",
+      "description": "Named local Canton topologies for dev --net",
+      "additionalProperties": {
+        "type": "object",
+        "required": ["kind", "participants"],
+        "properties": {
+          "base-port": {
+            "type": "number"
+          },
+          "canton-image": {
+            "type": "string"
+          },
+          "display-name": {
+            "type": "string"
+          },
+          "kind": {
             "type": "string",
-            "description": "Authentication method",
-            "enum": ["jwt", "shared-secret", "none"]
+            "enum": ["canton-multi"]
+          },
+          "participants": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "object",
+              "required": ["name", "parties"],
+              "properties": {
+                "name": {
+                  "type": "string"
+                },
+                "parties": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              },
+              "additionalProperties": false
+            }
           }
         },
         "additionalProperties": false
