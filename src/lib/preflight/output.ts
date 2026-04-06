@@ -15,9 +15,21 @@ export interface PreflightCheck {
 
 export interface PreflightReport {
   auth: {
+    app: {
+      credentialSource: ResolvedProfileRuntime['credential']['source']
+      envVarName: string
+      required: boolean
+    }
     credentialSource: ResolvedProfileRuntime['credential']['source']
     envVarName: string
     mode: ResolvedProfileRuntime['auth']['mode']
+    operator: {
+      credentialSource: ResolvedProfileRuntime['operatorCredential']['source']
+      description: string
+      envVarName: string
+      prerequisites: string[]
+      required: boolean
+    }
     warnings: string[]
   }
   checks: PreflightCheck[]
@@ -47,6 +59,10 @@ export function renderPreflightReport(out: OutputWriter, report: PreflightReport
   out.log(`Kind: ${report.profile.kind}`)
   out.log(`Network: ${report.network.name} (${report.network.tier})`)
   out.log(`Auth mode: ${report.auth.mode} (${report.auth.credentialSource})`)
+  out.log(
+    `Operator auth: ${report.auth.operator.required ? 'required' : 'not required'} ` +
+    `(${report.auth.operator.credentialSource})`,
+  )
   if (report.egressIp) {
     out.log(`Egress IP: ${report.egressIp}`)
   }
@@ -73,6 +89,13 @@ export function renderPreflightReport(out: OutputWriter, report: PreflightReport
     }
   }
 
+  if (report.auth.operator.prerequisites.length > 0) {
+    out.log('')
+    for (const prerequisite of report.auth.operator.prerequisites) {
+      out.info(`Operator prerequisite: ${prerequisite}`)
+    }
+  }
+
   if (report.success) {
     out.success(
       `Preflight passed with ${report.compatibility.warned} compatibility warning${report.compatibility.warned === 1 ? '' : 's'} and ${report.checks.filter(check => check.status === 'warn').length} advisory warning${report.checks.filter(check => check.status === 'warn').length === 1 ? '' : 's'}.`,
@@ -85,4 +108,3 @@ export function renderPreflightReport(out: OutputWriter, report: PreflightReport
 export function summarizePreflightDetail(runtime: ResolvedProfileRuntime): string {
   return `${runtime.profile.name} (${runtime.profile.kind}) using ${summarizeCredentialSource(runtime.credential)}`
 }
-

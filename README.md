@@ -120,7 +120,7 @@ On the current branch, that control-plane boundary is implemented as profile res
 | `cantonctl promote diff --from <a> --to <b>` | Compare source and target profiles before promotion | Current read-only lifecycle diff |
 | `cantonctl upgrade check --profile <name>` | Run the current read-only upgrade checks | Current lifecycle inspection step |
 | `cantonctl reset checklist --network <tier>` | Show reset-sensitive runbook reminders | Current manual reset helper |
-| `cantonctl auth login/logout/status` | Manage profile-oriented auth and stored bearer credentials | Remote environment helper |
+| `cantonctl auth login/logout/status` | Manage profile-oriented app and operator credentials | Remote environment helper |
 | `cantonctl discover network --scan-url <url>` | Discover network metadata from stable/public scan surfaces | Stable/public discovery helper |
 | `cantonctl canary stable-public` | Run stable/public remote canaries | CI and promotion gate |
 | `cantonctl export sdk-config` | Export resolved config for official SDK consumers | SDK wiring helper |

@@ -62,8 +62,15 @@ export function createPreflightChecks(deps: PreflightDeps = {}): PreflightRunner
       checks.push({
         category: 'auth',
         detail: buildCredentialDetail(runtime),
-        name: 'Credential material',
+        name: 'App credential material',
         status: runtime.credential.source === 'missing' ? 'fail' : 'pass',
+      })
+
+      checks.push({
+        category: 'auth',
+        detail: buildOperatorCredentialDetail(runtime),
+        name: 'Operator credential material',
+        status: runtime.auth.operator.required && runtime.operatorCredential.source === 'missing' ? 'fail' : 'pass',
       })
 
       checks.push(await scanReachabilityCheck({
@@ -93,9 +100,21 @@ export function createPreflightChecks(deps: PreflightDeps = {}): PreflightRunner
 
       return {
         auth: {
+          app: {
+            credentialSource: runtime.credential.source,
+            envVarName: runtime.auth.app.envVarName,
+            required: runtime.auth.app.required,
+          },
           credentialSource: runtime.credential.source,
           envVarName: runtime.auth.envVarName,
           mode: runtime.auth.mode,
+          operator: {
+            credentialSource: runtime.operatorCredential.source,
+            description: runtime.auth.operator.description,
+            envVarName: runtime.auth.operator.envVarName,
+            prerequisites: runtime.auth.operator.prerequisites,
+            required: runtime.auth.operator.required,
+          },
           warnings: runtime.auth.warnings,
         },
         checks,
@@ -270,11 +289,26 @@ function buildCredentialDetail(runtime: Awaited<ReturnType<ProfileRuntimeResolve
   if (runtime.credential.source === 'missing') {
     return (
       `No token available for ${runtime.networkName}. ` +
-      `Set ${runtime.auth.envVarName} or store a credential with cantonctl auth login.`
+      `Set ${runtime.auth.app.envVarName} or store a credential with cantonctl auth login.`
     )
   }
 
   return `${runtime.credential.source} credentials ready for ${runtime.networkName}.`
+}
+
+function buildOperatorCredentialDetail(runtime: Awaited<ReturnType<ProfileRuntimeResolver['resolve']>>): string {
+  if (!runtime.auth.operator.required) {
+    return runtime.auth.operator.description
+  }
+
+  if (runtime.operatorCredential.source === 'missing') {
+    return (
+      `No operator credential available for ${runtime.networkName}. ` +
+      `Set ${runtime.auth.operator.envVarName} or store a credential with cantonctl auth login ${runtime.networkName} --scope operator.`
+    )
+  }
+
+  return `${runtime.operatorCredential.source} operator credentials ready for ${runtime.networkName}.`
 }
 
 async function defaultLookupEgressIp(options: {

@@ -101,6 +101,7 @@ export interface DeployResult extends ControlPlaneOperationResult {
   auth: {
     envVarName: string
     mode: string
+    scope: 'operator'
     source: ResolvedProfileRuntime['credential']['source']
   }
   fanOut: DeployFanOutDecision
@@ -216,9 +217,10 @@ export function createDeployer(deps: DeployerDeps): Deployer {
           source: deployState?.artifact?.source ?? (options.darPath ? 'explicit' : 'auto-detected'),
         },
         auth: {
-          envVarName: runtime.auth.envVarName,
+          envVarName: runtime.auth.operator.envVarName,
           mode: runtime.auth.mode,
-          source: runtime.credential.source,
+          scope: 'operator',
+          source: runtime.operatorCredential.source,
         },
         fanOut: {
           mode: fanOut.mode,
@@ -290,7 +292,7 @@ function createTargetSteps(options: {
       preconditions: () => buildTargetPreconditions(options.runtime, options.target),
       run: async ({mode, signal, state}) => {
         const artifact = state.artifact!
-        const token = options.runtime.credential.token!
+        const token = options.runtime.operatorCredential.token!
 
         const client = options.deps.createLedgerClient({
           baseUrl: options.target.baseUrl!,
@@ -556,10 +558,10 @@ function buildTargetPreconditions(
     },
     {
       code: 'credential-material',
-      detail: runtime.credential.source === 'missing'
-        ? `No auth material resolved. Provide ${runtime.auth.envVarName} or store credentials before deploying.`
-        : `Auth material resolved from ${runtime.credential.source}.`,
-      status: runtime.credential.source === 'missing' ? 'block' : 'pass',
+      detail: runtime.operatorCredential.source === 'missing'
+        ? `No operator auth material resolved. Provide ${runtime.auth.operator.envVarName} or store credentials with "cantonctl auth login ${runtime.networkName} --scope operator" before deploying.`
+        : `Operator auth material resolved from ${runtime.operatorCredential.source}.`,
+      status: runtime.operatorCredential.source === 'missing' ? 'block' : 'pass',
     },
   ]
 }

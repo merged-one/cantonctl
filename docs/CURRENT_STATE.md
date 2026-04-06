@@ -62,6 +62,12 @@ Resolved profile inspection now includes manifest-backed control-plane metadata 
 
 `cantonctl deploy` is now profile-first and supports plan, dry-run, and apply modes with structured artifact, fan-out, target, and step reporting. It can fan out across generated `canton-multi` participants, target LocalNet's exposed ledger endpoint, or apply against remote ledger-capable profiles.
 
+Remote auth handling is now explicitly split between app and operator scopes:
+
+- app credentials support read and user-facing flows
+- operator credentials gate remote mutating control-plane actions
+- remote mutations do not inherit the local fallback token path
+
 Local topology design for `dev --net` is separate and lives under the top-level `topologies:` config section.
 
 ## Current Control-Plane Coverage
@@ -69,6 +75,7 @@ Local topology design for `dev --net` is separate and lives under the top-level 
 The current branch implements these control-plane surfaces:
 
 - profile resolution, validation, and auth handling
+- separate app vs operator credential resolution and reporting for remote control-plane actions
 - `dev`, `dev --net`, topology preview/export, and LocalNet wrapping
 - status, compatibility, preflight, readiness, canaries, and diagnostics
 - discovery, profile import, and SDK config export

@@ -87,6 +87,8 @@ export interface FullDevServerOptions {
   healthTimeoutMs?: number
   /** Health check retry delay in ms (default 2000). */
   healthRetryDelayMs?: number
+  /** Party allocation retry delay in ms (default 2000). */
+  allocationRetryDelayMs?: number
   /** Debounce delay for file watcher in ms (default 300). */
   debounceMs?: number
   /** Optional named topology selection from config.topologies. */
@@ -123,6 +125,7 @@ export function createFullDevServer(deps: FullDevServerDeps): FullDevServer {
       const {projectDir} = opts
       const healthTimeout = opts.healthTimeoutMs ?? 120_000
       const healthRetryDelay = opts.healthRetryDelayMs ?? 2_000
+      const allocationRetryDelay = opts.allocationRetryDelayMs ?? 2_000
       const debounceMs = opts.debounceMs ?? 300
 
       if (opts.signal?.aborted) {
@@ -205,7 +208,7 @@ export function createFullDevServer(deps: FullDevServerDeps): FullDevServer {
 
           // Retry party allocation — synchronizer may need up to ~20s after
           // health checks pass to fully bootstrap and accept party allocations.
-          // Mock tests reject immediately so retries are instant (no real delay).
+          // Tests can override the retry delay to keep failure paths fast.
           let allocated = false
           for (let attempt = 0; attempt < 10 && !allocated; attempt++) {
             try {
@@ -214,7 +217,7 @@ export function createFullDevServer(deps: FullDevServerDeps): FullDevServer {
               allocated = true
             } catch {
               if (attempt < 9) {
-                await new Promise(r => setTimeout(r, 2000))
+                await new Promise(r => setTimeout(r, allocationRetryDelay))
               } else {
                 output.warn(`  Failed to provision party: ${partyName}`)
               }

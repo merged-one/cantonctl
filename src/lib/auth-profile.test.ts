@@ -146,6 +146,94 @@ describe('resolveAuthProfile', () => {
     expect(profile.warnings[0]).toContain('local fallback token')
   })
 
+  it('keeps remote shared-secret operator prerequisites explicit and separate from local fallback', () => {
+    const config: CantonctlConfig = {
+      networks: {
+        ops: {type: 'remote', url: 'https://ledger.example.com'},
+      },
+      profiles: {
+        ops: {
+          experimental: false,
+          kind: 'remote-validator',
+          name: 'ops',
+          services: {
+            auth: {kind: 'shared-secret'},
+            ledger: {auth: 'shared-secret', url: 'https://ledger.example.com'},
+          },
+        },
+      },
+      project: {name: 'demo', 'sdk-version': '3.4.11'},
+      version: 1,
+    }
+
+    const profile = resolveAuthProfile({config, network: 'ops'})
+
+    expect(profile.operator.description).toContain('shared-secret')
+    expect(profile.operator.envVarName).toBe('CANTONCTL_OPERATOR_TOKEN_OPS')
+    expect(profile.operator.prerequisites[0]).toContain('shared-secret-derived operator bearer token')
+  })
+
+  it('uses a generic explicit operator requirement when auth kind is unspecified', () => {
+    const config: CantonctlConfig = {
+      networks: {
+        ops: {type: 'remote', url: 'https://ledger.example.com'},
+      },
+      profiles: {
+        ops: {
+          experimental: false,
+          kind: 'remote-sv-network',
+          name: 'ops',
+          services: {
+            ledger: {url: 'https://ledger.example.com'},
+            scan: {url: 'https://scan.example.com'},
+          },
+        },
+      },
+      project: {name: 'demo', 'sdk-version': '3.4.11'},
+      version: 1,
+    }
+
+    const profile = resolveAuthProfile({config, network: 'ops'})
+
+    expect(profile.authKind).toBe('unspecified')
+    expect(profile.operator.prerequisites[0]).toContain('Provide explicit operator auth material')
+  })
+
+  it('keeps scan-only remote profiles on explicit bearer-token operator guidance when requested', () => {
+    const config: CantonctlConfig = {
+      networks: {
+        ops: {type: 'remote', url: 'https://ledger.example.com'},
+      },
+      profiles: {
+        ops: {
+          experimental: false,
+          kind: 'remote-sv-network',
+          name: 'ops',
+          services: {
+            scan: {url: 'https://scan.example.com'},
+          },
+        },
+      },
+      project: {name: 'demo', 'sdk-version': '3.4.11'},
+      version: 1,
+    }
+
+    const profile = resolveAuthProfile({
+      config,
+      network: 'ops',
+      requestedMode: 'bearer-token',
+    })
+
+    expect(profile.authKind).toBe('unspecified')
+    expect(profile.description).toBe('Use an explicitly supplied bearer token.')
+    expect(profile.operator.description).toContain('operator bearer token')
+    expect(profile.operator.required).toBe(false)
+    expect(profile.warnings).toEqual(expect.arrayContaining([
+      expect.stringContaining('Operator override'),
+      expect.stringContaining('No local fallback token is available for this profile'),
+    ]))
+  })
+
   it('falls back to the default profile for local when no explicit local profile exists', () => {
     const config: CantonctlConfig = {
       'default-profile': 'splice-devnet',

@@ -60,17 +60,14 @@ function createConfig(): CantonctlConfig {
 }
 
 function createRuntimeResolver(overrides: Partial<Awaited<ReturnType<ProfileRuntimeResolver['resolve']>>> = {}): () => ProfileRuntimeResolver {
+  const auth = createResolvedAuth({
+    credentialSource: 'stored',
+    network: 'devnet',
+  })
+
   return () => ({
     resolve: vi.fn().mockResolvedValue({
-      auth: {
-        description: 'Resolve a JWT from the environment first, then the OS keychain.',
-        envVarName: 'CANTONCTL_JWT_DEVNET',
-        experimental: false,
-        mode: 'env-or-keychain-jwt',
-        network: 'devnet',
-        requiresExplicitExperimental: false,
-        warnings: [],
-      },
+      auth,
       compatibility: {
         checks: [],
         failed: 0,
@@ -82,8 +79,16 @@ function createRuntimeResolver(overrides: Partial<Awaited<ReturnType<ProfileRunt
       credential: {
         mode: 'env-or-keychain-jwt',
         network: 'devnet',
+        scope: 'app',
         source: 'stored',
         token: 'jwt-token',
+      },
+      operatorCredential: {
+        mode: 'env-or-keychain-jwt',
+        network: 'devnet',
+        scope: 'operator',
+        source: 'stored',
+        token: 'operator-token',
       },
       networkName: 'devnet',
       profile: createConfig().profiles!['splice-devnet'],
@@ -96,6 +101,50 @@ function createRuntimeResolver(overrides: Partial<Awaited<ReturnType<ProfileRunt
       ...overrides,
     }),
   })
+}
+
+function createResolvedAuth(options: {
+  credentialSource: 'env' | 'fallback' | 'missing' | 'stored'
+  operatorCredentialSource?: 'env' | 'fallback' | 'missing' | 'stored'
+  mode?: 'bearer-token' | 'env-or-keychain-jwt'
+  network: string
+}) {
+  const mode = options.mode ?? 'env-or-keychain-jwt'
+  const isLocal = options.credentialSource === 'fallback'
+  return {
+    app: {
+      description: mode === 'bearer-token'
+        ? 'Use an explicitly supplied bearer token or a local fallback token.'
+        : 'Resolve a JWT from the environment first, then the OS keychain.',
+      envVarName: `CANTONCTL_JWT_${options.network.toUpperCase().replace(/-/g, '_')}`,
+      keychainAccount: options.network,
+      localFallbackAllowed: isLocal,
+      prerequisites: [],
+      required: !isLocal,
+      scope: 'app' as const,
+    },
+    authKind: isLocal ? 'shared-secret' as const : 'jwt' as const,
+    description: mode === 'bearer-token'
+      ? 'Use an explicitly supplied bearer token or a local fallback token.'
+      : 'Resolve a JWT from the environment first, then the OS keychain.',
+    envVarName: `CANTONCTL_JWT_${options.network.toUpperCase().replace(/-/g, '_')}`,
+    experimental: false,
+    mode,
+    network: options.network,
+    operator: {
+      description: isLocal
+        ? 'Use the generated local fallback token for companion-managed local control-plane actions.'
+        : 'Use an explicitly supplied operator JWT for remote control-plane mutations.',
+      envVarName: `CANTONCTL_OPERATOR_TOKEN_${options.network.toUpperCase().replace(/-/g, '_')}`,
+      keychainAccount: `operator:${options.network}`,
+      localFallbackAllowed: isLocal,
+      prerequisites: isLocal ? [] : ['Store an operator credential explicitly before remote mutations.'],
+      required: !isLocal,
+      scope: 'operator' as const,
+    },
+    requiresExplicitExperimental: false,
+    warnings: [],
+  }
 }
 
 describe('preflight checks', () => {
@@ -118,7 +167,8 @@ describe('preflight checks', () => {
     expect(report.checks).toEqual(expect.arrayContaining([
       expect.objectContaining({name: 'Profile resolution', status: 'pass'}),
       expect.objectContaining({name: 'Scan reachability', status: 'pass'}),
-      expect.objectContaining({name: 'Credential material', status: 'pass'}),
+      expect.objectContaining({name: 'App credential material', status: 'pass'}),
+      expect.objectContaining({name: 'Operator credential material', status: 'pass'}),
       expect.objectContaining({name: 'Egress IP visibility', status: 'pass'}),
     ]))
   })
@@ -126,18 +176,17 @@ describe('preflight checks', () => {
   it('fails when auth coherence is missing for a remote profile', async () => {
     const runner = createPreflightChecks({
       createProfileRuntimeResolver: createRuntimeResolver({
-        auth: {
-          description: 'Resolve a JWT from the environment first, then the OS keychain.',
-          envVarName: 'CANTONCTL_JWT_DEVNET',
-          experimental: false,
-          mode: 'env-or-keychain-jwt',
-          network: 'devnet',
-          requiresExplicitExperimental: false,
-          warnings: [],
-        },
+        auth: createResolvedAuth({credentialSource: 'missing', operatorCredentialSource: 'missing', network: 'devnet'}),
         credential: {
           mode: 'env-or-keychain-jwt',
           network: 'devnet',
+          scope: 'app',
+          source: 'missing',
+        },
+        operatorCredential: {
+          mode: 'env-or-keychain-jwt',
+          network: 'devnet',
+          scope: 'operator',
           source: 'missing',
         },
       }),
@@ -152,7 +201,8 @@ describe('preflight checks', () => {
     const report = await runner.run({config: createConfig(), profileName: 'splice-devnet'})
     expect(report.success).toBe(false)
     expect(report.checks).toEqual(expect.arrayContaining([
-      expect.objectContaining({name: 'Credential material', status: 'fail'}),
+      expect.objectContaining({name: 'App credential material', status: 'fail'}),
+      expect.objectContaining({name: 'Operator credential material', status: 'fail'}),
     ]))
   })
 
@@ -190,13 +240,8 @@ describe('preflight checks', () => {
     const runner = createPreflightChecks({
       createProfileRuntimeResolver: createRuntimeResolver({
         auth: {
-          description: 'Use an explicitly supplied bearer token or a local fallback token.',
-          envVarName: 'CANTONCTL_JWT_DEVNET',
+          ...createResolvedAuth({credentialSource: 'stored', operatorCredentialSource: 'stored', mode: 'bearer-token', network: 'devnet'}),
           experimental: true,
-          mode: 'bearer-token',
-          network: 'devnet',
-          requiresExplicitExperimental: false,
-          warnings: [],
         },
       }),
       createScanAdapter: vi.fn().mockReturnValue({
@@ -248,16 +293,9 @@ describe('preflight checks', () => {
 
     const testnet = await createPreflightChecks({
       createProfileRuntimeResolver: createRuntimeResolver({
-        auth: {
-          description: 'Resolve a JWT from the environment first, then the OS keychain.',
-          envVarName: 'CANTONCTL_JWT_TESTNET',
-          experimental: false,
-          mode: 'env-or-keychain-jwt',
-          network: 'testnet',
-          requiresExplicitExperimental: false,
-          warnings: [],
-        },
-        credential: {mode: 'env-or-keychain-jwt', network: 'testnet', source: 'stored', token: 'token'},
+        auth: createResolvedAuth({credentialSource: 'stored', operatorCredentialSource: 'stored', network: 'testnet'}),
+        credential: {mode: 'env-or-keychain-jwt', network: 'testnet', scope: 'app', source: 'stored', token: 'token'},
+        operatorCredential: {mode: 'env-or-keychain-jwt', network: 'testnet', scope: 'operator', source: 'stored', token: 'operator-token'},
         networkName: 'testnet',
         profile: createConfig().profiles!['splice-testnet'],
         profileContext: {
@@ -274,16 +312,9 @@ describe('preflight checks', () => {
 
     const mainnet = await createPreflightChecks({
       createProfileRuntimeResolver: createRuntimeResolver({
-        auth: {
-          description: 'Resolve a JWT from the environment first, then the OS keychain.',
-          envVarName: 'CANTONCTL_JWT_MAINNET',
-          experimental: false,
-          mode: 'env-or-keychain-jwt',
-          network: 'mainnet',
-          requiresExplicitExperimental: false,
-          warnings: [],
-        },
-        credential: {mode: 'env-or-keychain-jwt', network: 'mainnet', source: 'stored', token: 'token'},
+        auth: createResolvedAuth({credentialSource: 'stored', operatorCredentialSource: 'stored', network: 'mainnet'}),
+        credential: {mode: 'env-or-keychain-jwt', network: 'mainnet', scope: 'app', source: 'stored', token: 'token'},
+        operatorCredential: {mode: 'env-or-keychain-jwt', network: 'mainnet', scope: 'operator', source: 'stored', token: 'operator-token'},
         networkName: 'mainnet',
         profile: createConfig().profiles!['splice-mainnet'],
         profileContext: {
@@ -365,18 +396,18 @@ describe('preflight checks', () => {
     }
     const localReport = await createPreflightChecks({
       createProfileRuntimeResolver: createRuntimeResolver({
-        auth: {
-          description: 'Use an explicitly supplied bearer token or a local fallback token.',
-          envVarName: 'CANTONCTL_JWT_LOCAL',
-          experimental: false,
-          mode: 'bearer-token',
-          network: 'local',
-          requiresExplicitExperimental: false,
-          warnings: [],
-        },
+        auth: createResolvedAuth({credentialSource: 'fallback', operatorCredentialSource: 'fallback', mode: 'bearer-token', network: 'local'}),
         credential: {
           mode: 'bearer-token',
           network: 'local',
+          scope: 'app',
+          source: 'fallback',
+          token: 'sandbox-token',
+        },
+        operatorCredential: {
+          mode: 'bearer-token',
+          network: 'local',
+          scope: 'operator',
           source: 'fallback',
           token: 'sandbox-token',
         },
@@ -494,15 +525,7 @@ describe('preflight checks', () => {
 
   it('covers omitted deps, experimental profile warnings, and additional scan/health error branches', async () => {
     vi.spyOn(profileRuntimeModule, 'createProfileRuntimeResolver').mockReturnValue(createRuntimeResolver({
-      auth: {
-        description: 'Resolve a JWT from the environment first, then the OS keychain.',
-        envVarName: 'CANTONCTL_JWT_DEVNET',
-        experimental: false,
-        mode: 'env-or-keychain-jwt',
-        network: 'devnet',
-        requiresExplicitExperimental: false,
-        warnings: [],
-      },
+      auth: createResolvedAuth({credentialSource: 'stored', operatorCredentialSource: 'stored', network: 'devnet'}),
       compatibility: {
         checks: [],
         failed: 1,

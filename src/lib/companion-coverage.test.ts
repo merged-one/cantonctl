@@ -76,14 +76,40 @@ function createRuntime(overrides: {
   const compatibilityServices = overrides.compatibilityServices ?? summarizeProfileServices(profile)
   const capabilities = summarizeProfileCapabilities(profile)
   const runtimeServices = summarizeProfileServices(profile)
+  const authMode = (overrides.authMode ?? 'env-or-keychain-jwt') as ResolvedRuntime['auth']['mode']
+  const networkName = overrides.networkName ?? 'splice-devnet'
+  const credentialSource = overrides.credentialSource ?? 'stored'
+  const authEnvVarName = `CANTONCTL_JWT_${networkName.toUpperCase().replace(/-/g, '_')}`
+  const operatorEnvVarName = `CANTONCTL_OPERATOR_TOKEN_${networkName.toUpperCase().replace(/-/g, '_')}`
 
   return {
     auth: {
+      app: {
+        description: '',
+        envVarName: authEnvVarName,
+        keychainAccount: networkName,
+        localFallbackAllowed: credentialSource === 'fallback',
+        prerequisites: [],
+        required: credentialSource !== 'fallback',
+        scope: 'app',
+      },
+      authKind: profile.services.auth?.kind ?? 'unspecified',
       description: '',
-      envVarName: 'CANTONCTL_JWT_SPLICE_DEVNET',
+      envVarName: authEnvVarName,
       experimental: overrides.authExperimental ?? false,
-      mode: overrides.authMode ?? 'env-or-keychain-jwt',
-      network: overrides.networkName ?? 'splice-devnet',
+      mode: authMode,
+      network: networkName,
+      operator: {
+        description: credentialSource === 'fallback'
+          ? 'Use the generated local fallback token for companion-managed local control-plane actions.'
+          : 'Use an explicitly supplied operator JWT for remote control-plane mutations.',
+        envVarName: operatorEnvVarName,
+        keychainAccount: `operator:${networkName}`,
+        localFallbackAllowed: credentialSource === 'fallback',
+        prerequisites: credentialSource === 'fallback' ? [] : ['Store an operator credential explicitly before remote mutations.'],
+        required: credentialSource !== 'fallback',
+        scope: 'operator',
+      },
       requiresExplicitExperimental: false,
       warnings: [],
     },
@@ -97,9 +123,10 @@ function createRuntime(overrides: {
     },
     capabilities,
     credential: {
-      mode: overrides.authMode ?? 'env-or-keychain-jwt',
-      network: overrides.networkName ?? 'splice-devnet',
-      source: overrides.credentialSource ?? 'stored',
+      mode: authMode,
+      network: networkName,
+      scope: 'app',
+      source: credentialSource,
       token: overrides.token,
     },
     inventory: createProfileStatusInventory({
@@ -110,7 +137,14 @@ function createRuntime(overrides: {
         services: runtimeServices,
       },
     }),
-    networkName: overrides.networkName ?? 'splice-devnet',
+    networkName,
+    operatorCredential: {
+      mode: authMode,
+      network: networkName,
+      scope: 'operator',
+      source: credentialSource,
+      token: overrides.token,
+    },
     profile,
     profileContext: {
       experimental: profile.experimental,
@@ -145,17 +179,46 @@ function createOutputWriter(): OutputWriter {
   }
 }
 
+function createResolvedAuthSummary(options: {
+  credentialSource: 'env' | 'fallback' | 'missing' | 'stored'
+  envVarName?: string
+  mode?: 'bearer-token' | 'env-or-keychain-jwt'
+  operatorCredentialSource?: 'env' | 'fallback' | 'missing' | 'stored'
+  operatorPrerequisites?: string[]
+  operatorRequired?: boolean
+  warnings?: string[]
+}) {
+  const envVarName = options.envVarName ?? 'CANTONCTL_JWT_SPLICE_DEVNET'
+  const network = envVarName.replace(/^CANTONCTL_JWT_/, '')
+  return {
+    app: {
+      credentialSource: options.credentialSource,
+      envVarName,
+      required: options.credentialSource !== 'fallback',
+    },
+    credentialSource: options.credentialSource,
+    envVarName,
+    mode: options.mode ?? 'env-or-keychain-jwt',
+    operator: {
+      credentialSource: options.operatorCredentialSource ?? options.credentialSource,
+      description: 'Use an explicitly supplied operator JWT for remote control-plane mutations.',
+      envVarName: `CANTONCTL_OPERATOR_TOKEN_${network}`,
+      prerequisites: options.operatorPrerequisites ?? ['Store an operator credential explicitly before remote mutations.'],
+      required: options.operatorRequired ?? options.credentialSource !== 'fallback',
+    },
+    warnings: options.warnings ?? [],
+  }
+}
+
 describe('preflight output helpers', () => {
   it('renders success and failure states and summarizes runtime details', () => {
     const out = createOutputWriter()
 
     renderPreflightReport(out, {
-      auth: {
+      auth: createResolvedAuthSummary({
         credentialSource: 'stored',
-        envVarName: 'CANTONCTL_JWT_SPLICE_DEVNET',
-        mode: 'env-or-keychain-jwt',
         warnings: ['Rotate this token soon.'],
-      },
+      }),
       checks: [
         {category: 'scan', detail: 'Scan reachable.', endpoint: 'https://scan.example.com', name: 'scan', status: 'pass'},
         {category: 'health', detail: 'Readyz requires auth.', endpoint: 'https://scan.example.com/readyz', name: 'scan-readyz', status: 'warn'},
@@ -179,7 +242,12 @@ describe('preflight output helpers', () => {
     expect(out.success).toHaveBeenCalledWith('Preflight passed with 1 compatibility warning and 1 advisory warning.')
 
     renderPreflightReport(out, {
-      auth: {credentialSource: 'missing', envVarName: 'CANTONCTL_JWT_SPLICE_DEVNET', mode: 'env-or-keychain-jwt', warnings: []},
+      auth: createResolvedAuthSummary({
+        credentialSource: 'missing',
+        operatorCredentialSource: 'missing',
+        operatorPrerequisites: [],
+        operatorRequired: false,
+      }),
       checks: [{category: 'scan', detail: 'Scan missing.', name: 'scan', status: 'fail'}],
       compatibility: {failed: 1, passed: 0, warned: 0},
       network: {checklist: [], name: 'splice-mainnet', reminders: [], resetExpectation: 'no-resets-expected', tier: 'mainnet'},
@@ -188,6 +256,7 @@ describe('preflight output helpers', () => {
     })
 
     expect(out.error).toHaveBeenCalledWith('Preflight found blocking issues.')
+    expect(out.log).toHaveBeenCalledWith('Operator auth: not required (missing)')
     expect(summarizePreflightDetail(createRuntime({credentialSource: 'stored'}))).toContain('resolved from keychain')
   })
 
@@ -195,7 +264,7 @@ describe('preflight output helpers', () => {
     const out = createOutputWriter()
 
     renderPreflightReport(out, {
-      auth: {credentialSource: 'env', envVarName: 'CANTONCTL_JWT_CUSTOM', mode: 'env-or-keychain-jwt', warnings: []},
+      auth: createResolvedAuthSummary({credentialSource: 'env', envVarName: 'CANTONCTL_JWT_CUSTOM'}),
       checks: [
         {category: 'profile', detail: 'ok', name: 'Profile resolution', status: 'warn'},
         {category: 'health', detail: 'ok', name: 'Auth readyz', status: 'warn'},

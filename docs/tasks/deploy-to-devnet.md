@@ -6,7 +6,8 @@ This guide walks through rolling out a built DAR to a remote validator-backed pr
 
 - A cantonctl project with `cantonctl.yaml` configured
 - A resolved remote profile with an apply-capable ledger endpoint
-- A JWT token with admin and actAs claims for the target network
+- App auth material for readiness and read checks
+- Operator auth material for the remote DAR rollout
 
 ## Steps
 
@@ -35,10 +36,11 @@ profiles:
 ### 2. Store your credentials
 
 ```bash
-cantonctl auth login devnet --token eyJhbGciOiJIUzI1NiIs...
+cantonctl auth login devnet --scope app --token eyJhbGciOiJIUzI1NiIs...
+cantonctl auth login devnet --scope operator --token eyJhbGciOiJIUzI1NiIs...
 ```
 
-This stores the JWT in your OS keychain. Verify with:
+This stores the app and operator credentials in separate keychain slots. Verify with:
 
 ```bash
 cantonctl auth status
@@ -48,6 +50,7 @@ For CI pipelines, use an environment variable instead:
 
 ```bash
 export CANTONCTL_JWT_DEVNET=eyJhbGciOiJIUzI1NiIs...
+export CANTONCTL_OPERATOR_TOKEN_DEVNET=eyJhbGciOiJIUzI1NiIs...
 ```
 
 ### 3. Verify connectivity
@@ -102,7 +105,7 @@ cantonctl deploy --profile splice-devnet --dry-run
 
 | Error | Resolution |
 |-------|-----------|
-| E6001 (auth failed) | Re-run `cantonctl auth login devnet` with a fresh token |
+| E6001 (auth failed) | Re-run `cantonctl auth login devnet --scope operator` with a fresh token or set `CANTONCTL_OPERATOR_TOKEN_DEVNET` |
 | E6002 (unreachable) | Check the URL in cantonctl.yaml and network connectivity |
 | E6003 (upload failed) | Check participant logs for package validation errors |
 | E6004 (package exists) | Increment the version in `daml.yaml` and rebuild |

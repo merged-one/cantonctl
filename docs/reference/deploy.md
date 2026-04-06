@@ -6,6 +6,8 @@ Roll out a built DAR to the resolved profile or legacy target.
 
 It does not compile Daml, run codegen, provision infrastructure, or replace official validator or LocalNet lifecycle tooling.
 
+Remote apply uses the resolved operator credential path. It does not reuse sandbox-style fallback tokens for remote mutations.
+
 ## Usage
 
 ```bash
@@ -25,6 +27,7 @@ cantonctl deploy [target] [flags]
 - `splice-localnet` rollout against the ledger endpoint exposed by the official LocalNet workspace
 - remote profile rollout for apply-capable ledger targets
 - structured JSON output for artifact selection, fan-out, target status, and step-by-step rollout state
+- explicit operator-auth reporting in plan, dry-run, and apply output
 
 ## Official Stack Boundary
 
@@ -51,11 +54,13 @@ cantonctl deploy [target] [flags]
 - `fanOut`: whether the rollout is single-target or local fan-out, plus endpoint provenance
 - `targets[]`: per-target endpoint, management class, package ID, and post-deploy checks
 - `steps[]`: plan/apply execution detail, including blockers, warnings, and serialized errors
+- `auth`: operator credential source, env var name, and scope used for the rollout
 
 ## Examples
 
 ```bash
 cantonctl build
+cantonctl auth login devnet --scope operator --token eyJhbGci...
 cantonctl deploy --profile sandbox
 cantonctl deploy --profile splice-devnet --plan --json
 cantonctl deploy devnet --dry-run

@@ -11,6 +11,7 @@ import * as jwtModule from '../lib/jwt.js'
 import * as ledgerClientModule from '../lib/ledger-client.js'
 import type {LedgerClient} from '../lib/ledger-client.js'
 import * as processRunnerModule from '../lib/process-runner.js'
+import type {ProfileRuntimeResolver} from '../lib/profile-runtime.js'
 import * as topologyModule from '../lib/topology.js'
 import type {GeneratedTopology} from '../lib/topology.js'
 import Doctor from './doctor.js'
@@ -521,6 +522,48 @@ describe('runtime command surface', () => {
       ],
     }))
     expect(Object.prototype.hasOwnProperty.call(json.data, 'profile')).toBe(false)
+  })
+
+  it('omits auth metadata when runtime resolution fails after profile inspection', async () => {
+    const config = createConfig()
+
+    class TestStatus extends Status {
+      protected override async loadProjectConfig(): Promise<CantonctlConfig> {
+        return config
+      }
+
+      protected override createProfileRuntimeResolver(): ProfileRuntimeResolver {
+        return {
+          resolve: vi.fn().mockRejectedValue(new Error('runtime boom')),
+        }
+      }
+
+      protected override createStatusLedgerClient(): LedgerClient {
+        return {
+          allocateParty: vi.fn(),
+          getActiveContracts: vi.fn(),
+          getLedgerEnd: vi.fn(),
+          getParties: vi.fn(async () => ({partyDetails: []})),
+          getVersion: vi.fn(async () => ({version: '3.4.11'})),
+          submitAndWait: vi.fn(),
+          uploadDar: vi.fn(),
+        } as never
+      }
+
+      protected override async createStatusToken(): Promise<string> {
+        return 'token'
+      }
+    }
+
+    const result = await captureOutput(() => TestStatus.run(['--json'], {root: CLI_ROOT}))
+    expect(result.error).toBeUndefined()
+
+    const json = parseJson(result.stdout)
+    expect(json.data).toEqual(expect.objectContaining({
+      mode: 'sandbox',
+      network: 'local',
+    }))
+    expect(json.data).not.toHaveProperty('auth')
   })
 
   it('marks non-ledger inferred profile services as configured in multi-node json mode', async () => {
@@ -1131,6 +1174,54 @@ describe('runtime command surface', () => {
     expect(result.error).toBeUndefined()
     expect(result.stdout).toContain('Mode: multi-node (Docker topology)')
     expect(result.stdout).toContain('Profile: sandbox (sandbox)')
+  })
+
+  it('renders required operator auth for an inferred remote profile in multi-node human mode', async () => {
+    class TestStatus extends Status {
+      protected override async detectProjectTopology(): Promise<GeneratedTopology | null> {
+        return {
+          bootstrapScript: '',
+          cantonConf: '',
+          dockerCompose: '',
+          participants: [{
+            name: 'participant1',
+            parties: ['Alice'],
+            ports: {admin: 2001, jsonApi: 7575, ledgerApi: 6865},
+          }],
+          synchronizer: {admin: 10001, publicApi: 10002},
+        }
+      }
+
+      protected override async loadProjectConfig(): Promise<CantonctlConfig> {
+        return {
+          ...createConfig(),
+          'default-profile': 'splice-devnet',
+        }
+      }
+
+      protected override createStatusLedgerClient(): LedgerClient {
+        return {
+          allocateParty: vi.fn(),
+          getActiveContracts: vi.fn(),
+          getLedgerEnd: vi.fn(),
+          getParties: vi.fn(async () => ({
+            partyDetails: [{displayName: 'Alice', identifier: 'Alice::1224'}],
+          })),
+          getVersion: vi.fn(async () => ({version: '3.4.11'})),
+          submitAndWait: vi.fn(),
+          uploadDar: vi.fn(),
+        } as never
+      }
+
+      protected override async createStatusToken(): Promise<string> {
+        return 'token'
+      }
+    }
+
+    const result = await captureOutput(() => TestStatus.run([], {root: CLI_ROOT}))
+    expect(result.error).toBeUndefined()
+    expect(result.stdout).toContain('Profile: splice-devnet (remote-validator)')
+    expect(result.stdout).toContain('Operator auth: required')
   })
 
   it('renders single-node remote status in human mode without an inferred profile', async () => {

@@ -93,8 +93,9 @@ function createDeployResult(overrides: Partial<DeployResult> = {}): DeployResult
       source: 'auto-detected',
     },
     auth: {
-      envVarName: 'CANTONCTL_JWT_SANDBOX',
+      envVarName: 'CANTONCTL_OPERATOR_TOKEN_SANDBOX',
       mode: 'bearer-token',
+      scope: 'operator',
       source: 'fallback',
     },
     description: 'Profile-first DAR rollout',
@@ -614,8 +615,9 @@ describe('runtime-heavy command surface', () => {
         return {
           deploy: vi.fn().mockResolvedValue(createDeployResult({
             auth: {
-              envVarName: 'CANTONCTL_JWT_DEVNET',
+              envVarName: 'CANTONCTL_OPERATOR_TOKEN_DEVNET',
               mode: 'env-or-keychain-jwt',
+              scope: 'operator',
               source: 'stored',
             },
             profile: {

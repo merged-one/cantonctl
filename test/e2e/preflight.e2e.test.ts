@@ -157,6 +157,7 @@ profiles:
     )
 
     const CommandHarness = createTestPreflightCommand({
+      CANTONCTL_OPERATOR_TOKEN_SPLICE_DEVNET: 'operator-token',
       CANTONCTL_JWT_SPLICE_DEVNET: 'jwt-token',
     }, '203.0.113.10')
     const result = await runInProject(projectDir, CommandHarness, ['--profile', 'splice-devnet', '--json'])
@@ -175,7 +176,8 @@ profiles:
     }))
     expect(json.data).toEqual(expect.objectContaining({
       checks: expect.arrayContaining([
-        expect.objectContaining({name: 'Credential material', status: 'pass'}),
+        expect.objectContaining({name: 'App credential material', status: 'pass'}),
+        expect.objectContaining({name: 'Operator credential material', status: 'pass'}),
         expect.objectContaining({name: 'Scan reachability', status: 'pass'}),
       ]),
     }))
@@ -214,7 +216,8 @@ profiles:
     expect(json.success).toBe(false)
     expect(json.data).toEqual(expect.objectContaining({
       checks: expect.arrayContaining([
-        expect.objectContaining({name: 'Credential material', status: 'fail'}),
+        expect.objectContaining({name: 'App credential material', status: 'fail'}),
+        expect.objectContaining({name: 'Operator credential material', status: 'fail'}),
       ]),
     }))
   })
@@ -245,7 +248,10 @@ profiles:
 `,
     )
 
-    const CommandHarness = createTestPreflightCommand({CANTONCTL_JWT_SPLICE_DEVNET: 'jwt-token'}, '203.0.113.10')
+    const CommandHarness = createTestPreflightCommand({
+      CANTONCTL_OPERATOR_TOKEN_SPLICE_DEVNET: 'operator-token',
+      CANTONCTL_JWT_SPLICE_DEVNET: 'jwt-token',
+    }, '203.0.113.10')
     const result = await runInProject(projectDir, CommandHarness, ['--profile', 'splice-devnet', '--json'])
     const json = parseJson(result.stdout)
 
@@ -300,6 +306,9 @@ profiles:
     )
 
     const CommandHarness = createTestPreflightCommand({
+      CANTONCTL_OPERATOR_TOKEN_SPLICE_DEVNET: 'devnet-operator-token',
+      CANTONCTL_OPERATOR_TOKEN_SPLICE_TESTNET: 'testnet-operator-token',
+      CANTONCTL_OPERATOR_TOKEN_SPLICE_MAINNET: 'mainnet-operator-token',
       CANTONCTL_JWT_SPLICE_DEVNET: 'devnet-token',
       CANTONCTL_JWT_SPLICE_TESTNET: 'testnet-token',
       CANTONCTL_JWT_SPLICE_MAINNET: 'mainnet-token',

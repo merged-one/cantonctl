@@ -9,7 +9,7 @@ import {
   type ProfileCapabilitySummary,
   type ProfileServiceSummary,
 } from './compat.js'
-import {type AuthProfileMode, type ResolvedAuthProfile, resolveAuthProfile} from './auth-profile.js'
+import {type AuthCredentialScope, type AuthProfileMode, type ResolvedAuthProfile, resolveAuthProfile} from './auth-profile.js'
 import {createSandboxToken} from './jwt.js'
 import {createBackendWithFallback} from './keytar-backend.js'
 import {createProfileStatusInventory, type RuntimeInventory} from './runtime-inventory.js'
@@ -18,6 +18,7 @@ import {resolveStableSpliceProfile} from './splice-public.js'
 export interface RuntimeCredential {
   mode: AuthProfileMode
   network: string
+  scope: AuthCredentialScope
   source: 'env' | 'fallback' | 'missing' | 'stored'
   token?: string
 }
@@ -29,6 +30,7 @@ export interface ResolvedProfileRuntime {
   credential: RuntimeCredential
   inventory: RuntimeInventory
   networkName: string
+  operatorCredential: RuntimeCredential
   profile: NormalizedProfile
   profileContext: ReturnType<typeof resolveStableSpliceProfile>
   services: ProfileServiceSummary[]
@@ -60,20 +62,46 @@ export function createProfileRuntimeResolver(
       const networkName = resolveProfileNetworkName(options.config, profile.name)
       const auth = resolveProfileAuth(options.config, profile, networkName)
       const compatibility = createCompatibilityReport(options.config, profile.name)
-      const credential = shouldUseFallbackToken(profile, auth.mode)
-        ? {
+      const fallbackToken = auth.app.localFallbackAllowed || auth.operator.localFallbackAllowed
+        ? await createFallbackToken(options.config)
+        : undefined
+      const credential = auth.app.localFallbackAllowed
+        ? createFallbackCredential({
           mode: auth.mode,
-          network: networkName,
-          source: 'fallback' as const,
-          token: await createFallbackToken(options.config),
-        }
+          networkName,
+          scope: auth.app.scope,
+          token: fallbackToken!,
+        })
         : await resolveStoredCredential({
           createBackend,
           createStore,
           env,
           mode: auth.mode,
           networkName,
+          scope: auth.app.scope,
         })
+      const operatorCredential = auth.operator.localFallbackAllowed
+        ? createFallbackCredential({
+          mode: auth.mode,
+          networkName,
+          scope: auth.operator.scope,
+          token: fallbackToken!,
+        })
+        : auth.operator.required
+          ? await resolveStoredCredential({
+            createBackend,
+            createStore,
+            env,
+            mode: auth.mode,
+            networkName,
+            scope: auth.operator.scope,
+          })
+          : {
+            mode: auth.mode,
+            network: networkName,
+            scope: auth.operator.scope,
+            source: 'missing' as const,
+          }
 
       return {
         auth,
@@ -82,6 +110,7 @@ export function createProfileRuntimeResolver(
         credential,
         inventory: createProfileStatusInventory({inspection}),
         networkName,
+        operatorCredential,
         profile,
         profileContext: resolveStableSpliceProfile(options.config, profile.name),
         services: inspection.services,
@@ -160,15 +189,17 @@ async function resolveStoredCredential(options: {
   env: Record<string, string | undefined>
   mode: AuthProfileMode
   networkName: string
+  scope: AuthCredentialScope
 }): Promise<RuntimeCredential> {
   const {backend} = await options.createBackend()
   const store = options.createStore({backend, env: options.env})
-  const credential = await store.resolveRecord(options.networkName)
+  const credential = await store.resolveRecord(options.networkName, {scope: options.scope})
 
   if (!credential) {
     return {
       mode: options.mode,
       network: options.networkName,
+      scope: options.scope,
       source: 'missing',
     }
   }
@@ -176,19 +207,25 @@ async function resolveStoredCredential(options: {
   return {
     mode: options.mode,
     network: options.networkName,
+    scope: options.scope,
     source: credential.source,
     token: credential.token,
   }
 }
 
-function shouldUseFallbackToken(profile: NormalizedProfile, mode: AuthProfileMode): boolean {
-  return (
-    profile.kind === 'sandbox'
-    || profile.kind === 'canton-multi'
-    || profile.kind === 'splice-localnet'
-    || profile.services.auth?.kind === 'shared-secret'
-    || profile.services.auth?.kind === 'none'
-  )
+function createFallbackCredential(options: {
+  mode: AuthProfileMode
+  networkName: string
+  scope: AuthCredentialScope
+  token: string
+}): RuntimeCredential {
+  return {
+    mode: options.mode,
+    network: options.networkName,
+    scope: options.scope,
+    source: 'fallback',
+    token: options.token,
+  }
 }
 
 async function defaultCreateFallbackToken(config: CantonctlConfig): Promise<string> {
@@ -208,9 +245,13 @@ export function summarizeCredentialSource(credential: RuntimeCredential): string
     case 'stored':
       return 'resolved from keychain'
     case 'fallback':
-      return 'using local fallback token'
+      return credential.scope === 'operator'
+        ? 'using local operator fallback token'
+        : 'using local fallback token'
     case 'missing':
-      return 'missing token'
+      return credential.scope === 'operator'
+        ? 'missing operator token'
+        : 'missing token'
   }
 }
 
@@ -221,6 +262,7 @@ export function toResolvedCredential(record: RuntimeCredential): ResolvedCredent
 
   return {
     source: record.source,
+    scope: record.scope,
     token: record.token,
   }
 }

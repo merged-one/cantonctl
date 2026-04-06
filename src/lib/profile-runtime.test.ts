@@ -159,6 +159,14 @@ describe('profile runtime', () => {
     expect(runtime.credential).toEqual({
       mode: 'bearer-token',
       network: 'local',
+      scope: 'app',
+      source: 'fallback',
+      token: 'sandbox-token',
+    })
+    expect(runtime.operatorCredential).toEqual({
+      mode: 'bearer-token',
+      network: 'local',
+      scope: 'operator',
       source: 'fallback',
       token: 'sandbox-token',
     })
@@ -192,6 +200,13 @@ describe('profile runtime', () => {
     expect(runtime.credential).toEqual({
       mode: 'env-or-keychain-jwt',
       network: 'devnet',
+      scope: 'app',
+      source: 'missing',
+    })
+    expect(runtime.operatorCredential).toEqual({
+      mode: 'env-or-keychain-jwt',
+      network: 'devnet',
+      scope: 'operator',
       source: 'missing',
     })
     expect(summarizeCredentialSource(runtime.credential)).toBe('missing token')
@@ -260,12 +275,31 @@ describe('profile runtime', () => {
 
     expect(cantonMultiAuth.mode).toBe('bearer-token')
     expect(bearerAuth.mode).toBe('bearer-token')
-    expect(summarizeCredentialSource({mode: 'env-or-keychain-jwt', network: 'devnet', source: 'env', token: 'env-token'})).toBe('resolved from environment')
-    expect(toResolvedCredential({mode: 'env-or-keychain-jwt', network: 'devnet', source: 'env', token: 'env-token'})).toEqual({
+    expect(summarizeCredentialSource({
+      mode: 'env-or-keychain-jwt',
+      network: 'devnet',
+      scope: 'app',
       source: 'env',
       token: 'env-token',
+    })).toBe('resolved from environment')
+    expect(toResolvedCredential({
+      mode: 'env-or-keychain-jwt',
+      network: 'devnet',
+      scope: 'app',
+      source: 'env',
+      token: 'env-token',
+    })).toEqual({
+      source: 'env',
+      scope: 'app',
+      token: 'env-token',
     })
-    expect(toResolvedCredential({mode: 'bearer-token', network: 'local', source: 'fallback', token: 'sandbox-token'})).toBeNull()
+    expect(toResolvedCredential({
+      mode: 'bearer-token',
+      network: 'local',
+      scope: 'operator',
+      source: 'fallback',
+      token: 'sandbox-token',
+    })).toBeNull()
   })
 
   it('synthesizes missing legacy network maps and fallback auth details', async () => {
@@ -296,5 +330,56 @@ describe('profile runtime', () => {
       profileName: 'sandbox',
     })
     expect(sandboxRuntime.credential.token).toBe('admin-token')
+  })
+
+  it('does not require operator credentials for scan-only remote profiles and summarizes operator sources', async () => {
+    const resolver = createProfileRuntimeResolver({
+      createBackendWithFallback: vi.fn().mockResolvedValue({backend: {}}),
+      createCredentialStore: vi.fn().mockReturnValue({
+        resolveRecord: vi.fn().mockResolvedValue(null),
+      }),
+      createFallbackToken: vi.fn(),
+      env: {},
+    })
+
+    const runtime = await resolver.resolve({
+      config: {
+        project: {name: 'demo', 'sdk-version': '3.4.11'},
+        profiles: {
+          observer: {
+            experimental: false,
+            kind: 'remote-sv-network',
+            name: 'observer',
+            services: {
+              auth: {kind: 'jwt', issuer: 'https://login.example.com'},
+              scan: {url: 'https://scan.example.com'},
+            },
+          },
+        },
+        version: 1,
+      },
+      profileName: 'observer',
+    })
+
+    expect(runtime.auth.operator.required).toBe(false)
+    expect(runtime.operatorCredential).toEqual({
+      mode: 'env-or-keychain-jwt',
+      network: 'observer',
+      scope: 'operator',
+      source: 'missing',
+    })
+    expect(summarizeCredentialSource({
+      mode: 'env-or-keychain-jwt',
+      network: 'observer',
+      scope: 'operator',
+      source: 'missing',
+    })).toBe('missing operator token')
+    expect(summarizeCredentialSource({
+      mode: 'bearer-token',
+      network: 'local',
+      scope: 'operator',
+      source: 'fallback',
+      token: 'sandbox-token',
+    })).toBe('using local operator fallback token')
   })
 })
