@@ -2,7 +2,7 @@
 
 Compare two profiles before promotion.
 
-`promote diff` is advisory only. It does not roll out changes or mutate remote infrastructure.
+`promote diff` is currently read-only on this branch. It does not yet roll out changes or mutate remote infrastructure.
 
 ## Usage
 
@@ -19,4 +19,3 @@ cantonctl promote diff --from splice-testnet --to splice-mainnet --json
 - reset-sensitive network changes
 - migration-policy reminders
 - LocalNet version-line changes when relevant
-

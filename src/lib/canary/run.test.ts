@@ -1,6 +1,10 @@
 import {describe, expect, it, vi} from 'vitest'
 
-import {createCanaryRunner, STABLE_PUBLIC_CANARY_SUITES} from './run.js'
+import {
+  createCanaryRunner,
+  selectStablePublicCanarySuites,
+  STABLE_PUBLIC_CANARY_SUITES,
+} from './run.js'
 import type {ProfileRuntimeResolver} from '../profile-runtime.js'
 import type {CantonctlConfig} from '../config.js'
 
@@ -69,6 +73,23 @@ function createResolver(): () => ProfileRuntimeResolver {
 }
 
 describe('stable-public canary runner', () => {
+  it('selects suites only for configured stable/public services', () => {
+    expect(selectStablePublicCanarySuites({
+      services: {
+        ledger: {url: 'https://ledger.example.com'},
+        scan: {url: 'https://scan.example.com'},
+      },
+    } as never)).toEqual(['scan', 'ans'])
+
+    expect(selectStablePublicCanarySuites({
+      services: {
+        ledger: {url: 'https://ledger.example.com'},
+        tokenStandard: {url: 'https://tokens.example.com'},
+        validator: {url: 'https://validator.example.com'},
+      },
+    } as never)).toEqual(['token-standard', 'validator-user'])
+  })
+
   it('defaults to only stable/public suites', async () => {
     const runner = createCanaryRunner({
       createAnsAdapter: vi.fn().mockReturnValue({
@@ -119,4 +140,3 @@ describe('stable-public canary runner', () => {
     ])
   })
 })
-

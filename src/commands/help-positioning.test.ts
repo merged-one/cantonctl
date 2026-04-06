@@ -6,8 +6,10 @@ import {describe, expect, it} from 'vitest'
 import Deploy from './deploy.js'
 import Doctor from './doctor.js'
 import Init from './init.js'
+import Preflight from './preflight.js'
 import Readiness from './readiness.js'
 import Status from './status.js'
+import UpgradeCheck from './upgrade/check.js'
 
 const packageJson = JSON.parse(
   fs.readFileSync(path.join(process.cwd(), 'package.json'), 'utf8'),
@@ -20,7 +22,9 @@ describe('help positioning', () => {
     expect(Readiness.description).toContain('composed readiness gate')
     expect(Init.description).toContain('companion-ready Canton project')
     expect(Status.description).toContain('profile-aware service health')
-    expect(Deploy.description).toContain('advisory DAR deploy wrapper')
+    expect(Deploy.description).toContain('current DAR deploy flow')
+    expect(Preflight.description).toContain('current read-only readiness checks')
+    expect(UpgradeCheck.description).toContain('current read-only upgrade checks')
   })
 
   it('keeps retired umbrella language out of key command descriptions', () => {
@@ -30,6 +34,8 @@ describe('help positioning', () => {
       Init.description,
       Status.description,
       Deploy.description,
+      Preflight.description,
+      UpgradeCheck.description,
       packageJson.description,
     ]
 

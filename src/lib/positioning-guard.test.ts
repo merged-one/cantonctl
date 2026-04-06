@@ -9,6 +9,7 @@ const PRIMARY_SURFACES = [
   'README.md',
   'package.json',
   'docs/README.md',
+  'docs/BEST_PRACTICES.md',
   'docs/concepts/ecosystem-fit.md',
   'docs/concepts/when-to-use-which-tool.md',
   'docs/concepts/target-users.md',
@@ -24,6 +25,11 @@ const PRIMARY_SURFACES = [
   'docs/reference/status.md',
   'docs/reference/readiness.md',
   'docs/reference/deploy.md',
+  'docs/reference/preflight.md',
+  'docs/reference/promotion.md',
+  'docs/reference/upgrade.md',
+  'docs/reference/reset.md',
+  'docs/adr/0018-project-local-control-plane.md',
   'proposals/cantonctl.md',
 ]
 
@@ -51,19 +57,26 @@ describe('positioning guard', () => {
   it('keeps companion language present across primary docs', () => {
     const combined = [
       read('README.md'),
+      read('docs/CURRENT_STATE.md'),
+      read('docs/BEST_PRACTICES.md'),
       read('docs/README.md'),
       read('docs/concepts/ecosystem-fit.md'),
+      read('docs/concepts/non-goals.md'),
       read('docs/reference/api-stability.md'),
       read('docs/reference/compatibility.md'),
+      read('docs/adr/0018-project-local-control-plane.md'),
       read('proposals/cantonctl.md'),
     ].join('\n')
 
     expect(combined).toContain('Splice-aware orchestration companion')
+    expect(combined).toContain('project-local control plane')
+    expect(combined).toContain('day-2 operations layer')
     expect(combined).toContain('wrap, do not replace')
     expect(combined).toContain('DPM')
     expect(combined).toContain('Daml Studio')
     expect(combined).toContain('Quickstart')
     expect(combined).toContain('stable/public')
     expect(combined).toContain('experimental')
+    expect(combined).toContain('cloud/Kubernetes/Terraform/Helm provisioning')
   })
 })

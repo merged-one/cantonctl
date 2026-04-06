@@ -1,8 +1,8 @@
 # `cantonctl deploy`
 
-Run the advisory DAR deploy wrapper for ledger-capable targets.
+Run the current DAR deploy flow for ledger-capable targets.
 
-This command is intentionally narrower than a validator deployment control plane. It helps with DAR upload workflows around the ledger API. It does not claim to be the canonical way to provision or operate remote validator infrastructure.
+This command is the current ledger rollout step inside `cantonctl`'s broader project-local control-plane boundary. On this branch it focuses on DAR upload workflows around the ledger API. It does not provision infrastructure or replace official validator runbooks.
 
 ## Usage
 
@@ -20,8 +20,8 @@ cantonctl deploy [network] [flags]
 ## Positioning
 
 - Use DPM and the official stack for canonical build and environment workflows
-- Use `deploy` when a project already needs the `cantonctl` wrapper around ledger-capable DAR upload
-- Expect later profile-first readiness checks to live in `preflight`, not inside deploy-by-default behavior
+- Use `deploy` when a project already needs the current `cantonctl` wrapper around ledger-capable DAR upload
+- Broader profile-first rollout behavior is follow-on work, not a product non-goal
 
 ## Flags
 

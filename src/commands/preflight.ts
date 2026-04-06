@@ -7,7 +7,7 @@ import {createPreflightChecks, type PreflightRunner} from '../lib/preflight/chec
 import {renderPreflightReport} from '../lib/preflight/output.js'
 
 export default class Preflight extends Command {
-  static override description = 'Run read-only remote readiness checks for a resolved profile'
+  static override description = 'Run the current read-only readiness checks for a resolved profile'
 
   static override examples = [
     '<%= config.bin %> preflight --profile splice-devnet',

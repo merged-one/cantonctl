@@ -1,7 +1,9 @@
 import {describe, expect, it, vi} from 'vitest'
 
+import * as canaryRunModule from './canary/run.js'
 import type {CanaryRunner} from './canary/run.js'
 import type {CantonctlConfig} from './config.js'
+import * as preflightChecksModule from './preflight/checks.js'
 import type {PreflightRunner} from './preflight/checks.js'
 import type {PreflightReport} from './preflight/output.js'
 import {createReadinessRunner} from './readiness.js'
@@ -208,5 +210,48 @@ describe('createReadinessRunner', () => {
       warned: 0,
     })
     expect(report.success).toBe(true)
+  })
+
+  it('uses the default preflight and canary factories when deps are omitted', async () => {
+    const preflightRunner: PreflightRunner = {
+      run: vi.fn().mockResolvedValue(createPreflightReport()),
+    }
+    const canaryRunner: CanaryRunner = {
+      run: vi.fn().mockResolvedValue({
+        checks: [{
+          detail: 'Stable/public scan endpoint reachable.',
+          endpoint: 'https://scan.example.com',
+          status: 'pass',
+          suite: 'scan',
+          warnings: [],
+        }],
+        profile: {kind: 'remote-validator', name: 'splice-devnet'},
+        success: true,
+      }),
+    }
+
+    const createPreflightSpy = vi
+      .spyOn(preflightChecksModule, 'createPreflightChecks')
+      .mockReturnValue(preflightRunner)
+    const createCanarySpy = vi
+      .spyOn(canaryRunModule, 'createCanaryRunner')
+      .mockReturnValue(canaryRunner)
+
+    const config = createConfig('splice-devnet', {
+      ledger: {url: 'https://ledger.example.com'},
+      scan: {url: 'https://scan.example.com'},
+    })
+
+    const report = await createReadinessRunner().run({config})
+
+    expect(createPreflightSpy).toHaveBeenCalledTimes(1)
+    expect(createCanarySpy).toHaveBeenCalledTimes(1)
+    expect(report.canary.selectedSuites).toEqual(['scan', 'ans'])
+    expect(report.summary).toEqual({
+      failed: 0,
+      passed: 3,
+      skipped: 3,
+      warned: 1,
+    })
   })
 })

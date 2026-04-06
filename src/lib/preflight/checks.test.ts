@@ -186,6 +186,37 @@ describe('preflight checks', () => {
     ]))
   })
 
+  it('warns when the resolved auth profile itself is experimental', async () => {
+    const runner = createPreflightChecks({
+      createProfileRuntimeResolver: createRuntimeResolver({
+        auth: {
+          description: 'Use an explicitly supplied bearer token or a local fallback token.',
+          envVarName: 'CANTONCTL_JWT_DEVNET',
+          experimental: true,
+          mode: 'bearer-token',
+          network: 'devnet',
+          requiresExplicitExperimental: false,
+          warnings: [],
+        },
+      }),
+      createScanAdapter: vi.fn().mockReturnValue({
+        getDsoInfo: vi.fn().mockResolvedValue({}),
+        metadata: {baseUrl: 'https://scan.devnet.example.com'},
+      }),
+      fetch: vi.fn().mockResolvedValue(new Response('', {status: 404})),
+      lookupEgressIp: vi.fn().mockResolvedValue('203.0.113.10'),
+    })
+
+    const report = await runner.run({config: createConfig(), profileName: 'splice-devnet'})
+    expect(report.checks).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        detail: 'Use an explicitly supplied bearer token or a local fallback token. CANTONCTL_JWT_DEVNET',
+        name: 'Auth mode',
+        status: 'warn',
+      }),
+    ]))
+  })
+
   it('fails when the scan endpoint cannot be reached', async () => {
     const runner = createPreflightChecks({
       createProfileRuntimeResolver: createRuntimeResolver(),

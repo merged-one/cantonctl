@@ -4,6 +4,7 @@ import {describe, expect, it, vi} from 'vitest'
 import * as configModule from '../lib/config.js'
 import type {CantonctlConfig} from '../lib/config.js'
 import {CantonctlError, ErrorCode} from '../lib/errors.js'
+import * as processRunnerModule from '../lib/process-runner.js'
 import type {ProcessRunner} from '../lib/process-runner.js'
 import CompatCheck from './compat/check.js'
 import CodegenSync from './codegen/sync.js'
@@ -734,5 +735,33 @@ describe('profile command surface', () => {
     }
 
     await expect(TestCompatCheck.run(['--json'], {root: CLI_ROOT})).rejects.toThrow('boom')
+  })
+
+  it('wires codegen sync helper methods through the default runner', () => {
+    class CodegenHarness extends CodegenSync {
+      public callCreateRunner() {
+        return this.createRunner()
+      }
+
+      public callGetCommandCwd() {
+        return this.getCommandCwd()
+      }
+
+      public async run(): Promise<void> {}
+    }
+
+    const runner = {
+      run: vi.fn(),
+      spawn: vi.fn(),
+      which: vi.fn(),
+    } satisfies ProcessRunner
+    const createRunnerSpy = vi
+      .spyOn(processRunnerModule, 'createProcessRunner')
+      .mockReturnValue(runner)
+
+    const harness = new CodegenHarness([], {} as never)
+    expect(harness.callCreateRunner()).toBe(runner)
+    expect(harness.callGetCommandCwd()).toBe(process.cwd())
+    expect(createRunnerSpy).toHaveBeenCalledTimes(1)
   })
 })

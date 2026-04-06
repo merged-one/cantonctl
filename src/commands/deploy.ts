@@ -43,7 +43,7 @@ export default class Deploy extends Command {
     }),
   }
 
-  static override description = 'Run the advisory DAR deploy wrapper for ledger-capable targets'
+  static override description = 'Run the current DAR deploy flow for ledger-capable targets'
 
   static override examples = [
     '<%= config.bin %> deploy',

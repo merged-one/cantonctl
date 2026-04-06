@@ -6,7 +6,7 @@ import {createUpgradeChecker, type UpgradeChecker} from '../../lib/lifecycle/upg
 import {createOutput} from '../../lib/output.js'
 
 export default class UpgradeCheck extends Command {
-  static override description = 'Run advisory upgrade checks for a profile'
+  static override description = 'Run the current read-only upgrade checks for a profile'
 
   static override examples = [
     '<%= config.bin %> upgrade check --profile splice-devnet',
@@ -72,4 +72,3 @@ export default class UpgradeCheck extends Command {
     return loadConfig()
   }
 }
-

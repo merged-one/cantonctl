@@ -1,8 +1,8 @@
 # `cantonctl upgrade check`
 
-Run advisory upgrade checks for a resolved profile.
+Run the current read-only upgrade checks for a resolved profile.
 
-`upgrade check` stays read-only. It helps teams confirm compatibility, auth material, scan-backed migration hints, and network-tier reminders before following the official operator runbooks.
+`upgrade check` is currently the inspection half of a broader day-2 workflow. On this branch it stays read-only and helps teams confirm compatibility, auth material, scan-backed migration hints, and network-tier reminders before following the official operator runbooks.
 
 ## Usage
 
@@ -18,4 +18,3 @@ cantonctl upgrade check --profile splice-mainnet --json
 - stable/public scan-backed migration hints when available
 - reset-sensitive DevNet/TestNet reminders
 - MainNet continuity reminders
-
