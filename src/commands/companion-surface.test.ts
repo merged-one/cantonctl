@@ -18,6 +18,7 @@ import * as lifecycleDiffModule from '../lib/lifecycle/diff.js'
 import * as lifecycleResetModule from '../lib/lifecycle/reset.js'
 import * as lifecycleUpgradeModule from '../lib/lifecycle/upgrade.js'
 import * as localnetImportModule from '../lib/localnet-import.js'
+import * as localnetWorkspaceModule from '../lib/localnet-workspace.js'
 import * as preflightChecksModule from '../lib/preflight/checks.js'
 import * as readinessModule from '../lib/readiness.js'
 import CanaryStablePublic from './canary/stable-public.js'
@@ -29,7 +30,7 @@ import Preflight from './preflight.js'
 import ProfilesImportLocalnet from './profiles/import-localnet.js'
 import ProfilesImportScan from './profiles/import-scan.js'
 import PromoteDiff from './promote/diff.js'
-import Readiness from './readiness.js'
+import Readiness, {renderReadinessReport} from './readiness.js'
 import ResetChecklist from './reset/checklist.js'
 import UpgradeCheck from './upgrade/check.js'
 
@@ -880,5 +881,204 @@ describe('companion command surface', () => {
       check: vi.fn().mockRejectedValue(new Error('upgrade boom')),
     })
     await expect(UpgradeCheck.run(['--json'], {root: CLI_ROOT})).rejects.toThrow('upgrade boom')
+  })
+
+  it('writes imported LocalNet profiles and wires the default workspace detector', async () => {
+    class HumanImportLocalnet extends ProfilesImportLocalnet {
+      protected override createDetector() {
+        return {
+          detect: vi.fn().mockResolvedValue(createLocalnetWorkspace()),
+        }
+      }
+    }
+
+    class DetectorHarness extends ProfilesImportLocalnet {
+      public callCreateDetector() {
+        return this.createDetector()
+      }
+
+      public async run(): Promise<void> {}
+    }
+
+    const projectDir = createTempDir('cantonctl-import-localnet-human-')
+    const configPath = join(projectDir, 'cantonctl.yaml')
+    writeFileSync(configPath, [
+      'version: 1',
+      'project:',
+      '  name: demo',
+      '  sdk-version: "3.4.11"',
+    ].join('\n'))
+
+    process.chdir(projectDir)
+    const human = await captureOutput(() => HumanImportLocalnet.run([
+      '--workspace',
+      '../quickstart',
+      '--write',
+    ], {root: CLI_ROOT}))
+    expect(human.error).toBeUndefined()
+    expect(human.stdout).toContain('Updated ')
+    expect(human.stdout).toContain('cantonctl.yaml')
+
+    let capturedDeps: Parameters<typeof localnetWorkspaceModule.createLocalnetWorkspaceDetector>[0] | undefined
+    vi.spyOn(localnetWorkspaceModule, 'createLocalnetWorkspaceDetector').mockImplementation((deps) => {
+      capturedDeps = deps
+      return {detect: vi.fn()} as never
+    })
+
+    const harness = new DetectorHarness([], {} as never)
+    harness.callCreateDetector()
+
+    const tempDir = createTempDir('cantonctl-detector-')
+    const tempFile = join(tempDir, 'probe.txt')
+    writeFileSync(tempFile, 'probe', 'utf8')
+
+    await expect(capturedDeps?.access(tempFile)).resolves.toBeUndefined()
+    await expect(capturedDeps?.readFile(tempFile)).resolves.toBe('probe')
+  })
+
+  it('renders readiness warning details and summary pluralization', () => {
+    const failureWriter = {
+      error: vi.fn(),
+      log: vi.fn(),
+      success: vi.fn(),
+      table: vi.fn(),
+      warn: vi.fn(),
+    }
+
+    renderReadinessReport(failureWriter as never, {
+      auth: {
+        credentialSource: 'stored',
+        envVarName: 'CANTONCTL_JWT_SPLICE_DEVNET',
+        mode: 'env-or-keychain-jwt',
+        warnings: ['Auth warning'],
+      },
+      canary: {
+        checks: [{
+          detail: 'Request failed.',
+          status: 'fail',
+          suite: 'scan',
+          warnings: ['Latency spike'],
+        }],
+        selectedSuites: ['scan'],
+        skippedSuites: ['ans', 'token-standard', 'validator-user'],
+        success: false,
+      },
+      compatibility: {failed: 1, passed: 1, warned: 0},
+      preflight: {
+        auth: {
+          credentialSource: 'stored',
+          envVarName: 'CANTONCTL_JWT_SPLICE_DEVNET',
+          mode: 'env-or-keychain-jwt',
+          warnings: ['Auth warning'],
+        },
+        checks: [{
+          category: 'auth',
+          detail: 'Credential missing.',
+          name: 'Credential material',
+          status: 'fail',
+        }],
+        compatibility: {failed: 1, passed: 1, warned: 0},
+        egressIp: undefined,
+        network: {
+          checklist: [],
+          name: 'splice-devnet',
+          reminders: [],
+          resetExpectation: 'resets-expected',
+          tier: 'devnet',
+        },
+        profile: {
+          experimental: false,
+          kind: 'remote-validator',
+          name: 'splice-devnet',
+        },
+        success: false,
+      },
+      profile: {
+        experimental: false,
+        kind: 'remote-validator',
+        name: 'splice-devnet',
+      },
+      success: false,
+      summary: {
+        failed: 2,
+        passed: 0,
+        skipped: 3,
+        warned: 1,
+      },
+    })
+
+    expect(failureWriter.warn).toHaveBeenCalledWith('Auth warning')
+    expect(failureWriter.warn).toHaveBeenCalledWith('scan: Latency spike')
+    expect(failureWriter.error).toHaveBeenCalledWith('Readiness found blocking issues.')
+
+    const successWriter = {
+      error: vi.fn(),
+      log: vi.fn(),
+      success: vi.fn(),
+      table: vi.fn(),
+      warn: vi.fn(),
+    }
+
+    renderReadinessReport(successWriter as never, {
+      auth: {
+        credentialSource: 'stored',
+        envVarName: 'CANTONCTL_JWT_SPLICE_DEVNET',
+        mode: 'env-or-keychain-jwt',
+        warnings: [],
+      },
+      canary: {
+        checks: [],
+        selectedSuites: [],
+        skippedSuites: ['scan'],
+        success: true,
+      },
+      compatibility: {failed: 0, passed: 2, warned: 0},
+      preflight: {
+        auth: {
+          credentialSource: 'stored',
+          envVarName: 'CANTONCTL_JWT_SPLICE_DEVNET',
+          mode: 'env-or-keychain-jwt',
+          warnings: [],
+        },
+        checks: [{
+          category: 'profile',
+          detail: 'Resolved.',
+          name: 'Profile resolution',
+          status: 'pass',
+        }],
+        compatibility: {failed: 0, passed: 2, warned: 0},
+        egressIp: undefined,
+        network: {
+          checklist: [],
+          name: 'splice-devnet',
+          reminders: [],
+          resetExpectation: 'resets-expected',
+          tier: 'devnet',
+        },
+        profile: {
+          experimental: false,
+          kind: 'remote-validator',
+          name: 'splice-devnet',
+        },
+        success: true,
+      },
+      profile: {
+        experimental: false,
+        kind: 'remote-validator',
+        name: 'splice-devnet',
+      },
+      success: true,
+      summary: {
+        failed: 0,
+        passed: 1,
+        skipped: 1,
+        warned: 2,
+      },
+    })
+
+    expect(successWriter.log).toHaveBeenCalledWith('Canary suites: none')
+    expect(successWriter.success).toHaveBeenCalledWith(
+      'Readiness passed with 2 warnings and 1 skipped item.',
+    )
   })
 })

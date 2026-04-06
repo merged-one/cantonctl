@@ -309,7 +309,7 @@ function loadTemplateManifest(template: Template): TemplateManifest {
     }
   } catch (cause) {
     throw new CantonctlError(ErrorCode.CONFIG_SCHEMA_VIOLATION, {
-      cause: cause instanceof Error ? cause : undefined,
+      cause: cause as Error | undefined,
       context: {manifestPath, template},
       suggestion: `Fix the bundled template manifest at ${manifestPath}.`,
     })

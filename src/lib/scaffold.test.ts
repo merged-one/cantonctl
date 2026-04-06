@@ -1,8 +1,9 @@
 import * as nodeFs from 'node:fs'
+import {tmpdir} from 'node:os'
 import * as path from 'node:path'
 import {fileURLToPath} from 'node:url'
 
-import {describe, expect, it} from 'vitest'
+import {describe, expect, it, vi} from 'vitest'
 
 import {loadConfig, type ConfigFileSystem} from './config.js'
 import {CantonctlError, ErrorCode} from './errors.js'
@@ -24,6 +25,11 @@ const PINNED_SDK_VERSION = (() => {
   return version.replace(/^v/, '').split('-')[0]
 })()
 const TEMPLATE_ROOT = fileURLToPath(new URL('../../assets/templates/', import.meta.url))
+
+async function importFreshScaffoldModule() {
+  vi.resetModules()
+  return import('./scaffold.js')
+}
 
 interface WrittenFile {
   content: string
@@ -174,6 +180,39 @@ describe('scaffoldProject', () => {
       nodeFs.unlinkSync(symlinkPath)
     }
   })
+
+  it('uses the real filesystem when no fs override is provided', () => {
+    const rootDir = nodeFs.mkdtempSync(path.join(tmpdir(), 'cantonctl-scaffold-'))
+    const projectDir = path.join(rootDir, 'my-app')
+
+    try {
+      const result = scaffoldProject({
+        dir: projectDir,
+        name: 'my-app',
+        template: 'splice-dapp-sdk',
+      })
+
+      expect(result.projectDir).toBe(projectDir)
+      expect(nodeFs.existsSync(path.join(projectDir, 'cantonctl.yaml'))).toBe(true)
+      expect(nodeFs.existsSync(path.join(projectDir, 'frontend', 'package.json'))).toBe(true)
+    } finally {
+      nodeFs.rmSync(rootDir, {force: true, recursive: true})
+    }
+  })
+
+  it('throws when a specific bundled template file is missing', () => {
+    const filePath = path.join(TEMPLATE_ROOT, 'splice-dapp-sdk', 'files', 'daml', 'Main.daml')
+    const backupPath = `${filePath}.tmp-test`
+    nodeFs.cpSync(filePath, backupPath)
+    nodeFs.rmSync(filePath, {force: true})
+
+    try {
+      expect(() => generateDamlSource('splice-dapp-sdk')).toThrow(CantonctlError)
+    } finally {
+      nodeFs.cpSync(backupPath, filePath)
+      nodeFs.rmSync(backupPath, {force: true})
+    }
+  })
 })
 
 describe('generateConfig', () => {
@@ -191,6 +230,23 @@ describe('generateConfig', () => {
       }))
     }
   })
+
+  it('defaults manifest configPreset to sandbox when it is omitted', async () => {
+    const manifestPath = path.join(TEMPLATE_ROOT, 'splice-dapp-sdk', 'template.json')
+    const originalManifest = nodeFs.readFileSync(manifestPath, 'utf8')
+    const parsed = JSON.parse(originalManifest) as Record<string, unknown>
+    delete parsed.configPreset
+    nodeFs.writeFileSync(manifestPath, JSON.stringify(parsed, null, 2))
+
+    try {
+      const module = await importFreshScaffoldModule()
+      const config = module.generateConfig('test-project', 'splice-dapp-sdk')
+      expect(config).not.toContain('splice-devnet:')
+      expect(config).toContain('profile: sandbox')
+    } finally {
+      nodeFs.writeFileSync(manifestPath, originalManifest)
+    }
+  })
 })
 
 describe('template sources', () => {
@@ -204,5 +260,35 @@ describe('template sources', () => {
     expect(generateDamlTest('splice-dapp-sdk')).toContain('script do')
     expect(generateDamlTest('splice-scan-reader')).toContain('script do')
     expect(generateDamlTest('splice-token-app')).toContain('script do')
+  })
+
+  it('fails to import when a bundled template manifest is missing', async () => {
+    const manifestPath = path.join(TEMPLATE_ROOT, 'splice-dapp-sdk', 'template.json')
+    const backupPath = `${manifestPath}.tmp-test`
+    nodeFs.cpSync(manifestPath, backupPath)
+    nodeFs.rmSync(manifestPath, {force: true})
+
+    try {
+      await expect(importFreshScaffoldModule()).rejects.toMatchObject({
+        code: ErrorCode.CONFIG_SCHEMA_VIOLATION,
+      })
+    } finally {
+      nodeFs.cpSync(backupPath, manifestPath)
+      nodeFs.rmSync(backupPath, {force: true})
+    }
+  })
+
+  it('fails to import when a bundled template manifest is invalid json', async () => {
+    const manifestPath = path.join(TEMPLATE_ROOT, 'splice-dapp-sdk', 'template.json')
+    const originalManifest = nodeFs.readFileSync(manifestPath, 'utf8')
+    nodeFs.writeFileSync(manifestPath, '{invalid json')
+
+    try {
+      await expect(importFreshScaffoldModule()).rejects.toMatchObject({
+        code: ErrorCode.CONFIG_SCHEMA_VIOLATION,
+      })
+    } finally {
+      nodeFs.writeFileSync(manifestPath, originalManifest)
+    }
   })
 })
