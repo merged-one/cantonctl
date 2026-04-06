@@ -78,6 +78,7 @@ The current release implements these control-plane surfaces:
 
 - profile resolution, validation, and auth handling
 - separate app vs operator credential resolution and reporting for remote control-plane actions
+- explicit `operator` namespace coverage for approved admin/runtime actions
 - `dev`, `dev --net`, topology preview/export, and LocalNet wrapping
 - status, compatibility, preflight, readiness, canaries, and diagnostics
 - discovery, profile import, and SDK config export
@@ -104,6 +105,11 @@ Stable/public companion surfaces include:
 - preflight, lifecycle, and diagnostics helpers
 - stable/public Scan, token-standard, ANS, and validator-user flows
 - stable/public discovery, canaries, and SDK config export
+
+Explicit operator surfaces currently include:
+
+- `operator validator licenses` over the Scan admin license endpoint
+- required operator auth and profile gating through manifest-backed source IDs and control-plane metadata
 
 Non-GA surfaces remain explicit and narrow. The source of truth is:
 

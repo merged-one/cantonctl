@@ -2,6 +2,8 @@
 
 Read stable public Scan surfaces without depending on validator-internal APIs.
 
+The admin validator-license path is intentionally exposed under [`cantonctl operator validator licenses`](operator.md), not under the default `scan` namespace.
+
 ## Subcommands
 
 ### `scan updates`

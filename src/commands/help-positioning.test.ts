@@ -6,6 +6,7 @@ import {describe, expect, it} from 'vitest'
 import Deploy from './deploy.js'
 import Doctor from './doctor.js'
 import Init from './init.js'
+import OperatorValidatorLicenses from './operator/validator/licenses.js'
 import Preflight from './preflight.js'
 import Readiness from './readiness.js'
 import Status from './status.js'
@@ -23,6 +24,7 @@ describe('help positioning', () => {
     expect(Init.description).toContain('companion-ready Canton project')
     expect(Status.description).toContain('profile-aware service health')
     expect(Deploy.description).toContain('built DAR')
+    expect(OperatorValidatorLicenses.description).toContain('explicit operator Scan surface')
     expect(Preflight.description).toContain('current read-only readiness checks')
     expect(UpgradeCheck.description).toContain('current read-only upgrade checks')
   })
@@ -34,6 +36,7 @@ describe('help positioning', () => {
       Init.description,
       Status.description,
       Deploy.description,
+      OperatorValidatorLicenses.description,
       Preflight.description,
       UpgradeCheck.description,
       packageJson.description,

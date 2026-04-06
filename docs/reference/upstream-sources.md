@@ -11,6 +11,7 @@ This supports the same product rule as the rest of the repo: wrap, do not replac
 3. Prefer official public SDKs when the manifest marks them as `public-sdk`.
 4. Keep `experimental-internal` and `operator-only` inputs out of the default product story.
 5. Respect selectors for mixed-scope upstream files.
+6. Promote approved admin actions only through explicit `operator` commands that cite their manifest source IDs and stability classes.
 
 ## Why It Matters
 

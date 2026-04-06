@@ -117,6 +117,7 @@ Today that control-plane boundary is implemented as profile resolution, LocalNet
 | `cantonctl profiles import-scan` | Synthesize profile blocks from stable/public scan discovery | Stable/public discovery helper |
 | `cantonctl profiles import-localnet` | Materialize a `splice-localnet` profile from an official LocalNet workspace | LocalNet-to-profile bootstrap |
 | `cantonctl compat check [profile]` | Check stable/public compatibility for a profile | Stable/public guardrail |
+| `cantonctl operator validator licenses --profile <name>` | List approved validator licenses through the explicit operator Scan surface | Explicit operator namespace |
 | `cantonctl preflight --profile <name>` | Run the current read-only remote readiness checks | Current inspection step in rollout flows |
 | `cantonctl readiness --profile <name>` | Run the composed readiness gate for a resolved profile | JSON-first control-plane gate |
 | `cantonctl promote diff --from <a> --to <b>` | Compare source and target profiles before promotion | Current read-only lifecycle diff |
@@ -152,6 +153,12 @@ All public commands support `--json`.
 - Scan-proxy-only reads
 - Any validator-internal, wallet-internal, or other operator-only surface
 
+### Explicit Operator Namespace
+
+- `operator validator licenses` is the current approved operator-mode command
+- it depends on `splice-scan-external-openapi` with stability `stable-external`
+- unsupported validator-internal, wallet-internal, and scan-proxy admin surfaces remain outside the CLI until they are explicitly approved
+
 See [docs/reference/api-stability.md](docs/reference/api-stability.md).
 
 ## Templates And Examples
@@ -184,6 +191,7 @@ Examples:
 - [docs/reference/topology.md](docs/reference/topology.md)
 - [docs/reference/localnet.md](docs/reference/localnet.md)
 - [docs/reference/compatibility.md](docs/reference/compatibility.md)
+- [docs/reference/operator.md](docs/reference/operator.md)
 - [docs/reference/deploy.md](docs/reference/deploy.md)
 - [docs/reference/preflight.md](docs/reference/preflight.md)
 - [docs/reference/promotion.md](docs/reference/promotion.md)
