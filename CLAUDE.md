@@ -57,6 +57,7 @@ Named local Canton topologies are defined under `topologies:` in `cantonctl.yaml
 | `src/lib/serve.ts` | REST + WebSocket workbench backend |
 | `src/lib/splice-public.ts` | Stable/public Splice surface orchestration |
 | `src/lib/preflight/checks.ts` | Profile-first remote readiness checks |
+| `src/lib/control-plane-operation.ts` | Reusable plan/apply/dry-run execution engine for control-plane workflows |
 | `src/lib/lifecycle/*.ts` | Advisory promotion, reset, and upgrade helpers |
 | `src/lib/diagnostics/*.ts` | Status and diagnostics bundle collection |
 | `src/lib/discovery/*.ts` | Stable/public Scan discovery and profile synthesis |
