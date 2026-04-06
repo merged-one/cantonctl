@@ -29,8 +29,8 @@ The `PluginHookManager` dispatches named events at key points in the build/test/
 | `afterBuild` | After a successful build | `{projectDir, config, darPath, durationMs}` |
 | `beforeTest` | Before Daml Script tests run | `{projectDir, config, filter?}` |
 | `afterTest` | After tests complete | `{projectDir, config, success, durationMs}` |
-| `beforeDeploy` | Before the deploy pipeline starts | `{network, config, darPath}` |
-| `afterDeploy` | After a successful deploy | `{network, config, darPath, mainPackageId, durationMs}` |
+| `beforeDeploy` | Before deploy preflight runs | `{darPath, dryRun, network, participant?, profile, projectDir, target}` |
+| `afterDeploy` | After a successful upload and verification step | `{darPath, durationMs, mainPackageId, network, participant?, profile, target}` |
 | `onError` | When any CantonctlError is thrown | `{error, command, config}` |
 
 `onError` handlers are swallowed — errors thrown inside them do not propagate.
@@ -46,11 +46,11 @@ import type {PluginHookManager} from 'cantonctl'
 export default {
   register(hooks: PluginHookManager) {
     hooks.register('beforeDeploy', async (ctx) => {
-      console.log(`[audit] deploying to ${ctx.network}`)
+      console.log(`[audit] deploying ${ctx.darPath} to ${ctx.profile}/${ctx.target}`)
     })
 
     hooks.register('afterDeploy', async (ctx) => {
-      console.log(`[audit] deployed ${ctx.mainPackageId} to ${ctx.network}`)
+      console.log(`[audit] deployed ${ctx.mainPackageId} to ${ctx.profile}/${ctx.target}`)
     })
 
     hooks.register('onError', async (ctx) => {

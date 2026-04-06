@@ -225,7 +225,7 @@ describe('profile command surface', () => {
         expect.objectContaining({
           controlPlane: expect.objectContaining({
             lifecycleOwner: 'official-remote-runtime',
-            managementClass: 'plan-only',
+            managementClass: 'apply-capable',
             mutationScope: 'managed',
           }),
           name: 'ledger',

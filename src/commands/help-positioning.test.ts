@@ -22,7 +22,7 @@ describe('help positioning', () => {
     expect(Readiness.description).toContain('composed readiness gate')
     expect(Init.description).toContain('companion-ready Canton project')
     expect(Status.description).toContain('profile-aware service health')
-    expect(Deploy.description).toContain('current DAR deploy flow')
+    expect(Deploy.description).toContain('built DAR')
     expect(Preflight.description).toContain('current read-only readiness checks')
     expect(UpgradeCheck.description).toContain('current read-only upgrade checks')
   })

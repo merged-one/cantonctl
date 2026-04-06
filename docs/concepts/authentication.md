@@ -27,12 +27,12 @@ The sandbox secret is intentionally public: `canton-sandbox-secret-do-not-use-in
 
 ## Remote Networks (Credential Store)
 
-For remote profiles and networks, you store a JWT token via the credential store:
+For remote profiles and their mapped networks, you store a JWT token via the credential store:
 
 ```bash
 cantonctl auth login devnet --token eyJhbGci...
 cantonctl readiness --profile splice-devnet
-cantonctl deploy devnet
+cantonctl deploy --profile splice-devnet
 ```
 
 ### Resolution Order
@@ -47,7 +47,7 @@ When cantonctl needs a token for a network, it checks:
 
 ```bash
 export CANTONCTL_JWT_DEVNET=eyJhbGci...
-cantonctl deploy devnet   # Uses env var, no keychain needed
+cantonctl deploy --profile splice-devnet   # Uses env var, no keychain needed
 ```
 
 Network names are uppercased with hyphens converted to underscores:
@@ -74,4 +74,3 @@ If the native keychain is unavailable (CI, containers), cantonctl falls back to 
 
 - [Reference: auth command](../reference/auth.md)
 - [Reference: deploy command](../reference/deploy.md)
-- [ADR-0008: Deploy Pipeline](../adr/0008-deploy-pipeline.md)

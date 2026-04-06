@@ -102,4 +102,4 @@ The token template includes four tests:
 
 - Modify `daml/Main.daml` and save — the dev server auto-rebuilds and uploads the new DAR
 - Add more parties to `cantonctl.yaml` — they'll be provisioned on next `cantonctl dev`
-- Deploy to DevNet (planned for Phase 4): `cantonctl deploy devnet`
+- Roll out the built DAR to a remote profile when one is configured: `cantonctl build && cantonctl deploy --profile splice-devnet`

@@ -1,36 +1,66 @@
 # `cantonctl deploy`
 
-Run the current DAR deploy flow for ledger-capable targets.
+Roll out a built DAR to the resolved profile or legacy target.
 
-This command is the current ledger rollout step inside `cantonctl`'s broader project-local control-plane boundary. On this branch it focuses on DAR upload workflows around the ledger API. It does not provision infrastructure or replace official validator runbooks.
+`deploy` is the mutating ledger rollout command inside `cantonctl`'s project-local control-plane boundary. It consumes already built DAR artifacts, resolves the target profile, and applies the rollout against official runtime endpoints when the resolved ledger surface is apply-capable.
+
+It does not compile Daml, run codegen, provision infrastructure, or replace official validator or LocalNet lifecycle tooling.
 
 ## Usage
 
 ```bash
-cantonctl deploy [network] [flags]
+cantonctl deploy [target] [flags]
 ```
+
+## Modes
+
+- `--plan`: resolve the target profile, DAR selection, fan-out, and preconditions without contacting the runtime
+- `--dry-run`: resolve the DAR and run read-only preflight checks without uploading
+- default apply: upload the DAR, record returned package IDs, and report post-deploy checks
 
 ## Current Scope
 
-- local sandbox DAR upload
-- legacy network-target DAR upload
-- dry-run validation for ledger connectivity and auth
-- multi-node fan-out only for the local Canton-only topology
+- sandbox single-target rollout
+- `canton-multi` fan-out across the generated local topology
+- `splice-localnet` rollout against the ledger endpoint exposed by the official LocalNet workspace
+- remote profile rollout for apply-capable ledger targets
+- structured JSON output for artifact selection, fan-out, target status, and step-by-step rollout state
 
-## Positioning
+## Official Stack Boundary
 
-- Use DPM and the official stack for canonical build and environment workflows
-- Use `deploy` when a project already needs the current `cantonctl` wrapper around ledger-capable DAR upload
-- Broader profile-first rollout behavior is follow-on work, not a product non-goal
+- build, test, codegen, and Studio workflows remain owned by DPM and Daml Studio
+- Quickstart and the official LocalNet workspace still own runtime lifecycle and provisioning
+- `deploy` only targets the resolved ledger endpoint; it does not replace validator, wallet, Scan, or OIDC implementations
+- cloud, cluster, and infrastructure provisioning remain out of scope
 
 ## Flags
 
 | Flag | Description |
 |---|---|
-| `--dar` | DAR path |
-| `--dry-run` | Validate without upload |
-| `--party` | Override deploying party |
-| `--json` | Output structured JSON |
+| `[target]` | Optional profile name or legacy network alias |
+| `--profile <name>` | Preferred resolved runtime profile |
+| `--plan` | Produce a rollout plan without contacting the runtime |
+| `--dry-run` | Resolve the DAR and run read-only preflight without uploading |
+| `--dar <path>` | Path to a built DAR (otherwise auto-detected from `.daml/dist`) |
+| `--party <name>` | Override the local fallback token `actAs` party |
+| `--json` | Output the full structured rollout result |
+
+## JSON Highlights
+
+- `artifact`: selected DAR path, size, and whether it was auto-detected or explicit
+- `fanOut`: whether the rollout is single-target or local fan-out, plus endpoint provenance
+- `targets[]`: per-target endpoint, management class, package ID, and post-deploy checks
+- `steps[]`: plan/apply execution detail, including blockers, warnings, and serialized errors
+
+## Examples
+
+```bash
+cantonctl build
+cantonctl deploy --profile sandbox
+cantonctl deploy --profile splice-devnet --plan --json
+cantonctl deploy devnet --dry-run
+cantonctl deploy --profile sandbox --dar ./.daml/dist/demo.dar
+```
 
 ## Related
 

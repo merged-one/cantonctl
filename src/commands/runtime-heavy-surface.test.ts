@@ -4,7 +4,6 @@ import * as path from 'node:path'
 import {captureOutput} from '@oclif/test'
 import {afterEach, describe, expect, it, vi} from 'vitest'
 
-import type {Builder} from '../lib/builder.js'
 import * as configModule from '../lib/config.js'
 import type {CantonctlConfig} from '../lib/config.js'
 import type {DamlSdk} from '../lib/daml.js'
@@ -13,13 +12,13 @@ import * as devServerModule from '../lib/dev-server.js'
 import type {DevServer} from '../lib/dev-server.js'
 import * as fullDevServerModule from '../lib/dev-server-full.js'
 import type {FullDevServer} from '../lib/dev-server-full.js'
-import type {Deployer} from '../lib/deployer.js'
+import type {Deployer, DeployResult} from '../lib/deployer.js'
 import {CantonctlError, ErrorCode} from '../lib/errors.js'
 import type {ProcessRunner} from '../lib/process-runner.js'
 import * as runtimeSupportModule from '../lib/runtime-support.js'
 import * as topologyModule from '../lib/topology.js'
 import type {GeneratedTopology} from '../lib/topology.js'
-import Deploy from './deploy.js'
+import Deploy, {renderDeployResult} from './deploy.js'
 import Dev from './dev.js'
 
 const CLI_ROOT = process.cwd()
@@ -86,44 +85,234 @@ function parseJson(stdout: string): Record<string, unknown> {
   return JSON.parse(stdout.trim()) as Record<string, unknown>
 }
 
-describe('runtime-heavy command surface', () => {
-  it('deploy emits single-node results in json mode', async () => {
-    class TestDeploy extends Deploy {
-      protected override createBuilder(): Builder {
-        return {
-          build: vi.fn(),
-          buildWithCodegen: vi.fn(),
-          watch: vi.fn(),
-        }
-      }
+function createDeployResult(overrides: Partial<DeployResult> = {}): DeployResult {
+  const defaults: DeployResult = {
+    artifact: {
+      darPath: '/repo/.daml/dist/demo.dar',
+      sizeBytes: 3,
+      source: 'auto-detected',
+    },
+    auth: {
+      envVarName: 'CANTONCTL_JWT_SANDBOX',
+      mode: 'bearer-token',
+      source: 'fallback',
+    },
+    description: 'Profile-first DAR rollout',
+    fanOut: {
+      mode: 'single-target',
+      participantCount: 1,
+      source: 'profile-ledger',
+    },
+    mode: 'apply',
+    operation: 'deploy',
+    partial: false,
+    profile: {
+      kind: 'sandbox',
+      name: 'sandbox',
+      network: 'local',
+    },
+    requestedTarget: 'sandbox',
+    resume: {
+      canResume: false,
+      checkpoints: [],
+      completedStepIds: ['resolve-dar', 'preflight-sandbox', 'upload-sandbox', 'verify-sandbox'],
+      nextStepId: undefined,
+    },
+    steps: [
+      {
+        blockers: [],
+        dependencies: [],
+        detail: 'Resolved DAR artifact.',
+        effect: 'read',
+        id: 'resolve-dar',
+        owner: 'cantonctl',
+        postconditions: [],
+        preconditions: [],
+        runbook: [],
+        status: 'completed',
+        title: 'Resolve DAR artifact',
+        warnings: [],
+      },
+      {
+        blockers: [],
+        dependencies: ['resolve-dar'],
+        detail: 'Validated ledger reachability.',
+        effect: 'read',
+        id: 'preflight-sandbox',
+        owner: 'cantonctl',
+        postconditions: [],
+        preconditions: [],
+        runbook: [],
+        status: 'completed',
+        title: 'Preflight sandbox',
+        warnings: [],
+      },
+      {
+        blockers: [],
+        dependencies: ['preflight-sandbox'],
+        detail: 'Uploaded demo.dar.',
+        effect: 'write',
+        id: 'upload-sandbox',
+        owner: 'cantonctl',
+        postconditions: [],
+        preconditions: [],
+        runbook: [],
+        status: 'completed',
+        title: 'Upload DAR to sandbox',
+        warnings: [],
+      },
+      {
+        blockers: [],
+        dependencies: ['upload-sandbox'],
+        detail: 'Recorded package ID pkg-1.',
+        effect: 'read',
+        id: 'verify-sandbox',
+        owner: 'cantonctl',
+        postconditions: [{
+          code: 'package-id-returned',
+          detail: 'Ledger returned package ID pkg-1.',
+          status: 'pass',
+        }],
+        preconditions: [],
+        runbook: [],
+        status: 'completed',
+        title: 'Verify sandbox',
+        warnings: [],
+      },
+    ],
+    success: true,
+    summary: {
+      blocked: 0,
+      completed: 4,
+      dryRun: 0,
+      failed: 0,
+      manual: 0,
+      pending: 0,
+      ready: 0,
+      warned: 0,
+    },
+    targets: [{
+      baseUrl: 'http://localhost:7575',
+      endpointSource: 'profile-ledger',
+      id: 'sandbox',
+      label: 'sandbox',
+      managementClass: 'apply-capable',
+      packageId: 'pkg-1',
+      participant: undefined,
+      postDeployChecks: [{
+        code: 'package-id-returned',
+        detail: 'Ledger returned package ID pkg-1.',
+        status: 'pass',
+      }],
+      status: 'completed',
+    }],
+  }
 
-      protected override createDeployer(): Deployer {
+  return {
+    ...defaults,
+    ...overrides,
+    artifact: {...defaults.artifact, ...overrides.artifact},
+    auth: {...defaults.auth, ...overrides.auth},
+    fanOut: {...defaults.fanOut, ...overrides.fanOut},
+    profile: {...defaults.profile, ...overrides.profile},
+    resume: {...defaults.resume, ...overrides.resume},
+    summary: {...defaults.summary, ...overrides.summary},
+    steps: overrides.steps ?? defaults.steps,
+    targets: overrides.targets ?? defaults.targets,
+  }
+}
+
+describe('runtime-heavy command surface', () => {
+  it('deploy emits profile-first plan results in json mode', async () => {
+    let capturedOptions: Record<string, unknown> | undefined
+
+    class TestDeploy extends Deploy {
+      protected override createDeployer(_deps: Parameters<Deploy['createDeployer']>[0]): Deployer {
         return {
-          deploy: vi.fn().mockResolvedValue({
-            darPath: '/repo/.daml/dist/demo.dar',
-            dryRun: false,
-            durationMs: 35,
-            mainPackageId: 'pkg-1',
-            network: 'local',
-            success: true,
+          deploy: vi.fn().mockImplementation(async (options) => {
+            capturedOptions = options
+            return createDeployResult({
+              mode: 'plan',
+              requestedTarget: 'sandbox',
+              steps: [
+                {
+                  blockers: [],
+                  checkpoint: {darPath: '/repo/.daml/dist/demo.dar', source: 'auto-detected'},
+                  data: {darPath: '/repo/.daml/dist/demo.dar', sizeBytes: 3, source: 'auto-detected'},
+                  dependencies: [],
+                  detail: 'Resolved DAR artifact.',
+                  effect: 'read',
+                  id: 'resolve-dar',
+                  owner: 'cantonctl',
+                  postconditions: [],
+                  preconditions: [],
+                  runbook: [],
+                  status: 'completed',
+                  title: 'Resolve DAR artifact',
+                  warnings: [],
+                },
+                {
+                  blockers: [],
+                  dependencies: ['resolve-dar'],
+                  effect: 'read',
+                  id: 'preflight-sandbox',
+                  owner: 'cantonctl',
+                  postconditions: [],
+                  preconditions: [],
+                  runbook: [],
+                  status: 'ready',
+                  title: 'Preflight sandbox',
+                  warnings: [],
+                },
+                {
+                  blockers: [],
+                  dependencies: ['preflight-sandbox'],
+                  effect: 'write',
+                  id: 'upload-sandbox',
+                  owner: 'cantonctl',
+                  postconditions: [],
+                  preconditions: [],
+                  runbook: [],
+                  status: 'ready',
+                  title: 'Upload DAR to sandbox',
+                  warnings: [],
+                },
+                {
+                  blockers: [],
+                  dependencies: ['upload-sandbox'],
+                  effect: 'read',
+                  id: 'verify-sandbox',
+                  owner: 'cantonctl',
+                  postconditions: [],
+                  preconditions: [],
+                  runbook: [],
+                  status: 'ready',
+                  title: 'Verify sandbox',
+                  warnings: [],
+                },
+              ],
+              summary: {
+                blocked: 0,
+                completed: 1,
+                dryRun: 0,
+                failed: 0,
+                manual: 0,
+                pending: 0,
+                ready: 3,
+                warned: 0,
+              },
+              targets: [{
+                ...createDeployResult().targets[0]!,
+                packageId: null,
+                status: 'ready',
+              }],
+            })
           }),
         }
       }
 
       protected override createHooks() {
         return {emit: vi.fn()} as never
-      }
-
-      protected override createRunner(): ProcessRunner {
-        return createRunner()
-      }
-
-      protected override createSdk(): DamlSdk {
-        return createSdk()
-      }
-
-      protected override async detectProjectTopology(): Promise<null> {
-        return null
       }
 
       protected override getProjectDir(): string {
@@ -135,15 +324,22 @@ describe('runtime-heavy command surface', () => {
       }
     }
 
-    const result = await captureOutput(() => TestDeploy.run(['local', '--json'], {root: CLI_ROOT}))
+    const result = await captureOutput(() => TestDeploy.run(['--profile', 'sandbox', '--plan', '--json'], {root: CLI_ROOT}))
     expect(result.error).toBeUndefined()
+    expect(capturedOptions).toEqual({
+      darPath: undefined,
+      mode: 'plan',
+      party: undefined,
+      profileName: 'sandbox',
+      projectDir: '/repo',
+    })
     expect(parseJson(result.stdout)).toEqual(expect.objectContaining({
-      data: {
-        darPath: '/repo/.daml/dist/demo.dar',
-        dryRun: false,
-        mainPackageId: 'pkg-1',
-        network: 'local',
-      },
+      data: expect.objectContaining({
+        artifact: expect.objectContaining({darPath: '/repo/.daml/dist/demo.dar'}),
+        mode: 'plan',
+        profile: expect.objectContaining({name: 'sandbox'}),
+        requestedTarget: 'sandbox',
+      }),
       success: true,
     }))
   })
@@ -208,17 +404,24 @@ describe('runtime-heavy command surface', () => {
     }))
   })
 
+  it('serializes conflicting deploy target arguments', async () => {
+    class ConflictingDeploy extends Deploy {
+      protected override async loadProjectConfig(): Promise<CantonctlConfig> {
+        return createConfig()
+      }
+    }
+
+    const result = await captureOutput(() => ConflictingDeploy.run(['local', '--profile', 'sandbox', '--json'], {root: CLI_ROOT}))
+    expect(result.error).toBeDefined()
+    expect(parseJson(result.stdout)).toEqual(expect.objectContaining({
+      error: expect.objectContaining({code: ErrorCode.CONFIG_SCHEMA_VIOLATION}),
+      success: false,
+    }))
+  })
+
   it('rethrows unexpected deploy failures', async () => {
     class TestDeploy extends Deploy {
-      protected override createBuilder(): Builder {
-        return {
-          build: vi.fn(),
-          buildWithCodegen: vi.fn(),
-          watch: vi.fn(),
-        }
-      }
-
-      protected override createDeployer(): Deployer {
+      protected override createDeployer(_deps: Parameters<Deploy['createDeployer']>[0]): Deployer {
         return {
           deploy: vi.fn().mockRejectedValue(new Error('boom')),
         }
@@ -228,16 +431,58 @@ describe('runtime-heavy command surface', () => {
         return {emit: vi.fn()} as never
       }
 
-      protected override createRunner(): ProcessRunner {
-        return createRunner()
+      protected override async loadProjectConfig(): Promise<CantonctlConfig> {
+        return createConfig()
       }
+    }
 
-      protected override createSdk(): DamlSdk {
-        return createSdk()
-      }
+    await expect(TestDeploy.run(['sandbox', '--json'], {root: CLI_ROOT})).rejects.toThrow('boom')
+  })
 
-      protected override async detectProjectTopology(): Promise<null> {
-        return null
+  it('deploy emits human dry-run output', async () => {
+    let capturedOptions: Record<string, unknown> | undefined
+
+    class HumanDeploy extends Deploy {
+      protected override createDeployer(_deps: Parameters<Deploy['createDeployer']>[0]): Deployer {
+        return {
+          deploy: vi.fn().mockImplementation(async (options) => {
+            capturedOptions = options
+            return createDeployResult({
+              mode: 'dry-run',
+              steps: [
+                createDeployResult().steps[0]!,
+                createDeployResult().steps[1]!,
+                {
+                  ...createDeployResult().steps[2]!,
+                  detail: 'Skipped mutating step "Upload DAR to sandbox" in dry-run mode.',
+                  status: 'dry-run',
+                },
+                {
+                  ...createDeployResult().steps[3]!,
+                  detail: 'Not attempted after "upload-sandbox" failed.',
+                  postconditions: [],
+                  status: 'pending',
+                },
+              ],
+              summary: {
+                blocked: 0,
+                completed: 2,
+                dryRun: 1,
+                failed: 0,
+                manual: 0,
+                pending: 1,
+                ready: 0,
+                warned: 0,
+              },
+              targets: [{
+                ...createDeployResult().targets[0]!,
+                packageId: null,
+                postDeployChecks: [],
+                status: 'dry-run',
+              }],
+            })
+          }),
+        }
       }
 
       protected override async loadProjectConfig(): Promise<CantonctlConfig> {
@@ -245,64 +490,93 @@ describe('runtime-heavy command surface', () => {
       }
     }
 
-    await expect(TestDeploy.run(['local', '--json'], {root: CLI_ROOT})).rejects.toThrow('boom')
+    const result = await captureOutput(() => HumanDeploy.run(['sandbox', '--dry-run'], {root: CLI_ROOT}))
+    expect(result.error).toBeUndefined()
+    expect(capturedOptions).toEqual(expect.objectContaining({mode: 'dry-run', profileName: 'sandbox'}))
+    expect(result.stdout).toContain('Profile: sandbox (sandbox)')
+    expect(result.stdout).toContain('Mode: dry-run')
+    expect(result.stdout).toContain('Deploy rollout completed for 1 target.')
   })
 
-  it('handles multi-node and remote deploy paths and default helpers', async () => {
-    const deploy = vi
-      .fn()
-      .mockResolvedValueOnce({
-        darPath: '/repo/.daml/dist/demo.dar',
-        dryRun: false,
-        durationMs: 10,
-        mainPackageId: undefined,
-        network: 'local',
-        success: true,
-      })
-      .mockResolvedValueOnce({
-        darPath: '/repo/.daml/dist/demo.dar',
-        dryRun: false,
-        durationMs: 12,
-        mainPackageId: 'pkg-2',
-        network: 'local',
-        success: true,
-      })
-
-    class MultiNodeDeploy extends Deploy {
-      protected override createBuilder(): Builder {
+  it('deploy exits when the rollout result is unsuccessful', async () => {
+    class FailingDeploy extends Deploy {
+      protected override createDeployer(_deps: Parameters<Deploy['createDeployer']>[0]): Deployer {
         return {
-          build: vi.fn(),
-          buildWithCodegen: vi.fn(),
-          watch: vi.fn(),
+          deploy: vi.fn().mockResolvedValue(createDeployResult({
+            success: false,
+            summary: {
+              blocked: 1,
+              completed: 1,
+              dryRun: 0,
+              failed: 0,
+              manual: 0,
+              pending: 2,
+              ready: 0,
+              warned: 0,
+            },
+            targets: [{
+              ...createDeployResult().targets[0]!,
+              packageId: null,
+              status: 'blocked',
+            }],
+          })),
         }
       }
 
-      protected override createDeployer(): Deployer {
-        return {deploy}
+      protected override async loadProjectConfig(): Promise<CantonctlConfig> {
+        return createConfig()
       }
+    }
 
-      protected override createHooks() {
-        return {emit: vi.fn()} as never
-      }
+    const result = await captureOutput(() => FailingDeploy.run(['sandbox', '--json'], {root: CLI_ROOT}))
+    expect(result.error).toBeDefined()
+    expect(parseJson(result.stdout)).toEqual(expect.objectContaining({
+      data: expect.objectContaining({success: false}),
+      success: false,
+    }))
+  })
 
-      protected override createRunner(): ProcessRunner {
-        return createRunner()
-      }
-
-      protected override createSdk(): DamlSdk {
-        return createSdk()
-      }
-
-      protected override async detectProjectTopology(): Promise<GeneratedTopology> {
+  it('emits multi-target deploy results in json mode', async () => {
+    class MultiNodeDeploy extends Deploy {
+      protected override createDeployer(_deps: Parameters<Deploy['createDeployer']>[0]): Deployer {
         return {
-          bootstrapScript: '',
-          cantonConf: '',
-          dockerCompose: '',
-          participants: [
-            {name: 'participant-a', parties: ['Alice'], ports: {admin: 2001, jsonApi: 7575, ledgerApi: 6865}},
-            {name: 'participant-b', parties: ['Bob'], ports: {admin: 2002, jsonApi: 7576, ledgerApi: 6866}},
-          ],
-          synchronizer: {admin: 10001, publicApi: 10002},
+          deploy: vi.fn().mockResolvedValue(createDeployResult({
+            fanOut: {
+              mode: 'fan-out',
+              participantCount: 2,
+              source: 'generated-topology',
+            },
+            profile: {
+              kind: 'canton-multi',
+              name: 'multi',
+              network: 'local',
+            },
+            requestedTarget: 'multi',
+            targets: [
+              {
+                baseUrl: 'http://localhost:7575',
+                endpointSource: 'generated-topology',
+                id: 'participant-a',
+                label: 'participant-a',
+                managementClass: 'apply-capable',
+                packageId: null,
+                participant: 'participant-a',
+                postDeployChecks: [],
+                status: 'dry-run',
+              },
+              {
+                baseUrl: 'http://localhost:7576',
+                endpointSource: 'generated-topology',
+                id: 'participant-b',
+                label: 'participant-b',
+                managementClass: 'apply-capable',
+                packageId: 'pkg-2',
+                participant: 'participant-b',
+                postDeployChecks: [],
+                status: 'completed',
+              },
+            ],
+          })),
         }
       }
 
@@ -315,44 +589,58 @@ describe('runtime-heavy command surface', () => {
       }
     }
 
-    class HandledDeployError extends Deploy {
-      protected override async loadProjectConfig(): Promise<CantonctlConfig> {
-        throw new CantonctlError(ErrorCode.CONFIG_NOT_FOUND, {suggestion: 'add config'})
-      }
-    }
+    const result = await captureOutput(() => MultiNodeDeploy.run(['multi', '--json'], {root: CLI_ROOT}))
+    expect(result.error).toBeUndefined()
+    expect(parseJson(result.stdout)).toEqual(expect.objectContaining({
+      data: expect.objectContaining({
+        fanOut: {
+          mode: 'fan-out',
+          participantCount: 2,
+          source: 'generated-topology',
+        },
+        profile: expect.objectContaining({kind: 'canton-multi', name: 'multi'}),
+        targets: [
+          expect.objectContaining({label: 'participant-a', status: 'dry-run'}),
+          expect.objectContaining({label: 'participant-b', packageId: 'pkg-2', status: 'completed'}),
+        ],
+      }),
+      success: true,
+    }))
+  })
 
+  it('emits remote deploy results in json mode', async () => {
     class RemoteDeploy extends Deploy {
-      protected override createBuilder(): Builder {
+      protected override createDeployer(_deps: Parameters<Deploy['createDeployer']>[0]): Deployer {
         return {
-          build: vi.fn(),
-          buildWithCodegen: vi.fn(),
-          watch: vi.fn(),
+          deploy: vi.fn().mockResolvedValue(createDeployResult({
+            auth: {
+              envVarName: 'CANTONCTL_JWT_DEVNET',
+              mode: 'env-or-keychain-jwt',
+              source: 'stored',
+            },
+            profile: {
+              kind: 'remote-validator',
+              name: 'splice-devnet',
+              network: 'devnet',
+            },
+            requestedTarget: 'devnet',
+            targets: [{
+              baseUrl: 'https://ledger.example.com',
+              endpointSource: 'profile-ledger',
+              id: 'splice-devnet',
+              label: 'splice-devnet',
+              managementClass: 'apply-capable',
+              packageId: 'pkg-remote',
+              participant: undefined,
+              postDeployChecks: [{
+                code: 'package-id-returned',
+                detail: 'Ledger returned package ID pkg-remote.',
+                status: 'pass',
+              }],
+              status: 'completed',
+            }],
+          })),
         }
-      }
-
-      protected override createDeployer(): Deployer {
-        return {
-          deploy: vi.fn().mockResolvedValue({
-            darPath: '/repo/.daml/dist/demo.dar',
-            dryRun: false,
-            durationMs: 9,
-            mainPackageId: 'pkg-remote',
-            network: 'devnet',
-            success: true,
-          }),
-        }
-      }
-
-      protected override createHooks() {
-        return {emit: vi.fn()} as never
-      }
-
-      protected override createRunner(): ProcessRunner {
-        return createRunner()
-      }
-
-      protected override createSdk(): DamlSdk {
-        return createSdk()
       }
 
       protected override async detectProjectTopology(): Promise<GeneratedTopology> {
@@ -370,6 +658,199 @@ describe('runtime-heavy command surface', () => {
       }
     }
 
+    const result = await captureOutput(() => RemoteDeploy.run(['devnet', '--json'], {root: CLI_ROOT}))
+    expect(result.error).toBeUndefined()
+    expect(parseJson(result.stdout)).toEqual(expect.objectContaining({
+      data: expect.objectContaining({
+        profile: expect.objectContaining({name: 'splice-devnet', network: 'devnet'}),
+        requestedTarget: 'devnet',
+      }),
+      success: true,
+    }))
+  })
+
+  it('renders human deploy results with warnings and failures', () => {
+    const out = {
+      error: vi.fn(),
+      info: vi.fn(),
+      log: vi.fn(),
+      result: vi.fn(),
+      spinner: vi.fn(),
+      success: vi.fn(),
+      table: vi.fn(),
+      warn: vi.fn(),
+    }
+
+    renderDeployResult(out as never, createDeployResult({
+      steps: [
+        {
+          blockers: [],
+          dependencies: [],
+          detail: 'Resolved DAR artifact.',
+          effect: 'read',
+          id: 'resolve-dar',
+          owner: 'cantonctl',
+          postconditions: [],
+          preconditions: [],
+          runbook: [],
+          status: 'completed',
+          title: 'Resolve DAR artifact',
+          warnings: [],
+        },
+        {
+          blockers: [],
+          dependencies: ['resolve-dar'],
+          detail: 'Profile is experimental.',
+          effect: 'read',
+          id: 'preflight-sandbox',
+          owner: 'cantonctl',
+          postconditions: [{
+            code: 'package-id-returned',
+            detail: 'Package ID was not returned.',
+            status: 'warn',
+          }],
+          preconditions: [],
+          runbook: [],
+          status: 'failed',
+          title: 'Preflight sandbox',
+          warnings: [{
+            code: 'experimental-target',
+            detail: 'Profile "sandbox" is marked experimental.',
+          }],
+        },
+      ],
+      success: false,
+      summary: {
+        blocked: 0,
+        completed: 1,
+        dryRun: 0,
+        failed: 1,
+        manual: 0,
+        pending: 0,
+        ready: 0,
+        warned: 2,
+      },
+      targets: [{
+        ...createDeployResult().targets[0]!,
+        packageId: null,
+        postDeployChecks: [{
+          code: 'package-id-returned',
+          detail: 'Package ID was not returned.',
+          status: 'warn',
+        }],
+        status: 'failed',
+      }],
+    }))
+
+    expect(out.log).toHaveBeenCalledWith('Profile: sandbox (sandbox)')
+    expect(out.table).toHaveBeenCalledTimes(2)
+    expect(out.warn).toHaveBeenCalledWith('Preflight sandbox: Profile "sandbox" is marked experimental.')
+    expect(out.warn).toHaveBeenCalledWith('Preflight sandbox: Package ID was not returned.')
+    expect(out.error).toHaveBeenCalledWith('Deploy rollout found blocking issues.')
+  })
+
+  it('renders human deploy results with plan success and fallback display values', () => {
+    const out = {
+      error: vi.fn(),
+      info: vi.fn(),
+      log: vi.fn(),
+      result: vi.fn(),
+      spinner: vi.fn(),
+      success: vi.fn(),
+      table: vi.fn(),
+      warn: vi.fn(),
+    }
+
+    renderDeployResult(out as never, createDeployResult({
+      artifact: {
+        darPath: null,
+        sizeBytes: undefined,
+        source: 'auto-detected',
+      },
+      fanOut: {
+        mode: 'fan-out',
+        participantCount: 2,
+        source: 'generated-topology',
+      },
+      mode: 'plan',
+      steps: [
+        {
+          blockers: [],
+          dependencies: [],
+          effect: 'read',
+          error: {message: 'artifact detail unavailable'},
+          id: 'resolve-dar',
+          owner: 'cantonctl',
+          postconditions: [],
+          preconditions: [],
+          runbook: [],
+          status: 'failed',
+          title: 'Resolve DAR artifact',
+          warnings: [],
+        },
+        {
+          blockers: [],
+          dependencies: ['resolve-dar'],
+          effect: 'write',
+          id: 'upload-sandbox',
+          owner: 'cantonctl',
+          postconditions: [{
+            code: 'package-id-returned',
+            detail: 'Package ID looks good.',
+            status: 'pass',
+          }],
+          preconditions: [],
+          runbook: [],
+          status: 'ready',
+          title: 'Upload DAR to sandbox',
+          warnings: [],
+        },
+      ],
+      success: true,
+      summary: {
+        blocked: 0,
+        completed: 0,
+        dryRun: 0,
+        failed: 1,
+        manual: 0,
+        pending: 0,
+        ready: 1,
+        warned: 0,
+      },
+      targets: [
+        {
+          ...createDeployResult().targets[0]!,
+          baseUrl: undefined,
+          id: 'participant-a',
+          label: 'participant-a',
+          packageId: null,
+          postDeployChecks: [],
+          status: 'ready',
+        },
+        {
+          ...createDeployResult().targets[0]!,
+          id: 'participant-b',
+          label: 'participant-b',
+          packageId: null,
+          postDeployChecks: [],
+          status: 'ready',
+        },
+      ],
+    }))
+
+    expect(out.log).toHaveBeenCalledWith('DAR: not resolved (auto-detected)')
+    expect(out.success).toHaveBeenCalledWith('Deploy plan completed for 2 targets.')
+    expect(out.table).toHaveBeenNthCalledWith(1, ['Target', 'Status', 'Endpoint', 'Package ID'], [
+      ['participant-a', 'ready', '-', '-'],
+      ['participant-b', 'ready', 'http://localhost:7575', '-'],
+    ])
+    expect(out.table).toHaveBeenNthCalledWith(2, ['Step', 'Status', 'Detail'], [
+      ['Resolve DAR artifact', 'failed', 'artifact detail unavailable'],
+      ['Upload DAR to sandbox', 'ready', '-'],
+    ])
+  })
+
+  it('wires deploy default helpers', async () => {
     class DeployHarness extends Deploy {
       public callCreateDeployer(deps: Parameters<Deploy['createDeployer']>[0]) {
         return this.createDeployer(deps)
@@ -390,35 +871,6 @@ describe('runtime-heavy command surface', () => {
       public async run(): Promise<void> {}
     }
 
-    const result = await captureOutput(() => MultiNodeDeploy.run(['local', '--json'], {root: CLI_ROOT}))
-    expect(result.error).toBeUndefined()
-    expect(parseJson(result.stdout)).toEqual(expect.objectContaining({
-      data: {
-        dryRun: false,
-        mode: 'multi-node',
-        network: 'local',
-        participants: [
-          {mainPackageId: null, participant: 'participant-a', port: 7575},
-          {mainPackageId: 'pkg-2', participant: 'participant-b', port: 7576},
-        ],
-      },
-      success: true,
-    }))
-
-    const handled = await captureOutput(() => HandledDeployError.run(['local', '--json'], {root: CLI_ROOT}))
-    expect(handled.error).toBeDefined()
-    expect(parseJson(handled.stdout)).toEqual(expect.objectContaining({
-      error: expect.objectContaining({code: ErrorCode.CONFIG_NOT_FOUND}),
-      success: false,
-    }))
-
-    const remote = await captureOutput(() => RemoteDeploy.run(['devnet', '--json'], {root: CLI_ROOT}))
-    expect(remote.error).toBeUndefined()
-    expect(parseJson(remote.stdout)).toEqual(expect.objectContaining({
-      data: expect.objectContaining({network: 'devnet'}),
-      success: true,
-    }))
-
     let capturedDeps: Parameters<typeof deployerModule.createDeployer>[0] | undefined
     vi.spyOn(deployerModule, 'createDeployer').mockImplementation((deps) => {
       capturedDeps = deps
@@ -429,14 +881,8 @@ describe('runtime-heavy command surface', () => {
 
     const harness = new DeployHarness([], {} as never)
     harness.callCreateDeployer({
-      builder: {
-        build: vi.fn(),
-        buildWithCodegen: vi.fn(),
-        watch: vi.fn(),
-      },
       config: createConfig(),
       hooks: {emit: vi.fn()} as never,
-      output: {result: vi.fn()} as never,
     })
 
     const helperDir = fs.mkdtempSync(path.join(tmpdir(), 'cantonctl-deploy-helper-'))
@@ -445,9 +891,19 @@ describe('runtime-heavy command surface', () => {
 
     try {
       await expect(capturedDeps?.fs.readFile(helperFile)).resolves.toEqual(Buffer.from('deploy-helper'))
+      await expect(capturedDeps?.detectTopology?.('/repo')).resolves.toBeNull()
       await expect(harness.callDetectProjectTopology('/repo')).resolves.toBeNull()
       expect(harness.callGetProjectDir()).toBe(process.cwd())
       await expect(harness.callLoadProjectConfig()).resolves.toEqual(createConfig())
+      expect(capturedDeps).toEqual(expect.objectContaining({
+        config: createConfig(),
+        createLedgerClient: expect.any(Function),
+        createProfileRuntimeResolver: expect.any(Function),
+        createToken: expect.any(Function),
+        detectTopology: expect.any(Function),
+        findDarFile: expect.any(Function),
+        fs: expect.objectContaining({readFile: expect.any(Function)}),
+      }))
       expect(detectTopologySpy).toHaveBeenCalledWith('/repo')
       expect(loadConfigSpy).toHaveBeenCalledTimes(1)
     } finally {

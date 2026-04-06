@@ -96,7 +96,7 @@ The default progression is:
 
 The profile model is the product backbone. It is what lets `cantonctl` own the project-local control plane around official runtimes without re-owning the official runtime stack itself.
 
-On the current branch, that control-plane boundary is implemented as profile resolution, LocalNet wrapping, readiness/diagnostics/discovery, and current deploy and lifecycle helper flows. It still does not replace upstream runtime implementations or cloud provisioning.
+On the current branch, that control-plane boundary is implemented as profile resolution, LocalNet wrapping, readiness/diagnostics/discovery, the profile-first deploy rollout command, and current lifecycle helper flows. It still does not replace upstream runtime implementations or cloud provisioning.
 
 ## Commands
 
@@ -108,7 +108,7 @@ On the current branch, that control-plane boundary is implemented as profile res
 | `cantonctl localnet up/down/status` | Wrap the official Splice LocalNet workspace | Quickstart-aware wrapper |
 | `cantonctl build` | Compile Daml and optionally codegen bindings | Delegates to DPM/daml |
 | `cantonctl test` | Run Daml Script tests with structured output | Delegates to DPM/daml |
-| `cantonctl deploy <network>` | Run the current DAR deploy flow for ledger-capable targets | Current ledger rollout step inside the control-plane boundary |
+| `cantonctl deploy [target] [--profile <name>]` | Roll out a built DAR to the resolved profile or legacy target | Profile-first DAR rollout over official runtime endpoints |
 | `cantonctl status` | Show profile-aware service health and ledger status | Support and diagnostics surface |
 | `cantonctl diagnostics bundle` | Export a support-friendly diagnostics bundle | Support and diagnostics surface |
 | `cantonctl profiles list/show/validate` | Inspect and validate resolved runtime profiles | Current control-plane foundation |
@@ -182,6 +182,7 @@ Examples:
 - [docs/reference/topology.md](docs/reference/topology.md)
 - [docs/reference/localnet.md](docs/reference/localnet.md)
 - [docs/reference/compatibility.md](docs/reference/compatibility.md)
+- [docs/reference/deploy.md](docs/reference/deploy.md)
 - [docs/reference/preflight.md](docs/reference/preflight.md)
 - [docs/reference/promotion.md](docs/reference/promotion.md)
 - [docs/reference/upgrade.md](docs/reference/upgrade.md)
@@ -197,6 +198,8 @@ Examples:
 - [docs/release-notes/v0.4.0-splice-support.md](docs/release-notes/v0.4.0-splice-support.md)
 - [docs/release-notes/vNEXT-community-fit.md](docs/release-notes/vNEXT-community-fit.md)
 - [docs/release-notes/vNEXT-net-mode.md](docs/release-notes/vNEXT-net-mode.md)
+- [docs/release-notes/vNEXT-profile-first-deploy.md](docs/release-notes/vNEXT-profile-first-deploy.md)
 - [docs/migration/v0.4.0-splice-support.md](docs/migration/v0.4.0-splice-support.md)
 - [docs/migration/vNEXT-community-fit.md](docs/migration/vNEXT-community-fit.md)
 - [docs/migration/vNEXT-net-mode.md](docs/migration/vNEXT-net-mode.md)
+- [docs/migration/vNEXT-profile-first-deploy.md](docs/migration/vNEXT-profile-first-deploy.md)
