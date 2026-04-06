@@ -69,6 +69,8 @@ On top of the raw inventory, `status`, `preflight`, `readiness`, and LocalNet JS
 
 `cantonctl localnet up|status --json` emits the same inventory contract for official LocalNet workspace discovery.
 
+`preflight` and `readiness` now also emit shared rollout contracts, and `cantonctl promote diff` reuses those contracts for `plan`, `dry-run`, and `apply` promotion workflows.
+
 `cantonctl deploy` is now profile-first and supports plan, dry-run, and apply modes with structured artifact, fan-out, target, and step reporting. It can fan out across generated `canton-multi` participants, target LocalNet's exposed ledger endpoint, or apply against remote ledger-capable profiles.
 
 Remote auth handling is now explicitly split between app and operator scopes:
@@ -90,7 +92,7 @@ The current release implements these control-plane surfaces:
 - status, compatibility, preflight, readiness, canaries, and diagnostics
 - drift classification and reconcile planning over those read/check surfaces
 - discovery, profile import, and SDK config export
-- profile-first deploy rollout plus current promotion, upgrade, and reset helper flows
+- profile-first deploy rollout, promotion rollout planning/live gates, and current upgrade/reset helper flows
 
 These boundaries still hold today:
 
@@ -110,7 +112,7 @@ Stable/public companion surfaces include:
 - auth, compatibility, readiness, preflight, and status checks
 - LocalNet wrapping
 - LocalNet profile import
-- preflight, lifecycle, and diagnostics helpers
+- preflight, promotion rollout, upgrade/reset, and diagnostics helpers
 - stable/public Scan, token-standard, ANS, and validator-user flows
 - stable/public discovery, canaries, and SDK config export
 

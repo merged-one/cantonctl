@@ -3,6 +3,7 @@ import type {CantonctlConfig} from '../config.js'
 import {createControlPlaneDriftReport} from '../control-plane-drift.js'
 import {CantonctlError, ErrorCode} from '../errors.js'
 import {type ProfileRuntimeResolver, createProfileRuntimeResolver} from '../profile-runtime.js'
+import {createPreflightRolloutContract} from '../rollout-contract.js'
 import {type PreflightCheck, type PreflightReport, summarizePreflightDetail} from './output.js'
 import {resolveNetworkPolicy, type NetworkPolicy} from './network-policy.js'
 
@@ -103,6 +104,15 @@ export function createPreflightChecks(deps: PreflightDeps = {}): PreflightRunner
         inventory: runtime.inventory,
         runtime,
       })
+      const rollout = createPreflightRolloutContract({
+        checks,
+        profile: {
+          experimental: runtime.profile.experimental,
+          kind: runtime.profile.kind,
+          name: runtime.profile.name,
+        },
+        reconcile: driftReport.reconcile,
+      })
 
       return {
         auth: {
@@ -131,6 +141,7 @@ export function createPreflightChecks(deps: PreflightDeps = {}): PreflightRunner
         },
         drift: driftReport.items,
         egressIp,
+        inventory: runtime.inventory,
         network: {
           checklist: policy.checklist,
           name: runtime.networkName,
@@ -144,6 +155,7 @@ export function createPreflightChecks(deps: PreflightDeps = {}): PreflightRunner
           name: runtime.profile.name,
         },
         reconcile: driftReport.reconcile,
+        rollout,
         success,
       }
     },

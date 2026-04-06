@@ -3,9 +3,11 @@ import {
   type ControlPlaneDriftItem,
   type ControlPlaneDriftReconcilePlan,
 } from '../control-plane-drift.js'
+import type {ControlPlaneOperationResult} from '../control-plane-operation.js'
 import type {OutputWriter} from '../output.js'
 import type {ResolvedProfileRuntime} from '../profile-runtime.js'
 import {summarizeCredentialSource} from '../profile-runtime.js'
+import type {RuntimeInventory} from '../runtime-inventory.js'
 import type {NetworkPolicy} from './network-policy.js'
 
 export type PreflightCheckStatus = 'fail' | 'pass' | 'skip' | 'warn'
@@ -45,6 +47,7 @@ export interface PreflightReport {
   }
   drift: ControlPlaneDriftItem[]
   egressIp?: string
+  inventory: RuntimeInventory
   network: {
     checklist: string[]
     name: string
@@ -58,6 +61,7 @@ export interface PreflightReport {
     name: string
   }
   reconcile: ControlPlaneDriftReconcilePlan
+  rollout: ControlPlaneOperationResult
   success: boolean
 }
 

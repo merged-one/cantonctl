@@ -25,7 +25,9 @@ import {createLifecycleDiff} from './lifecycle/diff.js'
 import {createUpgradeChecker} from './lifecycle/upgrade.js'
 import {classifyNetworkTier, resolveNetworkPolicy} from './preflight/network-policy.js'
 import {renderPreflightReport, summarizePreflightDetail} from './preflight/output.js'
+import {createPreflightRolloutContract} from './rollout-contract.js'
 import {createProfileStatusInventory} from './runtime-inventory.js'
+import type {RuntimeInventory} from './runtime-inventory.js'
 
 const TEMP_DIRS: string[] = []
 
@@ -210,11 +212,91 @@ function createResolvedAuthSummary(options: {
   }
 }
 
+function createInventory(profile: {
+  experimental: boolean
+  kind: 'remote-validator'
+  name: string
+}): RuntimeInventory {
+  return {
+    capabilities: [],
+    drift: [],
+    mode: 'profile',
+    profile: {
+      experimental: profile.experimental,
+      kind: profile.kind,
+      name: profile.name,
+      resolvedFrom: 'argument',
+    },
+    schemaVersion: 1,
+    services: [],
+    summary: {
+      configuredCapabilities: 0,
+      configuredServices: 0,
+      driftedCapabilities: 0,
+      healthyCapabilities: 0,
+      healthyServices: 0,
+      unreachableCapabilities: 0,
+      unreachableServices: 0,
+      warnedCapabilities: 0,
+    },
+  }
+}
+
+function createRenderablePreflightReport(options: {
+  auth: ReturnType<typeof createResolvedAuthSummary>
+  checks: Array<{
+    category: 'auth' | 'egress' | 'health' | 'profile' | 'scan'
+    detail: string
+    endpoint?: string
+    name: string
+    status: 'fail' | 'pass' | 'skip' | 'warn'
+  }>
+  compatibility: {failed: number; passed: number; warned: number}
+  egressIp?: string
+  network: {
+    checklist: string[]
+    name: string
+    reminders: string[]
+    resetExpectation: 'no-resets-expected' | 'resets-expected' | 'unknown'
+    tier: 'custom' | 'devnet' | 'local' | 'mainnet' | 'testnet'
+  }
+  profile: {
+    experimental: boolean
+    kind: 'remote-validator'
+    name: string
+  }
+  success: boolean
+}) {
+  const reconcile = {
+    runbook: [],
+    summary: {failed: 0, info: 0, manualRunbooks: 0, supportedActions: 0, warned: 0},
+    supportedActions: [],
+  }
+
+  return {
+    auth: options.auth,
+    checks: options.checks,
+    compatibility: options.compatibility,
+    drift: [],
+    egressIp: options.egressIp,
+    inventory: createInventory(options.profile),
+    network: options.network,
+    profile: options.profile,
+    reconcile,
+    rollout: createPreflightRolloutContract({
+      checks: options.checks,
+      profile: options.profile,
+      reconcile,
+    }),
+    success: options.success,
+  }
+}
+
 describe('preflight output helpers', () => {
   it('renders success and failure states and summarizes runtime details', () => {
     const out = createOutputWriter()
 
-    renderPreflightReport(out, {
+    renderPreflightReport(out, createRenderablePreflightReport({
       auth: createResolvedAuthSummary({
         credentialSource: 'stored',
         warnings: ['Rotate this token soon.'],
@@ -224,7 +306,6 @@ describe('preflight output helpers', () => {
         {category: 'health', detail: 'Readyz requires auth.', endpoint: 'https://scan.example.com/readyz', name: 'scan-readyz', status: 'warn'},
       ],
       compatibility: {failed: 0, passed: 3, warned: 1},
-      drift: [],
       egressIp: '203.0.113.10',
       network: {
         checklist: ['Confirm egress'],
@@ -234,20 +315,15 @@ describe('preflight output helpers', () => {
         tier: 'devnet',
       },
       profile: {experimental: true, kind: 'remote-validator', name: 'splice-devnet'},
-      reconcile: {
-        runbook: [],
-        summary: {failed: 0, info: 0, manualRunbooks: 0, supportedActions: 0, warned: 0},
-        supportedActions: [],
-      },
       success: true,
-    })
+    }))
 
     expect(out.log).toHaveBeenCalledWith('Egress IP: 203.0.113.10')
     expect(out.warn).toHaveBeenCalledWith('Profile is marked experimental')
     expect(out.info).toHaveBeenCalledWith('Reminder: DevNet resets periodically.')
     expect(out.success).toHaveBeenCalledWith('Preflight passed with 1 compatibility warning and 1 advisory warning.')
 
-    renderPreflightReport(out, {
+    renderPreflightReport(out, createRenderablePreflightReport({
       auth: createResolvedAuthSummary({
         credentialSource: 'missing',
         operatorCredentialSource: 'missing',
@@ -256,16 +332,10 @@ describe('preflight output helpers', () => {
       }),
       checks: [{category: 'scan', detail: 'Scan missing.', name: 'scan', status: 'fail'}],
       compatibility: {failed: 1, passed: 0, warned: 0},
-      drift: [],
       network: {checklist: [], name: 'splice-mainnet', reminders: [], resetExpectation: 'no-resets-expected', tier: 'mainnet'},
       profile: {experimental: false, kind: 'remote-validator', name: 'splice-mainnet'},
-      reconcile: {
-        runbook: [],
-        summary: {failed: 0, info: 0, manualRunbooks: 0, supportedActions: 0, warned: 0},
-        supportedActions: [],
-      },
       success: false,
-    })
+    }))
 
     expect(out.error).toHaveBeenCalledWith('Preflight found blocking issues.')
     expect(out.log).toHaveBeenCalledWith('Operator auth: not required (missing)')
@@ -275,23 +345,17 @@ describe('preflight output helpers', () => {
   it('pluralizes preflight success output and resolves custom network policies', () => {
     const out = createOutputWriter()
 
-    renderPreflightReport(out, {
+    renderPreflightReport(out, createRenderablePreflightReport({
       auth: createResolvedAuthSummary({credentialSource: 'env', envVarName: 'CANTONCTL_JWT_CUSTOM'}),
       checks: [
         {category: 'profile', detail: 'ok', name: 'Profile resolution', status: 'warn'},
         {category: 'health', detail: 'ok', name: 'Auth readyz', status: 'warn'},
       ],
       compatibility: {failed: 0, passed: 1, warned: 2},
-      drift: [],
       network: {checklist: [], name: 'partner-lab', reminders: [], resetExpectation: 'unknown', tier: 'custom'},
       profile: {experimental: false, kind: 'remote-validator', name: 'partner-lab'},
-      reconcile: {
-        runbook: [],
-        summary: {failed: 0, info: 0, manualRunbooks: 0, supportedActions: 0, warned: 0},
-        supportedActions: [],
-      },
       success: true,
-    })
+    }))
 
     expect(out.success).toHaveBeenCalledWith('Preflight passed with 2 compatibility warnings and 2 advisory warnings.')
     expect(resolveNetworkPolicy({

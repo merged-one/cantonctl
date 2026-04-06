@@ -14,13 +14,18 @@ import * as discoveryFetchModule from '../lib/discovery/fetch.js'
 import * as exportFormattersModule from '../lib/export/formatters.js'
 import * as exportSdkConfigModule from '../lib/export/sdk-config.js'
 import {CantonctlError, ErrorCode} from '../lib/errors.js'
-import * as lifecycleDiffModule from '../lib/lifecycle/diff.js'
 import * as lifecycleResetModule from '../lib/lifecycle/reset.js'
 import * as lifecycleUpgradeModule from '../lib/lifecycle/upgrade.js'
 import * as localnetImportModule from '../lib/localnet-import.js'
 import * as localnetWorkspaceModule from '../lib/localnet-workspace.js'
+import type {PreflightReport} from '../lib/preflight/output.js'
 import * as preflightChecksModule from '../lib/preflight/checks.js'
+import * as promotionRolloutModule from '../lib/promotion-rollout.js'
+import type {PromotionRolloutResult} from '../lib/promotion-rollout.js'
 import * as readinessModule from '../lib/readiness.js'
+import type {ReadinessReport} from '../lib/readiness.js'
+import {createPreflightRolloutContract, createReadinessRolloutContract} from '../lib/rollout-contract.js'
+import type {RuntimeInventory} from '../lib/runtime-inventory.js'
 import CanaryStablePublic from './canary/stable-public.js'
 import DiagnosticsBundle from './diagnostics/bundle.js'
 import DiscoverNetwork from './discover/network.js'
@@ -29,7 +34,7 @@ import Init from './init.js'
 import Preflight from './preflight.js'
 import ProfilesImportLocalnet from './profiles/import-localnet.js'
 import ProfilesImportScan from './profiles/import-scan.js'
-import PromoteDiff from './promote/diff.js'
+import PromoteDiff, {renderPromotionRollout} from './promote/diff.js'
 import Readiness, {renderReadinessReport} from './readiness.js'
 import ResetChecklist from './reset/checklist.js'
 import UpgradeCheck from './upgrade/check.js'
@@ -86,27 +91,39 @@ function createConfig(): CantonctlConfig {
   }
 }
 
-function createPreflightReport(success: boolean) {
+function createPreflightReport(success: boolean): PreflightReport {
   const auth = createResolvedAuthSummary({
     credentialSource: 'stored',
     operatorCredentialSource: success ? 'stored' : 'missing',
     warnings: success ? ['Keychain token is near expiry.'] : [],
   })
+  const profile = {
+    experimental: success,
+    kind: 'remote-validator' as const,
+    name: 'splice-devnet',
+  }
+  const checks = [
+    {
+      category: 'scan' as const,
+      detail: success ? 'Scan reachable.' : 'Scan failed.',
+      endpoint: 'https://scan.example.com',
+      name: 'scan',
+      status: success ? 'pass' as const : 'fail' as const,
+    },
+  ]
+  const reconcile = {
+    runbook: [],
+    summary: {failed: 0, info: 0, manualRunbooks: 0, supportedActions: 0, warned: 0},
+    supportedActions: [],
+  }
 
   return {
     auth,
-    checks: [
-      {
-        category: 'scan',
-        detail: success ? 'Scan reachable.' : 'Scan failed.',
-        endpoint: 'https://scan.example.com',
-        name: 'scan',
-        status: success ? 'pass' : 'fail',
-      },
-    ],
+    checks,
     compatibility: {failed: success ? 0 : 1, passed: 3, warned: 1},
     drift: [],
     egressIp: success ? '203.0.113.10' : undefined,
+    inventory: createInventory(profile),
     network: {
       checklist: ['Confirm egress IP'],
       name: 'splice-devnet',
@@ -114,18 +131,15 @@ function createPreflightReport(success: boolean) {
       resetExpectation: 'resets-expected',
       tier: 'devnet',
     },
-    profile: {
-      experimental: success,
-      kind: 'remote-validator',
-      name: 'splice-devnet',
-    },
-    reconcile: {
-      runbook: [],
-      summary: {failed: 0, info: 0, manualRunbooks: 0, supportedActions: 0, warned: 0},
-      supportedActions: [],
-    },
+    profile,
+    reconcile,
+    rollout: createPreflightRolloutContract({
+      checks,
+      profile,
+      reconcile,
+    }),
     success,
-  } as const
+  }
 }
 
 function createCanaryReport(success: boolean) {
@@ -141,7 +155,7 @@ function createCanaryReport(success: boolean) {
     ],
     profile: {kind: 'remote-validator', name: 'splice-devnet'},
     success,
-  } as const
+  }
 }
 
 function createDiagnosticsSnapshot() {
@@ -153,7 +167,7 @@ function createDiagnosticsSnapshot() {
     profile: {experimental: false, kind: 'remote-validator', name: 'splice-devnet', network: 'splice-devnet'},
     services: [{endpoint: 'https://scan.example.com', name: 'scan', stability: 'stable-public'}],
     validatorLiveness: {approvedValidatorCount: 1, endpoint: 'https://scan.example.com', sampleSize: 1},
-  } as const
+  }
 }
 
 function createDiscoverySnapshot() {
@@ -162,20 +176,59 @@ function createDiscoverySnapshot() {
     scanUrl: 'https://scan.example.com',
     scans: [{url: 'https://scan.example.com'}],
     sequencers: [{id: 'sequencer::1'}],
-  } as const
+  }
 }
 
-function createPromoteReport(success: boolean) {
+function createPromoteReport(success: boolean): PromotionRolloutResult {
+  const advisories: PromotionRolloutResult['advisories'] = success
+    ? [{code: 'network-tier', message: 'tier changed', severity: 'warn'}]
+    : [{code: 'scan-missing', message: 'scan missing', severity: 'fail'}]
+
   return {
-    advisories: success
-      ? [{code: 'network-tier', message: 'tier changed', severity: 'warn'}]
-      : [{code: 'scan-missing', message: 'scan missing', severity: 'fail'}],
+    advisories,
     from: {experimental: false, kind: 'remote-validator', name: 'splice-devnet', network: 'splice-devnet', tier: 'devnet'},
+    rollout: createPromotionRollout({
+      mode: 'plan',
+      steps: [
+        {
+          blockers: [],
+          dependencies: [],
+          detail: 'splice-devnet -> splice-testnet',
+          effect: 'read',
+          id: 'inspect-profile-diff',
+          owner: 'cantonctl',
+          postconditions: [],
+          preconditions: [],
+          runbook: [],
+          status: 'ready',
+          title: 'Inspect source and target profiles',
+          warnings: advisories
+            .filter(advisory => advisory.severity === 'warn')
+            .map(advisory => ({code: advisory.code, detail: advisory.message})),
+        },
+        {
+          blockers: success ? [] : [{code: 'scan-missing', detail: 'scan missing'}],
+          dependencies: ['inspect-profile-diff'],
+          detail: success ? 'Promotion plan is ready for splice-devnet -> splice-testnet.' : undefined,
+          effect: 'read',
+          id: 'validate-rollout',
+          owner: 'cantonctl',
+          postconditions: [],
+          preconditions: [],
+          runbook: [],
+          status: success ? 'ready' : 'blocked',
+          title: 'Validate rollout gate',
+          warnings: [],
+        },
+      ],
+      success,
+      warned: advisories.filter(advisory => advisory.severity === 'warn').length,
+    }),
     services: [{change: 'changed', from: 'https://scan.devnet.example.com', name: 'scan', to: 'https://scan.testnet.example.com'}],
     success,
     summary: {failed: success ? 0 : 1, info: 0, warned: 0},
     to: {experimental: false, kind: 'remote-validator', name: 'splice-testnet', network: 'splice-testnet', tier: 'testnet'},
-  } as const
+  }
 }
 
 function createUpgradeReport(success: boolean) {
@@ -261,7 +314,18 @@ function createLocalnetWorkspace() {
   } as const
 }
 
-function createReadinessReport(success: boolean) {
+function createReadinessReport(success: boolean): ReadinessReport {
+  const preflight = createPreflightReport(success)
+  const canaryChecks = [
+    {
+      detail: success ? 'Stable/public scan endpoint reachable.' : 'Stable/public scan endpoint failed.',
+      endpoint: 'https://scan.example.com',
+      status: success ? 'pass' as const : 'fail' as const,
+      suite: 'scan' as const,
+      warnings: success ? [] : ['Scan returned HTTP 500.'],
+    },
+  ]
+
   return {
     auth: createResolvedAuthSummary({
       credentialSource: success ? 'stored' : 'missing',
@@ -269,26 +333,28 @@ function createReadinessReport(success: boolean) {
       warnings: success ? ['Refresh auth before promotion.'] : [],
     }),
     canary: {
-      checks: [
-        {
-          detail: success ? 'Stable/public scan endpoint reachable.' : 'Stable/public scan endpoint failed.',
-          endpoint: 'https://scan.example.com',
-          status: success ? 'pass' : 'fail',
-          suite: 'scan',
-          warnings: success ? [] : ['Scan returned HTTP 500.'],
-        },
-      ],
+      checks: canaryChecks,
       selectedSuites: ['scan', 'ans'],
       skippedSuites: ['token-standard', 'validator-user'],
       success,
     },
     compatibility: {failed: success ? 0 : 1, passed: 3, warned: 1},
-    preflight: createPreflightReport(success),
+    drift: preflight.drift,
+    inventory: preflight.inventory,
+    preflight,
     profile: {
       experimental: false,
       kind: 'remote-validator',
       name: 'splice-devnet',
     },
+    reconcile: preflight.reconcile,
+    rollout: createReadinessRolloutContract({
+      canary: {checks: canaryChecks},
+      preflight: {
+        profile: preflight.profile,
+        rollout: preflight.rollout,
+      },
+    }),
     success,
     summary: {
       failed: success ? 0 : 2,
@@ -321,6 +387,81 @@ function createResolvedAuthSummary(options: {
       required: true,
     },
     warnings: options.warnings ?? [],
+  }
+}
+
+function createInventory(profile: {
+  experimental: boolean
+  kind: 'remote-validator'
+  name: string
+}): RuntimeInventory {
+  return {
+    capabilities: [],
+    drift: [],
+    mode: 'profile',
+    profile: {
+      experimental: profile.experimental,
+      kind: profile.kind,
+      name: profile.name,
+      resolvedFrom: 'argument',
+    },
+    schemaVersion: 1,
+    services: [],
+    summary: {
+      configuredCapabilities: 0,
+      configuredServices: 0,
+      driftedCapabilities: 0,
+      healthyCapabilities: 0,
+      healthyServices: 0,
+      unreachableCapabilities: 0,
+      unreachableServices: 0,
+      warnedCapabilities: 0,
+    },
+  }
+}
+
+function createPromotionRollout(options: {
+  mode: 'apply' | 'dry-run' | 'plan'
+  steps: Array<{
+    blockers: Array<{code: string; detail: string}>
+    dependencies: string[]
+    detail?: string
+    effect: 'read' | 'write'
+    id: string
+    owner: 'cantonctl' | 'official-stack' | 'operator'
+    postconditions: []
+    preconditions: []
+    runbook: Array<{code: string; detail: string; owner: 'cantonctl' | 'official-stack' | 'operator'; title: string}>
+    status: 'blocked' | 'completed' | 'dry-run' | 'failed' | 'manual' | 'pending' | 'ready'
+    title: string
+    warnings: Array<{code: string; detail: string}>
+  }>
+  success: boolean
+  warned: number
+}) {
+  return {
+    description: 'Promotion workflow',
+    mode: options.mode,
+    operation: 'promotion',
+    partial: false,
+    resume: {
+      canResume: false,
+      checkpoints: [],
+      completedStepIds: [],
+      nextStepId: undefined,
+    },
+    steps: options.steps,
+    success: options.success,
+    summary: {
+      blocked: options.steps.filter(step => step.status === 'blocked').length,
+      completed: options.steps.filter(step => step.status === 'completed').length,
+      dryRun: options.steps.filter(step => step.status === 'dry-run').length,
+      failed: options.steps.filter(step => step.status === 'failed').length,
+      manual: options.steps.filter(step => step.status === 'manual').length,
+      pending: options.steps.filter(step => step.status === 'pending').length,
+      ready: options.steps.filter(step => step.status === 'ready').length,
+      warned: options.warned,
+    },
   }
 }
 
@@ -792,14 +933,15 @@ describe('companion command surface', () => {
 
   it('renders promotion diffs in human mode and fails in json mode', async () => {
     vi.spyOn(configModule, 'loadConfig').mockResolvedValue(createConfig())
-    const compare = vi.fn()
+    const run = vi.fn()
       .mockResolvedValueOnce(createPromoteReport(true))
       .mockResolvedValueOnce(createPromoteReport(false))
-    vi.spyOn(lifecycleDiffModule, 'createLifecycleDiff').mockReturnValue({compare})
+    vi.spyOn(promotionRolloutModule, 'createPromotionRunner').mockReturnValue({run})
 
     const human = await captureOutput(() => PromoteDiff.run(['--from', 'splice-devnet', '--to', 'splice-testnet'], {root: CLI_ROOT}))
     expect(human.error).toBeUndefined()
     expect(human.stdout).toContain('From: splice-devnet (devnet)')
+    expect(human.stdout).toContain('Mode: plan')
     expect(human.stdout).toContain('network-tier')
 
     const json = await captureOutput(() => PromoteDiff.run(['--from', 'splice-devnet', '--to', 'splice-testnet', '--json'], {root: CLI_ROOT}))
@@ -812,10 +954,29 @@ describe('companion command surface', () => {
 
   it('renders placeholder service values when promotion diffs omit before/after endpoints', async () => {
     vi.spyOn(configModule, 'loadConfig').mockResolvedValue(createConfig())
-    vi.spyOn(lifecycleDiffModule, 'createLifecycleDiff').mockReturnValue({
-      compare: vi.fn().mockResolvedValue({
+    vi.spyOn(promotionRolloutModule, 'createPromotionRunner').mockReturnValue({
+      run: vi.fn().mockResolvedValue({
         advisories: [],
         from: {experimental: false, kind: 'remote-validator', name: 'splice-devnet', network: 'splice-devnet', tier: 'devnet'},
+        rollout: createPromotionRollout({
+          mode: 'plan',
+          steps: [{
+            blockers: [],
+            dependencies: [],
+            detail: 'Promotion plan is ready for splice-devnet -> team-devnet.',
+            effect: 'read',
+            id: 'validate-rollout',
+            owner: 'cantonctl',
+            postconditions: [],
+            preconditions: [],
+            runbook: [],
+            status: 'ready',
+            title: 'Validate rollout gate',
+            warnings: [],
+          }],
+          success: true,
+          warned: 0,
+        }),
         services: [{change: 'added', name: 'scan'}],
         success: true,
         summary: {failed: 0, info: 0, warned: 0},
@@ -831,10 +992,10 @@ describe('companion command surface', () => {
 
   it('serializes promote diff failures and rethrows unexpected ones', async () => {
     vi.spyOn(configModule, 'loadConfig').mockResolvedValue(createConfig())
-    const createDiffSpy = vi.spyOn(lifecycleDiffModule, 'createLifecycleDiff')
+    const createRunnerSpy = vi.spyOn(promotionRolloutModule, 'createPromotionRunner')
 
-    createDiffSpy.mockReturnValueOnce({
-      compare: vi.fn().mockRejectedValue(new CantonctlError(ErrorCode.CONFIG_NOT_FOUND, {suggestion: 'add profiles'})),
+    createRunnerSpy.mockReturnValueOnce({
+      run: vi.fn().mockRejectedValue(new CantonctlError(ErrorCode.CONFIG_NOT_FOUND, {suggestion: 'add profiles'})),
     })
     const handled = await captureOutput(() => PromoteDiff.run(['--from', 'a', '--to', 'b', '--json'], {root: CLI_ROOT}))
     expect(handled.error).toBeDefined()
@@ -843,10 +1004,190 @@ describe('companion command surface', () => {
       success: false,
     }))
 
-    createDiffSpy.mockReturnValueOnce({
-      compare: vi.fn().mockRejectedValue(new Error('promote boom')),
+    createRunnerSpy.mockReturnValueOnce({
+      run: vi.fn().mockRejectedValue(new Error('promote boom')),
     })
     await expect(PromoteDiff.run(['--from', 'a', '--to', 'b', '--json'], {root: CLI_ROOT})).rejects.toThrow('promote boom')
+  })
+
+  it('passes explicit promotion modes through to the runner and rejects conflicting flags', async () => {
+    vi.spyOn(configModule, 'loadConfig').mockResolvedValue(createConfig())
+    const run = vi.fn()
+      .mockResolvedValueOnce(createPromoteReport(true))
+      .mockResolvedValueOnce(createPromoteReport(true))
+    vi.spyOn(promotionRolloutModule, 'createPromotionRunner').mockReturnValue({run})
+
+    const dryRun = await captureOutput(() => PromoteDiff.run([
+      '--from',
+      'splice-devnet',
+      '--to',
+      'splice-testnet',
+      '--dry-run',
+      '--json',
+    ], {root: CLI_ROOT}))
+    expect(dryRun.error).toBeUndefined()
+    expect(run).toHaveBeenNthCalledWith(1, expect.objectContaining({mode: 'dry-run'}))
+
+    const apply = await captureOutput(() => PromoteDiff.run([
+      '--from',
+      'splice-devnet',
+      '--to',
+      'splice-testnet',
+      '--apply',
+      '--json',
+    ], {root: CLI_ROOT}))
+    expect(apply.error).toBeUndefined()
+    expect(run).toHaveBeenNthCalledWith(2, expect.objectContaining({mode: 'apply'}))
+
+    const conflicting = await captureOutput(() => PromoteDiff.run([
+      '--from',
+      'splice-devnet',
+      '--to',
+      'splice-testnet',
+      '--plan',
+      '--dry-run',
+      '--json',
+    ], {root: CLI_ROOT}))
+    expect(conflicting.error).toBeDefined()
+    expect(parseJson(conflicting.stdout)).toEqual(expect.objectContaining({
+      error: expect.objectContaining({code: ErrorCode.CONFIG_SCHEMA_VIOLATION}),
+      success: false,
+    }))
+  })
+
+  it('renders live promotion gate status, runbooks, and failure summaries', () => {
+    const out = {
+      error: vi.fn(),
+      info: vi.fn(),
+      log: vi.fn(),
+      success: vi.fn(),
+      table: vi.fn(),
+      warn: vi.fn(),
+    }
+
+    renderPromotionRollout(out, {
+      ...createPromoteReport(false),
+      preflight: createPreflightReport(false),
+      readiness: createReadinessReport(false),
+      rollout: createPromotionRollout({
+        mode: 'dry-run',
+        steps: [
+          {
+            blockers: [{code: 'scan-missing', detail: 'Blocked by target gate'}],
+            dependencies: [],
+            effect: 'read',
+            id: 'inspect-target-preflight',
+            owner: 'cantonctl',
+            postconditions: [],
+            preconditions: [],
+            runbook: [],
+            status: 'blocked',
+            title: 'Inspect target preflight gate',
+            warnings: [{code: 'target-warning', detail: 'Investigate target drift'}],
+          },
+          {
+            blockers: [],
+            dependencies: ['inspect-target-preflight'],
+            effect: 'write',
+            id: 'manual-promotion-runbook',
+            owner: 'official-stack',
+            postconditions: [],
+            preconditions: [],
+            runbook: [{
+              code: 'manual-cutover',
+              detail: 'Follow the official cutover runbook.',
+              owner: 'official-stack',
+              title: 'Manual cutover',
+            }],
+            status: 'manual',
+            title: 'Review manual promotion runbook',
+            warnings: [],
+          },
+        ],
+        success: false,
+        warned: 1,
+      }),
+      success: false,
+    })
+
+    expect(out.log).toHaveBeenCalledWith('Target preflight: fail')
+    expect(out.log).toHaveBeenCalledWith('Target readiness: fail')
+    expect(out.warn).toHaveBeenCalledWith('Inspect target preflight gate: Investigate target drift')
+    expect(out.info).toHaveBeenCalledWith('Manual cutover: Follow the official cutover runbook.')
+    expect(out.error).toHaveBeenCalledWith('Promotion rollout found blocking issues.')
+    expect(out.table).toHaveBeenCalledWith(
+      ['Step', 'Status', 'Owner', 'Detail'],
+      expect.arrayContaining([
+        ['Inspect target preflight gate', 'blocked', 'cantonctl', 'Blocked by target gate'],
+        ['Review manual promotion runbook', 'manual', 'official-stack', '-'],
+      ]),
+    )
+  })
+
+  it('skips advisory and rollout tables when the promotion report is empty beyond services', () => {
+    const out = {
+      error: vi.fn(),
+      info: vi.fn(),
+      log: vi.fn(),
+      success: vi.fn(),
+      table: vi.fn(),
+      warn: vi.fn(),
+    }
+
+    renderPromotionRollout(out, {
+      ...createPromoteReport(true),
+      advisories: [],
+      rollout: createPromotionRollout({
+        mode: 'plan',
+        steps: [],
+        success: true,
+        warned: 0,
+      }),
+    })
+
+    expect(out.table).toHaveBeenCalledTimes(1)
+    expect(out.success).toHaveBeenCalledWith('Promotion plan completed.')
+  })
+
+  it('renders successful live promotion summaries with passing target gates', () => {
+    const out = {
+      error: vi.fn(),
+      info: vi.fn(),
+      log: vi.fn(),
+      success: vi.fn(),
+      table: vi.fn(),
+      warn: vi.fn(),
+    }
+
+    renderPromotionRollout(out, {
+      ...createPromoteReport(true),
+      preflight: createPreflightReport(true),
+      readiness: createReadinessReport(true),
+      rollout: createPromotionRollout({
+        mode: 'apply',
+        steps: [{
+          blockers: [],
+          dependencies: [],
+          detail: 'Live rollout gates passed.',
+          effect: 'read',
+          id: 'validate-rollout',
+          owner: 'cantonctl',
+          postconditions: [],
+          preconditions: [],
+          runbook: [],
+          status: 'completed',
+          title: 'Validate rollout gate',
+          warnings: [],
+        }],
+        success: true,
+        warned: 0,
+      }),
+      success: true,
+    })
+
+    expect(out.log).toHaveBeenCalledWith('Target preflight: pass')
+    expect(out.log).toHaveBeenCalledWith('Target readiness: pass')
+    expect(out.success).toHaveBeenCalledWith('Promotion rollout completed.')
   })
 
   it('renders reset checklists in human and json modes', async () => {
@@ -975,70 +1316,54 @@ describe('companion command surface', () => {
       table: vi.fn(),
       warn: vi.fn(),
     }
-
-    renderReadinessReport(failureWriter as never, {
+    const failurePreflightChecks = [{
+      category: 'auth' as const,
+      detail: 'Credential missing.',
+      name: 'Credential material',
+      status: 'fail' as const,
+    }]
+    const failurePreflight = {
+      ...createPreflightReport(false),
       auth: createResolvedAuthSummary({
         credentialSource: 'stored',
         operatorCredentialSource: 'missing',
         warnings: ['Auth warning'],
       }),
+      checks: failurePreflightChecks,
+      compatibility: {failed: 1, passed: 1, warned: 0},
+      rollout: createPreflightRolloutContract({
+        checks: failurePreflightChecks,
+        profile: createPreflightReport(false).profile,
+        reconcile: createPreflightReport(false).reconcile,
+      }),
+    }
+    const failureCanaryChecks = [{
+      detail: 'Request failed.',
+      status: 'fail' as const,
+      suite: 'scan' as const,
+      warnings: ['Latency spike'],
+    }]
+    renderReadinessReport(failureWriter as never, {
+      auth: failurePreflight.auth,
       canary: {
-        checks: [{
-          detail: 'Request failed.',
-          status: 'fail',
-          suite: 'scan',
-          warnings: ['Latency spike'],
-        }],
+        checks: failureCanaryChecks,
         selectedSuites: ['scan'],
         skippedSuites: ['ans', 'token-standard', 'validator-user'],
         success: false,
       },
-      compatibility: {failed: 1, passed: 1, warned: 0},
-      preflight: {
-        auth: createResolvedAuthSummary({
-          credentialSource: 'stored',
-          operatorCredentialSource: 'missing',
-          warnings: ['Auth warning'],
-        }),
-        checks: [{
-          category: 'auth',
-          detail: 'Credential missing.',
-          name: 'Credential material',
-          status: 'fail',
-        }],
-        compatibility: {failed: 1, passed: 1, warned: 0},
-        drift: [],
-        egressIp: undefined,
-        network: {
-          checklist: [],
-          name: 'splice-devnet',
-          reminders: [],
-          resetExpectation: 'resets-expected',
-          tier: 'devnet',
-        },
-        profile: {
-          experimental: false,
-          kind: 'remote-validator',
-          name: 'splice-devnet',
-        },
-        reconcile: {
-          runbook: [],
-          summary: {failed: 0, info: 0, manualRunbooks: 0, supportedActions: 0, warned: 0},
-          supportedActions: [],
-        },
-        success: false,
-      },
+      compatibility: failurePreflight.compatibility,
       drift: [],
-      profile: {
-        experimental: false,
-        kind: 'remote-validator',
-        name: 'splice-devnet',
-      },
-      reconcile: {
-        runbook: [],
-        summary: {failed: 0, info: 0, manualRunbooks: 0, supportedActions: 0, warned: 0},
-        supportedActions: [],
-      },
+      inventory: failurePreflight.inventory,
+      preflight: failurePreflight,
+      profile: failurePreflight.profile,
+      reconcile: failurePreflight.reconcile,
+      rollout: createReadinessRolloutContract({
+        canary: {checks: failureCanaryChecks},
+        preflight: {
+          profile: failurePreflight.profile,
+          rollout: failurePreflight.rollout,
+        },
+      }),
       success: false,
       summary: {
         failed: 2,
@@ -1059,63 +1384,48 @@ describe('companion command surface', () => {
       table: vi.fn(),
       warn: vi.fn(),
     }
-
-    renderReadinessReport(successWriter as never, {
+    const successPreflightChecks = [{
+      category: 'profile' as const,
+      detail: 'Resolved.',
+      name: 'Profile resolution',
+      status: 'pass' as const,
+    }]
+    const successPreflight = {
+      ...createPreflightReport(true),
       auth: createResolvedAuthSummary({
         credentialSource: 'stored',
         operatorCredentialSource: 'stored',
       }),
+      checks: successPreflightChecks,
+      compatibility: {failed: 0, passed: 2, warned: 0},
+      rollout: createPreflightRolloutContract({
+        checks: successPreflightChecks,
+        profile: createPreflightReport(true).profile,
+        reconcile: createPreflightReport(true).reconcile,
+      }),
+    }
+
+    renderReadinessReport(successWriter as never, {
+      auth: successPreflight.auth,
       canary: {
         checks: [],
         selectedSuites: [],
         skippedSuites: ['scan'],
         success: true,
       },
-      compatibility: {failed: 0, passed: 2, warned: 0},
-      preflight: {
-        auth: createResolvedAuthSummary({
-          credentialSource: 'stored',
-          operatorCredentialSource: 'stored',
-        }),
-        checks: [{
-          category: 'profile',
-          detail: 'Resolved.',
-          name: 'Profile resolution',
-          status: 'pass',
-        }],
-        compatibility: {failed: 0, passed: 2, warned: 0},
-        drift: [],
-        egressIp: undefined,
-        network: {
-          checklist: [],
-          name: 'splice-devnet',
-          reminders: [],
-          resetExpectation: 'resets-expected',
-          tier: 'devnet',
-        },
-        profile: {
-          experimental: false,
-          kind: 'remote-validator',
-          name: 'splice-devnet',
-        },
-        reconcile: {
-          runbook: [],
-          summary: {failed: 0, info: 0, manualRunbooks: 0, supportedActions: 0, warned: 0},
-          supportedActions: [],
-        },
-        success: true,
-      },
+      compatibility: successPreflight.compatibility,
       drift: [],
-      profile: {
-        experimental: false,
-        kind: 'remote-validator',
-        name: 'splice-devnet',
-      },
-      reconcile: {
-        runbook: [],
-        summary: {failed: 0, info: 0, manualRunbooks: 0, supportedActions: 0, warned: 0},
-        supportedActions: [],
-      },
+      inventory: successPreflight.inventory,
+      preflight: successPreflight,
+      profile: successPreflight.profile,
+      reconcile: successPreflight.reconcile,
+      rollout: createReadinessRolloutContract({
+        canary: {checks: []},
+        preflight: {
+          profile: successPreflight.profile,
+          rollout: successPreflight.rollout,
+        },
+      }),
       success: true,
       summary: {
         failed: 0,
