@@ -11,7 +11,7 @@
 import * as fs from 'node:fs'
 import * as os from 'node:os'
 import * as path from 'node:path'
-import {afterAll, beforeAll, describe, expect, it} from 'vitest'
+import {afterAll, beforeAll, describe, expect, it, vi} from 'vitest'
 
 import {createBuilder} from '../../src/lib/builder.js'
 import {createDamlSdk} from '../../src/lib/daml.js'
@@ -83,8 +83,21 @@ const runner = createProcessRunner()
 const sdk = createDamlSdk({runner})
 
 const CONFIG = {
+  'default-profile': 'sandbox',
+  networkProfiles: {local: 'sandbox'},
   networks: {local: {'json-api-port': JSON_API_PORT, port: CANTON_PORT, type: 'sandbox' as const}},
   parties: [{name: 'Alice', role: 'operator' as const}],
+  profiles: {
+    sandbox: {
+      experimental: false,
+      kind: 'sandbox' as const,
+      name: 'sandbox',
+      services: {
+        auth: {kind: 'shared-secret' as const},
+        ledger: {'json-api-port': JSON_API_PORT, port: CANTON_PORT},
+      },
+    },
+  },
   project: {name: 'deploy-e2e', 'sdk-version': SDK_VERSION},
   version: 1,
 }
@@ -119,81 +132,93 @@ describeWithSdk('deploy E2E', () => {
     fs.rmSync(workDir, {force: true, recursive: true})
   })
 
-  it('deploy local runs full pipeline (build + auth + preflight)', async () => {
-    const builder = createBuilder({findDarFile, getDamlSourceMtime, getFileMtime, sdk})
+  it('deploy plan resolves the DAR without contacting the runtime', async () => {
+    const createLedgerClientSpy = vi.fn((opts: Parameters<typeof createLedgerClient>[0]) => createLedgerClient(opts))
     const deployer = createDeployer({
-      builder,
       config: CONFIG,
-      createLedgerClient,
+      createLedgerClient: createLedgerClientSpy,
       createToken: createSandboxToken,
       fs: {readFile: (p: string) => fs.promises.readFile(p)},
-      output: out,
+      findDarFile,
     })
 
-    // Upload may fail on some Canton sandbox versions — test the pipeline runs correctly.
-    // On macOS the sandbox often rejects uploads (E6003); on Linux it may throw differently.
-    // Either a successful deploy or any upload-stage error is acceptable.
-    try {
-      const result = await deployer.deploy({network: 'local', projectDir})
-      // If upload succeeds, verify full result
-      expect(result.success).toBe(true)
-      expect(result.mainPackageId).toBeTruthy()
-      expect(result.dryRun).toBe(false)
-      expect(result.darPath).toBeTruthy()
-    } catch (err: unknown) {
-      // Upload rejection is acceptable — pipeline reached the upload step
-      const error = err as {code?: string; message?: string}
-      expect(error.code === 'E6003' || error.message !== undefined).toBe(true)
-    }
+    const result = await deployer.deploy({mode: 'plan', profileName: 'sandbox', projectDir})
+
+    expect(createLedgerClientSpy).not.toHaveBeenCalled()
+    expect(result.success).toBe(true)
+    expect(result.mode).toBe('plan')
+    expect(result.artifact).toEqual(expect.objectContaining({
+      darPath: expect.stringContaining('.dar'),
+      source: 'auto-detected',
+    }))
+    expect(result.steps.map(step => step.status)).toEqual(['completed', 'ready', 'ready', 'ready'])
   }, 60_000)
 
-  it('deploy --dry-run completes without uploading', async () => {
-    const builder = createBuilder({findDarFile, getDamlSourceMtime, getFileMtime, sdk})
+  it('deploy --dry-run resolves the DAR and runs read-only preflight', async () => {
     const deployer = createDeployer({
-      builder,
       config: CONFIG,
       createLedgerClient,
       createToken: createSandboxToken,
       fs: {readFile: (p: string) => fs.promises.readFile(p)},
-      output: out,
+      findDarFile,
     })
 
-    const result = await deployer.deploy({dryRun: true, network: 'local', projectDir})
+    const result = await deployer.deploy({dryRun: true, profileName: 'sandbox', projectDir})
 
     expect(result.success).toBe(true)
-    expect(result.dryRun).toBe(true)
-    expect(result.mainPackageId).toBeNull()
+    expect(result.mode).toBe('dry-run')
+    expect(result.targets).toEqual([
+      expect.objectContaining({packageId: null, status: 'dry-run'}),
+    ])
+    expect(result.steps.map(step => step.status)).toEqual(['completed', 'completed', 'dry-run', 'pending'])
   }, 60_000)
 
-  it('deploy with --dar skips the build step', async () => {
-    // Pre-build the DAR
+  it('deploy apply reaches the upload stage against sandbox', async () => {
+    const deployer = createDeployer({
+      config: CONFIG,
+      createLedgerClient,
+      createToken: createSandboxToken,
+      fs: {readFile: (p: string) => fs.promises.readFile(p)},
+      findDarFile,
+    })
+
+    const result = await deployer.deploy({profileName: 'sandbox', projectDir})
+
+    expect(result.artifact.darPath).toEqual(expect.stringContaining('.dar'))
+    expect(result.steps[0]?.status).toBe('completed')
+    expect(result.steps[1]?.status).toBe('completed')
+    expect(['completed', 'failed']).toContain(result.steps[2]?.status)
+    expect(result.targets[0]).toEqual(expect.objectContaining({
+      label: 'sandbox',
+      packageId: result.success ? expect.any(String) : null,
+    }))
+  }, 60_000)
+
+  it('deploy with --dar uses the explicit artifact path', async () => {
     const builder = createBuilder({findDarFile, getDamlSourceMtime, getFileMtime, sdk})
     const buildResult = await builder.build({projectDir})
     expect(buildResult.darPath).toBeTruthy()
 
     const deployer = createDeployer({
-      builder,
       config: CONFIG,
       createLedgerClient,
       createToken: createSandboxToken,
       fs: {readFile: (p: string) => fs.promises.readFile(p)},
-      output: out,
+      findDarFile,
     })
 
-    // Upload may fail on some Canton sandbox versions — verify the --dar path is used.
-    // Either a successful deploy or any upload-stage error is acceptable.
-    try {
-      const result = await deployer.deploy({
-        darPath: buildResult.darPath!,
-        network: 'local',
-        projectDir,
-      })
-      expect(result.success).toBe(true)
-      expect(result.mainPackageId).toBeTruthy()
-    } catch (err: unknown) {
-      // Upload rejection is acceptable — pipeline reached upload step with provided DAR
-      const error = err as {code?: string; message?: string}
-      expect(error.code === 'E6003' || error.message !== undefined).toBe(true)
-    }
+    const result = await deployer.deploy({
+      darPath: buildResult.darPath!,
+      mode: 'plan',
+      profileName: 'sandbox',
+      projectDir,
+    })
+
+    expect(result.success).toBe(true)
+    expect(result.artifact).toEqual({
+      darPath: buildResult.darPath!,
+      sizeBytes: expect.any(Number),
+      source: 'explicit',
+    })
   }, 60_000)
 })

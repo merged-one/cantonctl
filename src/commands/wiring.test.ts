@@ -143,18 +143,13 @@ describe('command wiring', () => {
   it('wires control-plane command factories', async () => {
     class DeployHarness extends Deploy {
       public expose() {
-        const runner = this.createRunner()
-        const sdk = this.createSdk(runner)
         const hooks = this.createHooks()
-        const builder = this.createBuilder({hooks, sdk})
         return {
-          builder,
           deployer: this.createDeployer({
-            builder,
             config: createConfig(),
             hooks,
-            output: createOutput({json: true}),
           }),
+          hooks,
           topology: this.detectProjectTopology(this.getProjectDir()),
         }
       }
@@ -227,8 +222,8 @@ describe('command wiring', () => {
     }
 
     const deploy = new DeployHarness([], {} as never).expose()
-    expect(deploy.builder).toEqual(expect.objectContaining({build: expect.any(Function)}))
     expect(deploy.deployer).toEqual(expect.objectContaining({deploy: expect.any(Function)}))
+    expect(deploy.hooks).toEqual(expect.objectContaining({emit: expect.any(Function)}))
     await expect(deploy.topology).resolves.toBeNull()
 
     const dev = new DevHarness([], {} as never).expose()

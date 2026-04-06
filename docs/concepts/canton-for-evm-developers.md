@@ -71,7 +71,7 @@ cantonctl init my-app --template splice-token-app
 cantonctl dev             # Start local sandbox + hot-reload
 cantonctl build           # Compile Daml
 cantonctl test            # Run Daml Script tests
-cantonctl deploy devnet   # Planned for Phase 4
+cantonctl deploy --profile splice-devnet
 ```
 
 ## Zenith: EVM on Canton

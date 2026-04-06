@@ -1,26 +1,35 @@
 # Deploy to DevNet
 
-This guide walks through deploying a Daml application to a remote Canton network.
+This guide walks through rolling out a built DAR to a remote validator-backed profile.
 
 ## Prerequisites
 
 - A cantonctl project with `cantonctl.yaml` configured
-- A remote Canton participant with JSON Ledger API enabled
+- A resolved remote profile with an apply-capable ledger endpoint
 - A JWT token with admin and actAs claims for the target network
 
 ## Steps
 
-### 1. Configure the network in cantonctl.yaml
+### 1. Configure the remote profile in `cantonctl.yaml`
 
 ```yaml
-networks:
-  local:
-    type: sandbox
-    port: 5001
-    json-api-port: 7575
-  devnet:
-    type: remote
-    url: https://devnet.example.com:7575
+networkProfiles:
+  devnet: splice-devnet
+
+profiles:
+  splice-devnet:
+    experimental: false
+    kind: remote-validator
+    name: splice-devnet
+    services:
+      auth:
+        kind: jwt
+        issuer: https://login.example.com
+        audience: https://wallet.devnet.example.com
+      ledger:
+        url: https://ledger.devnet.example.com
+      validator:
+        url: https://validator.devnet.example.com
 ```
 
 ### 2. Store your credentials
@@ -44,7 +53,7 @@ export CANTONCTL_JWT_DEVNET=eyJhbGciOiJIUzI1NiIs...
 ### 3. Verify connectivity
 
 ```bash
-cantonctl status --network devnet
+cantonctl status --profile splice-devnet
 ```
 
 You should see the node version and health status.
@@ -55,34 +64,39 @@ You should see the node version and health status.
 cantonctl dev       # Start local sandbox
 cantonctl build     # Compile Daml
 cantonctl test      # Run tests
-cantonctl deploy    # Deploy to local sandbox
+cantonctl deploy --profile sandbox
 ```
 
 ### 5. Deploy to devnet
 
 ```bash
-cantonctl deploy devnet
+cantonctl build
+cantonctl deploy --profile splice-devnet
 ```
 
-The 6-step pipeline runs: validate → build → auth → pre-flight → upload → verify.
+`deploy` consumes the built DAR from `.daml/dist`, runs profile-aware preflight, uploads on apply, and reports the selected artifact, target fan-out, and post-deploy checks. The positional `devnet` alias still works, but `--profile splice-devnet` is the preferred form.
 
 ### 6. Verify deployment
 
-The deploy command outputs the `mainPackageId` on success. You can also verify with:
+`deploy --json` reports the package ID and per-step results on success. You can also verify with:
 
 ```bash
-cantonctl status --network devnet
+cantonctl status --profile splice-devnet
 ```
 
-## Dry Run
+## Plan And Dry Run
 
-To validate without uploading:
+Use `--plan` when you want the resolved rollout shape without contacting the runtime:
 
 ```bash
-cantonctl deploy devnet --dry-run
+cantonctl deploy --profile splice-devnet --plan --json
 ```
 
-This runs steps 1-4 (validate, build, auth, pre-flight) and reports what would happen.
+Use `--dry-run` when you want artifact resolution plus read-only preflight against the live runtime:
+
+```bash
+cantonctl deploy --profile splice-devnet --dry-run
+```
 
 ## Troubleshooting
 

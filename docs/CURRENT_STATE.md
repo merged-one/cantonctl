@@ -60,6 +60,8 @@ Resolved profile inspection now includes manifest-backed control-plane metadata 
 
 `cantonctl localnet up|status --json` emits the same inventory contract for official LocalNet workspace discovery.
 
+`cantonctl deploy` is now profile-first and supports plan, dry-run, and apply modes with structured artifact, fan-out, target, and step reporting. It can fan out across generated `canton-multi` participants, target LocalNet's exposed ledger endpoint, or apply against remote ledger-capable profiles.
+
 Local topology design for `dev --net` is separate and lives under the top-level `topologies:` config section.
 
 ## Current Control-Plane Coverage
@@ -70,11 +72,12 @@ The current branch implements these control-plane surfaces:
 - `dev`, `dev --net`, topology preview/export, and LocalNet wrapping
 - status, compatibility, preflight, readiness, canaries, and diagnostics
 - discovery, profile import, and SDK config export
-- current deploy, promotion, upgrade, and reset helper flows
+- profile-first deploy rollout plus current promotion, upgrade, and reset helper flows
 
 These boundaries still hold on the current branch:
 
 - DPM remains the canonical build, test, codegen, sandbox, and Studio launcher
+- `deploy` consumes built DARs but does not own compilation or codegen
 - Daml Studio remains the canonical IDE
 - Quickstart remains the official reference app and LocalNet launch path
 - the official dApp SDK, Wallet Gateway, and Wallet SDK remain the canonical wallet-connected integration stack

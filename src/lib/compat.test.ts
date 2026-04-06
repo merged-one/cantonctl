@@ -388,7 +388,7 @@ describe('compat', () => {
         controlPlane: expect.objectContaining({
           endpointProvenance: 'declared',
           lifecycleOwner: 'official-remote-runtime',
-          managementClass: 'plan-only',
+          managementClass: 'apply-capable',
           mutationScope: 'managed',
         }),
         detail: 'Ledger endpoint',

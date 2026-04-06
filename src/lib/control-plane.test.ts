@@ -55,7 +55,7 @@ describe('control-plane metadata', () => {
     expect(summarizeServiceControlPlane(profile, 'ledger')).toEqual({
       endpointProvenance: 'legacy-network',
       lifecycleOwner: 'official-remote-runtime',
-      managementClass: 'plan-only',
+      managementClass: 'apply-capable',
       mutationScope: 'managed',
       operatorSurface: false,
     })

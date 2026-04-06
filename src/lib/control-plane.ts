@@ -213,7 +213,14 @@ function resolveManagementClass(
 
   if (
     (profile.kind === 'remote-validator' || profile.kind === 'remote-sv-network')
-    && (name === 'ledger' || name === 'validator')
+    && name === 'ledger'
+  ) {
+    return 'apply-capable'
+  }
+
+  if (
+    (profile.kind === 'remote-validator' || profile.kind === 'remote-sv-network')
+    && name === 'validator'
   ) {
     return 'plan-only'
   }

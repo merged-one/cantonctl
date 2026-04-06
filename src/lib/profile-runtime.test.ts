@@ -102,6 +102,14 @@ describe('profile runtime', () => {
       expect.objectContaining({
         controlPlane: expect.objectContaining({
           lifecycleOwner: 'official-remote-runtime',
+          managementClass: 'apply-capable',
+          mutationScope: 'managed',
+        }),
+        name: 'ledger',
+      }),
+      expect.objectContaining({
+        controlPlane: expect.objectContaining({
+          lifecycleOwner: 'official-remote-runtime',
           managementClass: 'plan-only',
           mutationScope: 'managed',
         }),
