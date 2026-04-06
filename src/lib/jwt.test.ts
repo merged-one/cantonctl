@@ -90,7 +90,7 @@ describe('JWT generation', () => {
       const token = await createSandboxToken({
         actAs: ['Alice::1234'],
         applicationId: 'cantonctl',
-        expiresInSeconds: 1,
+        expiresInSeconds: 60,
         readAs: [],
       })
 

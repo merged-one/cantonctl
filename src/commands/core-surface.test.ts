@@ -311,6 +311,7 @@ describe('core command surface', () => {
         mode: 'bearer-token',
         network: 'local',
         persisted: false,
+        scope: 'app',
         source: 'generated',
       },
       success: true,
@@ -355,13 +356,67 @@ describe('core command surface', () => {
       '--json',
     ], {root: CLI_ROOT}))
     expect(result.error).toBeUndefined()
-    expect(store).toHaveBeenCalledWith('devnet', 'jwt-token', {mode: 'env-or-keychain-jwt'})
+    expect(store).toHaveBeenCalledWith('devnet', 'jwt-token', {mode: 'env-or-keychain-jwt', scope: 'app'})
     expect(parseJson(result.stdout)).toEqual(expect.objectContaining({
       data: {
         mode: 'env-or-keychain-jwt',
         network: 'devnet',
         persisted: true,
+        scope: 'app',
         source: 'memory',
+      },
+      success: true,
+    }))
+  })
+
+  it('stores explicit operator credentials in the separate operator scope', async () => {
+    const store = vi.fn().mockResolvedValue(undefined)
+
+    class TestAuthLogin extends AuthLogin {
+      protected override async createBackend() {
+        return {backend: createBackend(), isKeychain: true}
+      }
+
+      protected override createCredentialStore() {
+        return {
+          list: vi.fn(),
+          remove: vi.fn(),
+          resolve: vi.fn(),
+          resolveRecord: vi.fn(),
+          retrieve: vi.fn(),
+          retrieveRecord: vi.fn(),
+          store,
+        }
+      }
+
+      protected override createLedgerClient() {
+        return {
+          getVersion: vi.fn().mockResolvedValue({version: '3.4.11'}),
+        } as never
+      }
+
+      protected override async loadCommandConfig(): Promise<CantonctlConfig> {
+        return createConfig()
+      }
+    }
+
+    const result = await captureOutput(() => TestAuthLogin.run([
+      'devnet',
+      '--scope',
+      'operator',
+      '--token',
+      'operator-token',
+      '--json',
+    ], {root: CLI_ROOT}))
+    expect(result.error).toBeUndefined()
+    expect(store).toHaveBeenCalledWith('devnet', 'operator-token', {mode: 'env-or-keychain-jwt', scope: 'operator'})
+    expect(parseJson(result.stdout)).toEqual(expect.objectContaining({
+      data: {
+        mode: 'env-or-keychain-jwt',
+        network: 'devnet',
+        persisted: true,
+        scope: 'operator',
+        source: 'keychain',
       },
       success: true,
     }))
@@ -399,9 +454,94 @@ describe('core command surface', () => {
     expect(parseJson(result.stdout)).toEqual(expect.objectContaining({
       data: {
         networks: expect.arrayContaining([
-          {authenticated: true, mode: 'env-or-keychain-jwt', network: 'devnet', source: 'memory'},
-          {authenticated: true, mode: 'bearer-token', network: 'local', source: 'generated'},
+          {
+            app: {authenticated: true, envVarName: 'CANTONCTL_JWT_DEVNET', mode: 'env-or-keychain-jwt', source: 'memory'},
+            network: 'devnet',
+            operator: {
+              authenticated: true,
+              envVarName: 'CANTONCTL_OPERATOR_TOKEN_DEVNET',
+              mode: 'env-or-keychain-jwt',
+              required: true,
+              source: 'memory',
+            },
+          },
+          {
+            app: {authenticated: true, envVarName: 'CANTONCTL_JWT_LOCAL', mode: 'bearer-token', source: 'generated'},
+            network: 'local',
+            operator: {
+              authenticated: true,
+              envVarName: 'CANTONCTL_OPERATOR_TOKEN_LOCAL',
+              mode: 'bearer-token',
+              required: false,
+              source: 'generated',
+            },
+          },
         ]),
+      },
+      success: true,
+    }))
+  })
+
+  it('marks scan-only remote profiles as not requiring operator credentials in auth status', async () => {
+    class TestAuthStatus extends AuthStatus {
+      protected override async createBackend() {
+        return {backend: createBackend(), isKeychain: true}
+      }
+
+      protected override createCredentialStore() {
+        return {
+          list: vi.fn(),
+          remove: vi.fn(),
+          resolve: vi.fn(),
+          resolveRecord: vi.fn().mockResolvedValue(null),
+          retrieve: vi.fn(),
+          retrieveRecord: vi.fn(),
+          store: vi.fn(),
+        }
+      }
+
+      protected override async loadCommandConfig(): Promise<CantonctlConfig> {
+        return {
+          networks: {
+            observer: {auth: 'jwt', type: 'remote', url: 'https://ledger.example.com'},
+          },
+          networkProfiles: {
+            observer: 'observer',
+          },
+          profiles: {
+            observer: {
+              experimental: false,
+              kind: 'remote-sv-network',
+              name: 'observer',
+              services: {
+                auth: {issuer: 'https://login.example.com', kind: 'oidc'},
+                scan: {url: 'https://scan.example.com'},
+              },
+            },
+          },
+          project: {name: 'demo', 'sdk-version': '3.4.11'},
+          version: 1,
+        }
+      }
+    }
+
+    const result = await captureOutput(() => TestAuthStatus.run(['--json'], {root: CLI_ROOT}))
+    expect(result.error).toBeUndefined()
+    expect(parseJson(result.stdout)).toEqual(expect.objectContaining({
+      data: {
+        networks: [
+          {
+            app: {authenticated: false, envVarName: 'CANTONCTL_JWT_OBSERVER', mode: 'env-or-keychain-jwt', source: null},
+            network: 'observer',
+            operator: {
+              authenticated: false,
+              envVarName: 'CANTONCTL_OPERATOR_TOKEN_OBSERVER',
+              mode: 'env-or-keychain-jwt',
+              required: false,
+              source: null,
+            },
+          },
+        ],
       },
       success: true,
     }))
@@ -429,7 +569,7 @@ describe('core command surface', () => {
     const result = await captureOutput(() => TestAuthLogout.run(['devnet', '--json'], {root: CLI_ROOT}))
     expect(result.error).toBeUndefined()
     expect(parseJson(result.stdout)).toEqual({
-      data: {network: 'devnet', removed: true},
+      data: {network: 'devnet', removed: true, scope: 'app'},
       success: true,
     })
   })
@@ -1134,7 +1274,7 @@ describe('core command surface', () => {
     const fallback = await captureOutput(() => HumanFallbackLogin.run(['local'], {root: CLI_ROOT}))
     const fallbackOutput = `${fallback.stdout}${fallback.stderr ?? ''}`
     expect(fallback.error).toBeUndefined()
-    expect(fallbackOutput).toContain('Resolved auth profile for local: bearer-token')
+    expect(fallbackOutput).toContain('Resolved auth profile for local: bearer-token (app)')
     expect(fallbackOutput).toContain('Bearer-token mode uses an explicitly supplied token')
     expect(fallbackOutput).toContain('Using local fallback auth for local')
 
@@ -1147,12 +1287,13 @@ describe('core command surface', () => {
 
     const prompted = await captureOutput(() => PromptedLogin.run(['devnet', '--json'], {root: CLI_ROOT}))
     expect(prompted.error).toBeUndefined()
-    expect(store).toHaveBeenCalledWith('devnet', 'jwt-token', {mode: 'env-or-keychain-jwt'})
+    expect(store).toHaveBeenCalledWith('devnet', 'jwt-token', {mode: 'env-or-keychain-jwt', scope: 'app'})
     expect(parseJson(prompted.stdout)).toEqual(expect.objectContaining({
       data: {
         mode: 'env-or-keychain-jwt',
         network: 'devnet',
         persisted: true,
+        scope: 'app',
         source: 'keychain',
       },
       success: true,
@@ -1174,7 +1315,7 @@ describe('core command surface', () => {
       success: true,
       warnings: expect.arrayContaining([
         expect.stringContaining('Operator override: using auth mode "bearer-token"'),
-        expect.stringContaining('Bearer-token mode uses an explicitly supplied token'),
+        expect.stringContaining('Bearer-token mode requires explicit remote credentials'),
       ]),
     }))
 
@@ -1190,6 +1331,7 @@ describe('core command surface', () => {
         mode: 'env-or-keychain-jwt',
         network: 'devnet',
         persisted: true,
+        scope: 'app',
         source: 'keychain',
       },
       success: true,
@@ -1260,7 +1402,7 @@ describe('core command surface', () => {
 
     const result = await captureOutput(() => HumanLogout.run(['devnet'], {root: CLI_ROOT}))
     expect(result.error).toBeUndefined()
-    expect(result.stdout).toContain('No credentials stored for devnet')
+    expect(result.stdout).toContain('No app credentials stored for devnet')
 
     const handled = await captureOutput(() => HandledLogoutError.run(['devnet', '--json'], {root: CLI_ROOT}))
     expect(handled.error).toBeDefined()
@@ -1468,7 +1610,17 @@ describe('core command surface', () => {
     expect(parseJson(keychain.stdout)).toEqual(expect.objectContaining({
       data: {
         networks: expect.arrayContaining([
-          {authenticated: true, mode: 'bearer-token', network: 'local', source: 'env'},
+          {
+            app: {authenticated: true, envVarName: 'CANTONCTL_JWT_LOCAL', mode: 'bearer-token', source: 'env'},
+            network: 'local',
+            operator: {
+              authenticated: true,
+              envVarName: 'CANTONCTL_OPERATOR_TOKEN_LOCAL',
+              mode: 'bearer-token',
+              required: false,
+              source: 'env',
+            },
+          },
         ]),
       },
       success: true,

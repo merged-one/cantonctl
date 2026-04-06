@@ -27,6 +27,8 @@ cantonctl status [flags]
 - `inventory.services[]`: service-level endpoint, health, runtime provenance, warnings, and drift hints
 - `inventory.capabilities[]`: capability-level ownership, management eligibility, stability, warnings, and drift hints
 - `inventory.drift[]`: aggregated profile-versus-runtime mismatches
+- `auth.app`: app credential source, env var name, and whether explicit app material is required
+- `auth.operator`: operator credential source, env var name, requirement status, description, and prerequisites when runtime auth resolution succeeds
 
 Runtime provenance distinguishes configured endpoints from discovered runtime data:
 
@@ -34,7 +36,7 @@ Runtime provenance distinguishes configured endpoints from discovered runtime da
 - `generated-topology` for `dev --net` runtime discovery
 - `remote-discovery` for remote network targets
 
-Human output stays concise. The richer inventory details live in JSON.
+Human output stays concise. When `status` can resolve a profile runtime, it also prints whether operator auth is required and where that operator material was resolved from.
 
 ## Flags
 
@@ -49,3 +51,4 @@ Human output stays concise. The richer inventory details live in JSON.
 - [Compatibility](compatibility.md)
 - [Auth](auth.md)
 - [Preflight](preflight.md)
+- [Deploy](deploy.md)

@@ -42,10 +42,20 @@ export default class AuthStatus extends Command {
       const storedSource = isKeychain ? 'keychain' : 'memory'
 
       const statuses: Array<{
-        authenticated: boolean
-        mode: string
         network: string
-        source: string | null
+        app: {
+          authenticated: boolean
+          envVarName: string
+          mode: string
+          source: string | null
+        }
+        operator: {
+          authenticated: boolean
+          envVarName: string
+          mode: string
+          required: boolean
+          source: string | null
+        }
         warnings: string[]
       }> = []
       const globalWarnings: string[] = []
@@ -53,9 +63,10 @@ export default class AuthStatus extends Command {
       for (const network of networks) {
         const authProfile = resolveAuthProfile({config, network})
         const networkConfig = config.networks?.[network]
-        const resolved = await store.resolveRecord(network)
+        const appCredential = await store.resolveRecord(network)
+        const operatorCredential = await store.resolveRecord(network, {scope: 'operator'})
         const warnings = [...authProfile.warnings]
-        const storedMode = resolved?.source === 'stored' ? resolved.mode : undefined
+        const storedMode = appCredential?.source === 'stored' ? appCredential.mode : undefined
         const mode = storedMode ?? authProfile.mode
         if (storedMode && storedMode !== authProfile.mode) {
           warnings.unshift(
@@ -64,16 +75,34 @@ export default class AuthStatus extends Command {
         }
 
         const usesLocalFallback = authProfileUsesLocalFallback(authProfile, networkConfig)
-        const authenticated = usesLocalFallback ? true : !!resolved
-        const source = usesLocalFallback
-          ? (resolved ? (resolved.source === 'env' ? 'env' : storedSource) : 'generated')
-          : (resolved ? (resolved.source === 'env' ? 'env' : storedSource) : null)
+        const appAuthenticated = usesLocalFallback ? true : !!appCredential
+        const appSource = usesLocalFallback
+          ? (appCredential ? (appCredential.source === 'env' ? 'env' : storedSource) : 'generated')
+          : (appCredential ? (appCredential.source === 'env' ? 'env' : storedSource) : null)
+        const operatorAuthenticated = authProfile.operator.localFallbackAllowed
+          ? true
+          : authProfile.operator.required
+            ? !!operatorCredential
+            : !!operatorCredential
+        const operatorSource = authProfile.operator.localFallbackAllowed
+          ? (operatorCredential ? (operatorCredential.source === 'env' ? 'env' : storedSource) : 'generated')
+          : (operatorCredential ? (operatorCredential.source === 'env' ? 'env' : storedSource) : null)
 
         statuses.push({
-          authenticated,
-          mode,
           network,
-          source,
+          app: {
+            authenticated: appAuthenticated,
+            envVarName: authProfile.app.envVarName,
+            mode,
+            source: appSource,
+          },
+          operator: {
+            authenticated: operatorAuthenticated,
+            envVarName: authProfile.operator.envVarName,
+            mode: authProfile.mode,
+            required: authProfile.operator.required,
+            source: operatorSource,
+          },
           warnings,
         })
         globalWarnings.push(...warnings.map(warning => `${network}: ${warning}`))
@@ -84,12 +113,13 @@ export default class AuthStatus extends Command {
           out.info('No networks configured in cantonctl.yaml')
         } else {
           out.table(
-            ['Network', 'Mode', 'Authenticated', 'Source'],
+            ['Network', 'App', 'App Source', 'Operator', 'Operator Source'],
             statuses.map(s => [
               s.network,
-              s.mode,
-              s.authenticated ? 'yes' : 'no',
-              s.source ?? '-',
+              s.app.authenticated ? s.app.mode : `${s.app.mode} (missing)`,
+              s.app.source ?? '-',
+              s.operator.required ? (s.operator.authenticated ? `${s.operator.mode}` : `${s.operator.mode} (missing)`) : 'not required',
+              s.operator.source ?? '-',
             ]),
           )
           for (const status of statuses) {

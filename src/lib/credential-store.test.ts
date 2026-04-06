@@ -66,6 +66,17 @@ describe('CredentialStore', () => {
         expect.stringContaining('"mode":"env-or-keychain-jwt"'),
       )
     })
+
+    it('stores operator credentials in a separate keychain account', async () => {
+      const {backend, store} = createTestStore()
+      await store.store('devnet', 'operator-token', {mode: 'bearer-token', scope: 'operator'})
+
+      expect(backend.setPassword).toHaveBeenCalledWith(
+        'cantonctl',
+        'operator:devnet',
+        expect.stringContaining('"scope":"operator"'),
+      )
+    })
   })
 
   describe('retrieve()', () => {
@@ -115,6 +126,23 @@ describe('CredentialStore', () => {
 
       await expect(store.retrieveRecord('devnet')).resolves.toEqual({
         token: '{"mode":"bearer-token"}',
+      })
+    })
+
+    it('parses explicit app-scope envelopes from storage', async () => {
+      const {backend, store} = createTestStore()
+      backend.getPassword.mockResolvedValue(JSON.stringify({
+        mode: 'env-or-keychain-jwt',
+        scope: 'app',
+        storedAt: '2026-04-02T20:00:00.000Z',
+        token: 'stored-token',
+      }))
+
+      await expect(store.retrieveRecord('devnet')).resolves.toEqual({
+        mode: 'env-or-keychain-jwt',
+        scope: 'app',
+        storedAt: '2026-04-02T20:00:00.000Z',
+        token: 'stored-token',
       })
     })
   })
@@ -177,6 +205,7 @@ describe('CredentialStore', () => {
       })
 
       await expect(store.resolveRecord('devnet')).resolves.toEqual({
+        scope: 'app',
         source: 'env',
         token: 'env-token',
       })
@@ -192,9 +221,35 @@ describe('CredentialStore', () => {
 
       await expect(store.resolveRecord('devnet')).resolves.toEqual({
         mode: 'env-or-keychain-jwt',
+        scope: 'app',
         source: 'stored',
         storedAt: '2026-04-02T20:00:00.000Z',
         token: 'stored-token',
+      })
+    })
+
+    it('uses operator env vars and storage slots when the operator scope is requested', async () => {
+      const {backend, store} = createTestStore({
+        env: {CANTONCTL_OPERATOR_TOKEN_DEVNET: 'operator-env-token'},
+      })
+
+      await expect(store.resolveRecord('devnet', {scope: 'operator'})).resolves.toEqual({
+        source: 'env',
+        scope: 'operator',
+        token: 'operator-env-token',
+      })
+
+      backend.getPassword.mockResolvedValue(JSON.stringify({
+        mode: 'bearer-token',
+        scope: 'operator',
+        storedAt: '2026-04-02T20:00:00.000Z',
+        token: 'stored-operator-token',
+      }))
+      await expect(store.retrieveRecord('devnet', {scope: 'operator'})).resolves.toEqual({
+        mode: 'bearer-token',
+        scope: 'operator',
+        storedAt: '2026-04-02T20:00:00.000Z',
+        token: 'stored-operator-token',
       })
     })
   })
@@ -233,6 +288,18 @@ describe('CredentialStore', () => {
       const {store} = createTestStore()
       const networks = await store.list()
       expect(networks).toEqual([])
+    })
+
+    it('filters operator accounts and can list all parsed account forms', async () => {
+      const {backend, store} = createTestStore()
+      backend.findCredentials.mockResolvedValue([
+        {account: 'app:legacy', password: 'token1'},
+        {account: 'operator:ops', password: 'token2'},
+        {account: 'sandbox', password: 'token3'},
+      ])
+
+      await expect(store.list({scope: 'operator'})).resolves.toEqual(['ops'])
+      await expect(store.list({scope: 'all'})).resolves.toEqual(['legacy', 'ops', 'sandbox'])
     })
   })
 })

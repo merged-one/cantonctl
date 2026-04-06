@@ -28,18 +28,39 @@ function createRuntime(options: {
   authEnvVarName: string
   credentialSource: 'env' | 'fallback' | 'missing' | 'stored'
   networkName: string
+  operatorCredentialSource?: 'env' | 'fallback' | 'missing' | 'stored'
   profile: Awaited<ReturnType<ProfileRuntimeResolver['resolve']>>['profile']
   token?: string
+  operatorToken?: string
 }): Awaited<ReturnType<ProfileRuntimeResolver['resolve']>> {
   const capabilities = summarizeProfileCapabilities(options.profile)
   const services = summarizeProfileServices(options.profile)
   return {
     auth: {
+      app: {
+        description: '',
+        envVarName: options.authEnvVarName,
+        keychainAccount: options.networkName,
+        localFallbackAllowed: options.credentialSource === 'fallback',
+        prerequisites: [],
+        required: options.credentialSource !== 'fallback',
+        scope: 'app',
+      },
+      authKind: options.profile.services.auth?.kind ?? 'unspecified',
       description: '',
       envVarName: options.authEnvVarName,
       experimental: false,
       mode: 'env-or-keychain-jwt',
       network: options.networkName,
+      operator: {
+        description: '',
+        envVarName: options.authEnvVarName.replace(/^CANTONCTL_JWT_/, 'CANTONCTL_OPERATOR_TOKEN_'),
+        keychainAccount: `operator:${options.networkName}`,
+        localFallbackAllowed: options.credentialSource === 'fallback',
+        prerequisites: [],
+        required: options.profile.kind === 'remote-validator' || options.profile.kind === 'remote-sv-network',
+        scope: 'operator',
+      },
       requiresExplicitExperimental: false,
       warnings: [],
     },
@@ -59,6 +80,7 @@ function createRuntime(options: {
     credential: {
       mode: 'env-or-keychain-jwt',
       network: options.networkName,
+      scope: 'app',
       source: options.credentialSource,
       token: options.token,
     },
@@ -71,6 +93,13 @@ function createRuntime(options: {
       },
     }),
     networkName: options.networkName,
+    operatorCredential: {
+      mode: 'env-or-keychain-jwt',
+      network: options.networkName,
+      scope: 'operator',
+      source: options.operatorCredentialSource ?? options.credentialSource,
+      token: options.operatorToken ?? options.token,
+    },
     profile: options.profile,
     profileContext: {
       experimental: options.profile.experimental,

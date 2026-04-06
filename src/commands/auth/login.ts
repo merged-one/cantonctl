@@ -9,6 +9,7 @@ import {Args, Command, Flags} from '@oclif/core'
 import * as readline from 'node:readline'
 
 import {
+  AUTH_CREDENTIAL_SCOPES,
   AUTH_PROFILE_MODES,
   authProfileUsesLocalFallback,
   isAuthProfileMode,
@@ -33,6 +34,7 @@ export default class AuthLogin extends Command {
 
   static override examples = [
     '<%= config.bin %> auth login devnet',
+    '<%= config.bin %> auth login devnet --scope operator',
     '<%= config.bin %> auth login testnet --token eyJhbGci...',
     '<%= config.bin %> auth login localnet',
     '<%= config.bin %> auth login devnet --json',
@@ -46,6 +48,11 @@ export default class AuthLogin extends Command {
     mode: Flags.string({
       description: 'Override the inferred auth profile mode for this login',
       options: [...AUTH_PROFILE_MODES],
+    }),
+    scope: Flags.string({
+      default: 'app',
+      description: 'Credential scope to store',
+      options: [...AUTH_CREDENTIAL_SCOPES],
     }),
     token: Flags.string({
       char: 't',
@@ -66,11 +73,14 @@ export default class AuthLogin extends Command {
         requestedMode: flags.mode && isAuthProfileMode(flags.mode) ? flags.mode : undefined,
       })
       const network = config.networks![networkName]!
-      const usesLocalFallback = authProfileUsesLocalFallback(authProfile, network)
+      const scope = flags.scope as 'app' | 'operator'
+      const usesLocalFallback = scope === 'operator'
+        ? authProfile.operator.localFallbackAllowed
+        : authProfileUsesLocalFallback(authProfile, network)
 
       const warnings = [...authProfile.warnings]
       if (!flags.json) {
-        out.info(`Resolved auth profile for ${networkName}: ${authProfile.mode}`)
+        out.info(`Resolved auth profile for ${networkName}: ${authProfile.mode} (${scope})`)
         for (const warning of authProfile.warnings) {
           out.warn(warning)
         }
@@ -84,18 +94,18 @@ export default class AuthLogin extends Command {
 
       if (!token && !usesLocalFallback) {
         throw new CantonctlError(ErrorCode.DEPLOY_AUTH_FAILED, {
-          context: {mode: authProfile.mode, network: networkName},
-          suggestion: 'No token provided. Pass --token or enter it when prompted.',
+          context: {mode: authProfile.mode, network: networkName, scope},
+          suggestion: `No token provided. Pass --token or enter it when prompted for the ${scope} scope.`,
         })
       }
 
       if (!token && usesLocalFallback) {
         const message =
           `No credential persisted for ${networkName}. ` +
-          'This profile relies on the built-in local fallback token path.'
+          `The ${scope} scope relies on the built-in local fallback token path.`
         if (!flags.json) {
           out.info(message)
-          out.success(`Using local fallback auth for ${networkName}`)
+          out.success(`Using local fallback auth for ${networkName} (${scope})`)
         }
 
         out.result({
@@ -103,6 +113,7 @@ export default class AuthLogin extends Command {
             mode: authProfile.mode,
             network: networkName,
             persisted: false,
+            scope,
             source: 'generated',
           },
           success: true,
@@ -135,14 +146,15 @@ export default class AuthLogin extends Command {
       }
 
       const store = this.createCredentialStore(backend)
-      await store.store(networkName, token!, {mode: authProfile.mode})
+      await store.store(networkName, token!, {mode: authProfile.mode, scope})
 
-      out.success(`Authenticated with ${networkName}`)
+      out.success(`Authenticated with ${networkName} (${scope})`)
       out.result({
         data: {
           mode: authProfile.mode,
           network: networkName,
           persisted: true,
+          scope,
           source,
         },
         success: true,

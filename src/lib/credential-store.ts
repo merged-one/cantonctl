@@ -21,7 +21,14 @@
  * ```
  */
 
-import {type AuthProfileMode, isAuthProfileMode, toJwtEnvVarName} from './auth-profile.js'
+import {
+  type AuthCredentialScope,
+  type AuthProfileMode,
+  isAuthProfileMode,
+  toCredentialAccountName,
+  toJwtEnvVarName,
+  toOperatorTokenEnvVarName,
+} from './auth-profile.js'
 
 // ---------------------------------------------------------------------------
 // Types
@@ -50,6 +57,7 @@ export interface CredentialStoreDeps {
 
 export interface StoredCredential {
   mode?: AuthProfileMode
+  scope?: AuthCredentialScope
   storedAt?: string
   token: string
 }
@@ -60,19 +68,19 @@ export interface ResolvedCredential extends StoredCredential {
 
 export interface CredentialStore {
   /** Store a JWT token for a network in the keychain. */
-  store(network: string, token: string, options?: {mode?: AuthProfileMode}): Promise<void>
+  store(network: string, token: string, options?: {mode?: AuthProfileMode; scope?: AuthCredentialScope}): Promise<void>
   /** Retrieve a JWT token from the keychain (ignoring env vars). */
-  retrieve(network: string): Promise<string | null>
+  retrieve(network: string, options?: {scope?: AuthCredentialScope}): Promise<string | null>
   /** Retrieve the stored credential envelope from the keychain. */
-  retrieveRecord(network: string): Promise<StoredCredential | null>
+  retrieveRecord(network: string, options?: {scope?: AuthCredentialScope}): Promise<StoredCredential | null>
   /** Resolve a JWT token: env var > keychain > null. */
-  resolve(network: string): Promise<string | null>
+  resolve(network: string, options?: {scope?: AuthCredentialScope}): Promise<string | null>
   /** Resolve the credential envelope: env var > keychain > null. */
-  resolveRecord(network: string): Promise<ResolvedCredential | null>
+  resolveRecord(network: string, options?: {scope?: AuthCredentialScope}): Promise<ResolvedCredential | null>
   /** Remove stored credentials for a network. */
-  remove(network: string): Promise<boolean>
+  remove(network: string, options?: {scope?: AuthCredentialScope}): Promise<boolean>
   /** List network names that have stored credentials. */
-  list(): Promise<string[]>
+  list(options?: {scope?: AuthCredentialScope | 'all'}): Promise<string[]>
 }
 
 // ---------------------------------------------------------------------------
@@ -87,6 +95,7 @@ function parseStoredCredential(raw: string | null): StoredCredential | null {
     if (typeof parsed.token === 'string') {
       return {
         mode: typeof parsed.mode === 'string' && isAuthProfileMode(parsed.mode) ? parsed.mode : undefined,
+        scope: parsed.scope === 'operator' ? 'operator' : parsed.scope === 'app' ? 'app' : undefined,
         storedAt: typeof parsed.storedAt === 'string' ? parsed.storedAt : undefined,
         token: parsed.token,
       }
@@ -101,9 +110,30 @@ function parseStoredCredential(raw: string | null): StoredCredential | null {
 function serializeStoredCredential(record: StoredCredential): string {
   return JSON.stringify({
     mode: record.mode,
+    scope: record.scope,
     storedAt: record.storedAt,
     token: record.token,
   })
+}
+
+function resolveCredentialScope(options?: {scope?: AuthCredentialScope}): AuthCredentialScope {
+  return options?.scope ?? 'app'
+}
+
+function resolveCredentialEnvVarName(network: string, scope: AuthCredentialScope): string {
+  return scope === 'operator' ? toOperatorTokenEnvVarName(network) : toJwtEnvVarName(network)
+}
+
+function parseCredentialAccount(account: string): {network: string; scope: AuthCredentialScope | 'unknown'} {
+  if (account.startsWith('operator:')) {
+    return {network: account.slice('operator:'.length), scope: 'operator'}
+  }
+
+  if (account.startsWith('app:')) {
+    return {network: account.slice('app:'.length), scope: 'app'}
+  }
+
+  return {network: account, scope: 'app'}
 }
 
 // ---------------------------------------------------------------------------
@@ -116,63 +146,82 @@ function serializeStoredCredential(record: StoredCredential): string {
 export function createCredentialStore(deps: CredentialStoreDeps): CredentialStore {
   const {backend, env = process.env} = deps
 
-  const retrieveRecord = async (network: string): Promise<StoredCredential | null> =>
-    parseStoredCredential(await backend.getPassword(SERVICE_NAME, network))
+  const retrieveRecord = async (network: string, options?: {scope?: AuthCredentialScope}): Promise<StoredCredential | null> => {
+    const scope = resolveCredentialScope(options)
+    return parseStoredCredential(await backend.getPassword(SERVICE_NAME, toCredentialAccountName(network, scope)))
+  }
 
-  const resolveRecord = async (network: string): Promise<ResolvedCredential | null> => {
-    const envVar = toJwtEnvVarName(network)
+  const resolveRecord = async (network: string, options?: {scope?: AuthCredentialScope}): Promise<ResolvedCredential | null> => {
+    const scope = resolveCredentialScope(options)
+    const envVar = resolveCredentialEnvVarName(network, scope)
     const envValue = env[envVar]
     if (envValue) {
       return {
         source: 'env',
+        scope,
         token: envValue,
       }
     }
 
-    const stored = await retrieveRecord(network)
+    const stored = await retrieveRecord(network, {scope})
     if (!stored) return null
     return {
       ...stored,
       source: 'stored',
+      scope,
     }
   }
 
   return {
-    async store(network: string, token: string, options: {mode?: AuthProfileMode} = {}): Promise<void> {
+    async store(
+      network: string,
+      token: string,
+      options: {mode?: AuthProfileMode; scope?: AuthCredentialScope} = {},
+    ): Promise<void> {
+      const scope = resolveCredentialScope(options)
       await backend.setPassword(
         SERVICE_NAME,
-        network,
+        toCredentialAccountName(network, scope),
         serializeStoredCredential({
           mode: options.mode,
+          scope,
           storedAt: new Date().toISOString(),
           token,
         }),
       )
     },
 
-    async retrieve(network: string): Promise<string | null> {
-      return (await retrieveRecord(network))?.token ?? null
+    async retrieve(network: string, options?: {scope?: AuthCredentialScope}): Promise<string | null> {
+      return (await retrieveRecord(network, options))?.token ?? null
     },
 
-    async retrieveRecord(network: string): Promise<StoredCredential | null> {
-      return retrieveRecord(network)
+    async retrieveRecord(network: string, options?: {scope?: AuthCredentialScope}): Promise<StoredCredential | null> {
+      return retrieveRecord(network, options)
     },
 
-    async resolve(network: string): Promise<string | null> {
-      return (await resolveRecord(network))?.token ?? null
+    async resolve(network: string, options?: {scope?: AuthCredentialScope}): Promise<string | null> {
+      return (await resolveRecord(network, options))?.token ?? null
     },
 
-    async resolveRecord(network: string): Promise<ResolvedCredential | null> {
-      return resolveRecord(network)
+    async resolveRecord(network: string, options?: {scope?: AuthCredentialScope}): Promise<ResolvedCredential | null> {
+      return resolveRecord(network, options)
     },
 
-    async remove(network: string): Promise<boolean> {
-      return backend.deletePassword(SERVICE_NAME, network)
+    async remove(network: string, options?: {scope?: AuthCredentialScope}): Promise<boolean> {
+      return backend.deletePassword(SERVICE_NAME, toCredentialAccountName(network, resolveCredentialScope(options)))
     },
 
-    async list(): Promise<string[]> {
+    async list(options?: {scope?: AuthCredentialScope | 'all'}): Promise<string[]> {
       const creds = await backend.findCredentials(SERVICE_NAME)
-      return creds.map(c => c.account)
+      return creds.flatMap(({account}) => {
+        const parsed = parseCredentialAccount(account)
+        if (options?.scope === 'all') {
+          return [parsed.network]
+        }
+
+        const scope = options?.scope ?? 'app'
+        return parsed.scope === scope ? [parsed.network] : []
+      })
     },
   }
 }

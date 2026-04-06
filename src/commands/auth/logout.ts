@@ -7,6 +7,7 @@
 
 import {Args, Command, Flags} from '@oclif/core'
 
+import {AUTH_CREDENTIAL_SCOPES} from '../../lib/auth-profile.js'
 import {createCredentialStore, type CredentialStore, type KeychainBackend} from '../../lib/credential-store.js'
 import {CantonctlError} from '../../lib/errors.js'
 import {createBackendWithFallback} from '../../lib/keytar-backend.js'
@@ -24,6 +25,7 @@ export default class AuthLogout extends Command {
 
   static override examples = [
     '<%= config.bin %> auth logout devnet',
+    '<%= config.bin %> auth logout devnet --scope operator',
     '<%= config.bin %> auth logout testnet --json',
   ]
 
@@ -31,6 +33,11 @@ export default class AuthLogout extends Command {
     json: Flags.boolean({
       default: false,
       description: 'Output result as JSON',
+    }),
+    scope: Flags.string({
+      default: 'app',
+      description: 'Credential scope to remove',
+      options: [...AUTH_CREDENTIAL_SCOPES],
     }),
   }
 
@@ -41,16 +48,16 @@ export default class AuthLogout extends Command {
     try {
       const {backend} = await this.createBackend()
       const store = this.createCredentialStore(backend)
-      const removed = await store.remove(args.network)
+      const removed = await store.remove(args.network, {scope: flags.scope as 'app' | 'operator'})
 
       if (removed) {
-        out.success(`Removed credentials for ${args.network}`)
+        out.success(`Removed ${flags.scope} credentials for ${args.network}`)
       } else {
-        out.info(`No credentials stored for ${args.network}`)
+        out.info(`No ${flags.scope} credentials stored for ${args.network}`)
       }
 
       out.result({
-        data: {network: args.network, removed},
+        data: {network: args.network, removed, scope: flags.scope},
         success: true,
       })
     } catch (err) {

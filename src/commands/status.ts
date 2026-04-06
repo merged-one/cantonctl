@@ -17,6 +17,11 @@ import {createSandboxToken} from '../lib/jwt.js'
 import {createLedgerClient, type LedgerClient} from '../lib/ledger-client.js'
 import {createOutput} from '../lib/output.js'
 import {
+  createProfileRuntimeResolver,
+  type ProfileRuntimeResolver,
+  type ResolvedProfileRuntime,
+} from '../lib/profile-runtime.js'
+import {
   createMultiNodeStatusInventory,
   createProfileStatusInventory,
   createSingleNodeStatusInventory,
@@ -119,6 +124,10 @@ export default class Status extends Command {
     return loadConfig()
   }
 
+  protected createProfileRuntimeResolver(): ProfileRuntimeResolver {
+    return createProfileRuntimeResolver()
+  }
+
   private async showMultiNodeStatus(
     flags: StatusFlags,
     config: CantonctlConfig,
@@ -147,17 +156,25 @@ export default class Status extends Command {
     }
 
     const allHealthy = nodeStatuses.every(node => node.healthy)
+    const inspection = this.tryInspectNetworkProfile(config, flags.network)
     const inventory = createMultiNodeStatusInventory({
-      inspection: this.tryInspectNetworkProfile(config, flags.network),
+      inspection,
       networkName: flags.network,
       nodes: nodeStatuses as RuntimeInventoryNode[],
     })
     const services = inventory.services
+    const runtime = inspection ? await this.tryResolveStatusRuntime(config, inspection.profile.name) : undefined
 
     if (!flags.json) {
       out.log('Mode: multi-node (Docker topology)')
       if (inventory.profile) {
         out.log(`Profile: ${inventory.profile.name} (${inventory.profile.kind})`)
+      }
+      if (runtime) {
+        out.log(
+          `Operator auth: ${runtime.auth.operator.required ? 'required' : 'not required'} ` +
+          `(${runtime.operatorCredential.source})`,
+        )
       }
       out.log('')
       out.table(
@@ -179,6 +196,7 @@ export default class Status extends Command {
     if (flags.json) {
       out.result({
         data: {
+          auth: runtime ? this.summarizeRuntimeAuth(runtime) : undefined,
           capabilities: inventory.capabilities,
           drift: inventory.drift,
           inventory,
@@ -236,10 +254,15 @@ export default class Status extends Command {
         },
     })
     const services = inventory.services
+    const runtime = await this.resolveStatusRuntime(config, profile.name)
 
     if (!flags.json) {
       out.log(`Profile: ${profile.name}`)
       out.log(`Kind: ${profile.kind}`)
+      out.log(
+        `Operator auth: ${runtime.auth.operator.required ? 'required' : 'not required'} ` +
+        `(${runtime.operatorCredential.source})`,
+      )
       if (profile.experimental) out.warn('Profile is marked experimental')
       out.log('')
       this.printServiceTable(out, services)
@@ -262,6 +285,7 @@ export default class Status extends Command {
     if (flags.json) {
       out.result({
         data: {
+          auth: this.summarizeRuntimeAuth(runtime),
           capabilities: inventory.capabilities,
           drift: inventory.drift,
           healthy,
@@ -293,8 +317,9 @@ export default class Status extends Command {
     const token = await this.createStatusToken(config)
     const ledgerStatus = await this.getLedgerStatus(baseUrl, token)
 
+    const inspection = this.tryInspectNetworkProfile(config, networkName)
     const inventory = createSingleNodeStatusInventory({
-      inspection: this.tryInspectNetworkProfile(config, networkName),
+      inspection,
       ledger: {
         endpoint: baseUrl,
         healthy: ledgerStatus.healthy,
@@ -305,12 +330,19 @@ export default class Status extends Command {
       networkType: network.type,
     })
     const services = inventory.services
+    const runtime = inspection ? await this.tryResolveStatusRuntime(config, inspection.profile.name) : undefined
 
     if (!flags.json) {
       out.log(`Network: ${networkName}`)
       out.log(`Mode: ${network.type}`)
       if (inventory.profile) {
         out.log(`Profile: ${inventory.profile.name} (${inventory.profile.kind})`)
+      }
+      if (runtime) {
+        out.log(
+          `Operator auth: ${runtime.auth.operator.required ? 'required' : 'not required'} ` +
+          `(${runtime.operatorCredential.source})`,
+        )
       }
       out.log('')
 
@@ -339,6 +371,7 @@ export default class Status extends Command {
     if (flags.json) {
       out.result({
         data: {
+          auth: runtime ? this.summarizeRuntimeAuth(runtime) : undefined,
           capabilities: inventory.capabilities,
           drift: inventory.drift,
           healthy: ledgerStatus.healthy,
@@ -410,6 +443,58 @@ export default class Status extends Command {
     if (!ledger.url) return true
     return /^https?:\/\/localhost(?::\d+)?/i.test(ledger.url)
       || /^https?:\/\/127\.0\.0\.1(?::\d+)?/i.test(ledger.url)
+  }
+
+  private summarizeRuntimeAuth(runtime: ResolvedProfileRuntime): {
+    app: {credentialSource: string; envVarName: string; required: boolean}
+    credentialSource: string
+    envVarName: string
+    mode: string
+    operator: {
+      credentialSource: string
+      description: string
+      envVarName: string
+      prerequisites: string[]
+      required: boolean
+    }
+    warnings: string[]
+  } {
+    return {
+      app: {
+        credentialSource: runtime.credential.source,
+        envVarName: runtime.auth.app.envVarName,
+        required: runtime.auth.app.required,
+      },
+      credentialSource: runtime.credential.source,
+      envVarName: runtime.auth.envVarName,
+      mode: runtime.auth.mode,
+      operator: {
+        credentialSource: runtime.operatorCredential.source,
+        description: runtime.auth.operator.description,
+        envVarName: runtime.auth.operator.envVarName,
+        prerequisites: runtime.auth.operator.prerequisites,
+        required: runtime.auth.operator.required,
+      },
+      warnings: runtime.auth.warnings,
+    }
+  }
+
+  private async resolveStatusRuntime(
+    config: CantonctlConfig,
+    profileName: string,
+  ): Promise<ResolvedProfileRuntime> {
+    return this.createProfileRuntimeResolver().resolve({config, profileName})
+  }
+
+  private async tryResolveStatusRuntime(
+    config: CantonctlConfig,
+    profileName: string,
+  ): Promise<ResolvedProfileRuntime | undefined> {
+    try {
+      return await this.resolveStatusRuntime(config, profileName)
+    } catch {
+      return undefined
+    }
   }
 
   private tryInspectNetworkProfile(

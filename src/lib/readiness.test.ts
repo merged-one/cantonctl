@@ -24,14 +24,35 @@ function createConfig(profileName: string, services: Record<string, unknown>): C
   }
 }
 
-function createPreflightReport(overrides: Partial<PreflightReport> = {}): PreflightReport {
-  return {
-    auth: {
-      credentialSource: 'stored',
+type PreflightReportOverrides = Omit<Partial<PreflightReport>, 'auth'> & {
+  auth?: Partial<PreflightReport['auth']> & {
+    app?: Partial<PreflightReport['auth']['app']>
+    operator?: Partial<PreflightReport['auth']['operator']>
+  }
+}
+
+function createPreflightReport(overrides: PreflightReportOverrides = {}): PreflightReport {
+  const auth = {
+    app: {
+      credentialSource: 'stored' as const,
       envVarName: 'CANTONCTL_JWT_SPLICE_DEVNET',
-      mode: 'env-or-keychain-jwt',
-      warnings: [],
+      required: true,
     },
+    credentialSource: 'stored' as const,
+    envVarName: 'CANTONCTL_JWT_SPLICE_DEVNET',
+    mode: 'env-or-keychain-jwt' as const,
+    operator: {
+      credentialSource: 'stored' as const,
+      description: 'Use an explicitly supplied operator JWT for remote control-plane mutations.',
+      envVarName: 'CANTONCTL_OPERATOR_TOKEN_SPLICE_DEVNET',
+      prerequisites: ['Store an operator credential explicitly before remote mutations.'],
+      required: true,
+    },
+    warnings: [] as string[],
+  }
+
+  const report: PreflightReport = {
+    auth: auth,
     checks: [
       {category: 'profile', detail: 'Resolved profile.', name: 'Profile resolution', status: 'pass'},
       {category: 'scan', detail: 'Reachable.', endpoint: 'https://scan.example.com', name: 'Scan reachability', status: 'pass'},
@@ -53,7 +74,19 @@ function createPreflightReport(overrides: Partial<PreflightReport> = {}): Prefli
       name: 'splice-devnet',
     },
     success: true,
+  }
+
+  return {
+    ...report,
     ...overrides,
+    auth: overrides.auth
+      ? {
+        ...auth,
+        ...overrides.auth,
+        app: {...auth.app, ...overrides.auth.app},
+        operator: {...auth.operator, ...overrides.auth.operator},
+      }
+      : auth,
   }
 }
 

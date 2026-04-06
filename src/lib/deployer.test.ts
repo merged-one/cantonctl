@@ -80,8 +80,10 @@ function createRuntime(options: {
   authMode: string
   credentialSource: ResolvedProfileRuntime['credential']['source']
   networkName: string
+  operatorCredentialSource?: ResolvedProfileRuntime['operatorCredential']['source']
   profile: ResolvedProfileRuntime['profile']
   token?: string
+  operatorToken?: string
 }): ResolvedProfileRuntime {
   const services = Object.entries(options.profile.services)
     .filter(([, value]) => value !== undefined)
@@ -101,11 +103,30 @@ function createRuntime(options: {
 
   return {
     auth: {
+      app: {
+        description: '',
+        envVarName: options.authEnvVarName,
+        keychainAccount: options.networkName,
+        localFallbackAllowed: options.credentialSource === 'fallback',
+        prerequisites: [],
+        required: options.credentialSource !== 'fallback',
+        scope: 'app',
+      },
+      authKind: options.profile.services.auth?.kind ?? 'unspecified',
       description: '',
       envVarName: options.authEnvVarName,
       experimental: false,
       mode: options.authMode as never,
       network: options.networkName,
+      operator: {
+        description: '',
+        envVarName: options.authEnvVarName.replace(/^CANTONCTL_JWT_/, 'CANTONCTL_OPERATOR_TOKEN_'),
+        keychainAccount: `operator:${options.networkName}`,
+        localFallbackAllowed: options.credentialSource === 'fallback',
+        prerequisites: [],
+        required: options.profile.kind === 'remote-validator' || options.profile.kind === 'remote-sv-network',
+        scope: 'operator',
+      },
       requiresExplicitExperimental: false,
       warnings: [],
     },
@@ -125,6 +146,7 @@ function createRuntime(options: {
     credential: {
       mode: options.authMode as never,
       network: options.networkName,
+      scope: 'app',
       source: options.credentialSource,
       token: options.token,
     },
@@ -137,6 +159,13 @@ function createRuntime(options: {
       },
     }),
     networkName: options.networkName,
+    operatorCredential: {
+      mode: options.authMode as never,
+      network: options.networkName,
+      scope: 'operator',
+      source: options.operatorCredentialSource ?? options.credentialSource,
+      token: options.operatorToken ?? options.token,
+    },
     profile: options.profile,
     profileContext: {
       experimental: options.profile.experimental,
@@ -175,6 +204,10 @@ function createRuntimeResolverFactory(runtime: ResolvedProfileRuntime) {
         credential: {
           ...runtime.credential,
           token: runtime.credential.token ?? await deps?.createFallbackToken?.(config),
+        },
+        operatorCredential: {
+          ...runtime.operatorCredential,
+          token: runtime.operatorCredential.token ?? await deps?.createFallbackToken?.(config),
         },
       }
     }),
@@ -234,8 +267,9 @@ describe('Deployer', () => {
         source: 'auto-detected',
       },
       auth: {
-        envVarName: 'CANTONCTL_JWT_SANDBOX',
+        envVarName: 'CANTONCTL_OPERATOR_TOKEN_SANDBOX',
         mode: 'bearer-token',
+        scope: 'operator',
         source: 'fallback',
       },
       fanOut: {

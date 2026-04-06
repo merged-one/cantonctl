@@ -87,13 +87,14 @@ function createConfig(): CantonctlConfig {
 }
 
 function createPreflightReport(success: boolean) {
+  const auth = createResolvedAuthSummary({
+    credentialSource: 'stored',
+    operatorCredentialSource: success ? 'stored' : 'missing',
+    warnings: success ? ['Keychain token is near expiry.'] : [],
+  })
+
   return {
-    auth: {
-      credentialSource: 'stored',
-      envVarName: 'CANTONCTL_JWT_SPLICE_DEVNET',
-      mode: 'env-or-keychain-jwt',
-      warnings: success ? ['Keychain token is near expiry.'] : [],
-    },
+    auth,
     checks: [
       {
         category: 'scan',
@@ -256,12 +257,11 @@ function createLocalnetWorkspace() {
 
 function createReadinessReport(success: boolean) {
   return {
-    auth: {
+    auth: createResolvedAuthSummary({
       credentialSource: success ? 'stored' : 'missing',
-      envVarName: 'CANTONCTL_JWT_SPLICE_DEVNET',
-      mode: 'env-or-keychain-jwt',
+      operatorCredentialSource: success ? 'stored' : 'missing',
       warnings: success ? ['Refresh auth before promotion.'] : [],
-    },
+    }),
     canary: {
       checks: [
         {
@@ -291,6 +291,31 @@ function createReadinessReport(success: boolean) {
       warned: success ? 1 : 0,
     },
   } as const
+}
+
+function createResolvedAuthSummary(options: {
+  credentialSource: 'env' | 'fallback' | 'missing' | 'stored'
+  operatorCredentialSource?: 'env' | 'fallback' | 'missing' | 'stored'
+  warnings?: string[]
+}) {
+  return {
+    app: {
+      credentialSource: options.credentialSource,
+      envVarName: 'CANTONCTL_JWT_SPLICE_DEVNET',
+      required: options.credentialSource !== 'fallback',
+    },
+    credentialSource: options.credentialSource,
+    envVarName: 'CANTONCTL_JWT_SPLICE_DEVNET',
+    mode: 'env-or-keychain-jwt' as const,
+    operator: {
+      credentialSource: options.operatorCredentialSource ?? options.credentialSource,
+      description: 'Use an explicitly supplied operator JWT for remote control-plane mutations.',
+      envVarName: 'CANTONCTL_OPERATOR_TOKEN_SPLICE_DEVNET',
+      prerequisites: ['Store an operator credential explicitly before remote mutations.'],
+      required: true,
+    },
+    warnings: options.warnings ?? [],
+  }
 }
 
 function parseJson(stdout: string): Record<string, unknown> {
@@ -946,12 +971,11 @@ describe('companion command surface', () => {
     }
 
     renderReadinessReport(failureWriter as never, {
-      auth: {
+      auth: createResolvedAuthSummary({
         credentialSource: 'stored',
-        envVarName: 'CANTONCTL_JWT_SPLICE_DEVNET',
-        mode: 'env-or-keychain-jwt',
+        operatorCredentialSource: 'missing',
         warnings: ['Auth warning'],
-      },
+      }),
       canary: {
         checks: [{
           detail: 'Request failed.',
@@ -965,12 +989,11 @@ describe('companion command surface', () => {
       },
       compatibility: {failed: 1, passed: 1, warned: 0},
       preflight: {
-        auth: {
+        auth: createResolvedAuthSummary({
           credentialSource: 'stored',
-          envVarName: 'CANTONCTL_JWT_SPLICE_DEVNET',
-          mode: 'env-or-keychain-jwt',
+          operatorCredentialSource: 'missing',
           warnings: ['Auth warning'],
-        },
+        }),
         checks: [{
           category: 'auth',
           detail: 'Credential missing.',
@@ -1020,12 +1043,10 @@ describe('companion command surface', () => {
     }
 
     renderReadinessReport(successWriter as never, {
-      auth: {
+      auth: createResolvedAuthSummary({
         credentialSource: 'stored',
-        envVarName: 'CANTONCTL_JWT_SPLICE_DEVNET',
-        mode: 'env-or-keychain-jwt',
-        warnings: [],
-      },
+        operatorCredentialSource: 'stored',
+      }),
       canary: {
         checks: [],
         selectedSuites: [],
@@ -1034,12 +1055,10 @@ describe('companion command surface', () => {
       },
       compatibility: {failed: 0, passed: 2, warned: 0},
       preflight: {
-        auth: {
+        auth: createResolvedAuthSummary({
           credentialSource: 'stored',
-          envVarName: 'CANTONCTL_JWT_SPLICE_DEVNET',
-          mode: 'env-or-keychain-jwt',
-          warnings: [],
-        },
+          operatorCredentialSource: 'stored',
+        }),
         checks: [{
           category: 'profile',
           detail: 'Resolved.',
