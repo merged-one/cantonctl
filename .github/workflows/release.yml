@@ -128,6 +128,10 @@ jobs:
 
       - name: Build playground UI
         run: |
+          if [ ! -d playground ]; then
+            echo "No playground workspace present; skipping UI bundle."
+            exit 0
+          fi
           cd playground
           npm ci
           npm run build
