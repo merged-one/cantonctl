@@ -10,9 +10,13 @@ import {afterAll, beforeAll, describe, expect, it} from 'vitest'
 import PromoteDiff from '../../src/commands/promote/diff.js'
 import ResetChecklist from '../../src/commands/reset/checklist.js'
 import UpgradeCheck from '../../src/commands/upgrade/check.js'
+import {createCanaryRunner} from '../../src/lib/canary/run.js'
 import {createInMemoryBackend} from '../../src/lib/credential-store.js'
+import {createPreflightChecks} from '../../src/lib/preflight/checks.js'
 import {createProfileRuntimeResolver} from '../../src/lib/profile-runtime.js'
+import {createReadinessRunner} from '../../src/lib/readiness.js'
 import {createLifecycleDiff} from '../../src/lib/lifecycle/diff.js'
+import {createPromotionRunner} from '../../src/lib/promotion-rollout.js'
 import {createUpgradeChecker} from '../../src/lib/lifecycle/upgrade.js'
 
 const CLI_ROOT = process.cwd()
@@ -78,11 +82,26 @@ async function runInProject(
 
 function createPromoteHarness(env: Record<string, string | undefined>): typeof PromoteDiff {
   return class TestPromoteDiff extends PromoteDiff {
-    protected override createLifecycleDiff() {
-      return createLifecycleDiff({
-        createProfileRuntimeResolver: () => createProfileRuntimeResolver({
-          createBackendWithFallback: async () => ({backend: createInMemoryBackend(), isKeychain: false}),
-          env,
+    protected override createPromotionRunner() {
+      const createResolver = () => createProfileRuntimeResolver({
+        createBackendWithFallback: async () => ({backend: createInMemoryBackend(), isKeychain: false}),
+        env,
+      })
+
+      return createPromotionRunner({
+        createLifecycleDiff: () => createLifecycleDiff({
+          createProfileRuntimeResolver: createResolver,
+        }),
+        createPreflightRunner: () => createPreflightChecks({
+          createProfileRuntimeResolver: createResolver,
+        }),
+        createReadinessRunner: () => createReadinessRunner({
+          createCanaryRunner: () => createCanaryRunner({
+            createProfileRuntimeResolver: createResolver,
+          }),
+          createPreflightRunner: () => createPreflightChecks({
+            createProfileRuntimeResolver: createResolver,
+          }),
         }),
       })
     }
@@ -111,6 +130,10 @@ describe('lifecycle E2E', () => {
     scanServer = await startServer((pathname) => {
       if (pathname === '/v0/dso') {
         return {body: {migration_id: 7, previous_migration_id: 6, sv_party_id: 'sv::1'}}
+      }
+
+      if (pathname === '/v0/ans-entries') {
+        return {body: {entries: []}}
       }
 
       return {body: {error: 'not found'}, status: 404}
@@ -203,6 +226,69 @@ profiles:
       advisories: expect.arrayContaining([
         expect.objectContaining({code: 'migration-policy', severity: 'info'}),
       ]),
+    }))
+  })
+
+  it('executes live promotion gates in dry-run mode', async () => {
+    const CommandHarness = createPromoteHarness({
+      CANTONCTL_JWT_SPLICE_DEVNET: 'devnet-token',
+      CANTONCTL_JWT_SPLICE_TESTNET: 'testnet-token',
+      CANTONCTL_OPERATOR_TOKEN_SPLICE_TESTNET: 'testnet-operator-token',
+    })
+    const result = await runInProject(projectDir, CommandHarness, [
+      '--from',
+      'splice-devnet',
+      '--to',
+      'splice-testnet',
+      '--dry-run',
+      '--json',
+    ])
+    expect(result.error).toBeUndefined()
+
+    const json = parseJson(result.stdout)
+    expect(json.success).toBe(true)
+    expect(json.data).toEqual(expect.objectContaining({
+      preflight: expect.objectContaining({success: true}),
+      readiness: expect.objectContaining({success: true}),
+      rollout: expect.objectContaining({
+        mode: 'dry-run',
+        steps: expect.arrayContaining([
+          expect.objectContaining({status: 'completed', title: 'Inspect target preflight gate'}),
+          expect.objectContaining({status: 'completed', title: 'Inspect target readiness gate'}),
+          expect.objectContaining({status: 'manual', title: 'Review manual promotion runbook'}),
+          expect.objectContaining({status: 'completed', title: 'Validate rollout gate'}),
+        ]),
+      }),
+    }))
+  })
+
+  it('executes apply-mode promotion gates with the same rollout contract', async () => {
+    const CommandHarness = createPromoteHarness({
+      CANTONCTL_JWT_SPLICE_DEVNET: 'devnet-token',
+      CANTONCTL_JWT_SPLICE_TESTNET: 'testnet-token',
+      CANTONCTL_OPERATOR_TOKEN_SPLICE_TESTNET: 'testnet-operator-token',
+    })
+    const result = await runInProject(projectDir, CommandHarness, [
+      '--from',
+      'splice-devnet',
+      '--to',
+      'splice-testnet',
+      '--apply',
+      '--json',
+    ])
+    expect(result.error).toBeUndefined()
+
+    const json = parseJson(result.stdout)
+    expect(json.success).toBe(true)
+    expect(json.data).toEqual(expect.objectContaining({
+      rollout: expect.objectContaining({
+        mode: 'apply',
+        success: true,
+        steps: expect.arrayContaining([
+          expect.objectContaining({status: 'manual', title: 'Review manual promotion runbook'}),
+          expect.objectContaining({status: 'completed', title: 'Validate rollout gate'}),
+        ]),
+      }),
     }))
   })
 

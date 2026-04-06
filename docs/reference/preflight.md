@@ -1,8 +1,8 @@
 # `cantonctl preflight`
 
-`preflight` is the current read-only readiness check for remote profiles.
+`preflight` is the read-only rollout gate for a resolved profile.
 
-In `0.3.5`, the command remains advisory. It helps teams validate profile coherence, app and operator auth material, stable/public service reachability, and network-specific reminders before they promote or deploy.
+In `0.3.5`, the command still does not mutate anything. It validates profile coherence, app and operator auth material, stable/public service reachability, and network-specific reminders before deploy or promotion, and it emits the same step/blocker model used by the control-plane rollout surfaces.
 
 ## Intended Usage
 
@@ -20,6 +20,7 @@ cantonctl preflight --profile splice-devnet --json
 - network reminders for DevNet, TestNet, and MainNet
 - drift classification over auth, service reachability, and pinned upstream-line expectations
 - reconcile planning that emits companion-supported actions only when a supported control surface exists
+- a read-only `rollout` contract with step, blocker, warning, and runbook metadata
 
 ## Auth Contract
 
@@ -37,18 +38,20 @@ In JSON mode, the `auth` block includes nested `app` and `operator` entries with
 
 `preflight --json` also includes:
 
+- `inventory`: the schema-versioned runtime inventory for the resolved profile
 - `drift[]`: classified control-plane drift with severity, boundary owner, and supported-vs-manual resolution
 - `reconcile.supportedActions[]`: companion-supported next steps such as `cantonctl auth login`
 - `reconcile.runbook[]`: explicit upstream or operator runbooks when the current surface is read-only, operator-only, or otherwise outside the companion mutation boundary
+- `rollout`: a static read-only control-plane operation result in `dry-run` mode so later workflows can reuse the same structure
 
 ## Explicit Non-Goals
 
 - no infrastructure mutation
 - no validator-internal automation in the default path
 - no wallet-internal automation in the default path
-- no rollout apply behavior today
+- no remote apply behavior from `preflight` itself
 
-`preflight` may recommend a supported companion action, but it does not execute it.
+`preflight` may recommend a supported companion action, but it does not execute it. `promote diff --dry-run` and `promote diff --apply` reuse this gate; the `preflight` command remains read-only.
 
 ## Related
 

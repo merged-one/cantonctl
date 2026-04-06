@@ -7,6 +7,8 @@ import * as preflightChecksModule from './preflight/checks.js'
 import type {PreflightRunner} from './preflight/checks.js'
 import type {PreflightReport} from './preflight/output.js'
 import {createReadinessRunner} from './readiness.js'
+import {createPreflightRolloutContract} from './rollout-contract.js'
+import type {RuntimeInventory} from './runtime-inventory.js'
 
 function createConfig(profileName: string, services: Record<string, unknown>): CantonctlConfig {
   return {
@@ -31,6 +33,32 @@ type PreflightReportOverrides = Omit<Partial<PreflightReport>, 'auth'> & {
   }
 }
 
+function createInventory(profile: PreflightReport['profile']): RuntimeInventory {
+  return {
+    capabilities: [],
+    drift: [],
+    mode: 'profile',
+    profile: {
+      experimental: profile.experimental,
+      kind: profile.kind,
+      name: profile.name,
+      resolvedFrom: 'argument',
+    },
+    schemaVersion: 1,
+    services: [],
+    summary: {
+      configuredCapabilities: 0,
+      configuredServices: 0,
+      driftedCapabilities: 0,
+      healthyCapabilities: 0,
+      healthyServices: 0,
+      unreachableCapabilities: 0,
+      unreachableServices: 0,
+      warnedCapabilities: 0,
+    },
+  }
+}
+
 function createPreflightReport(overrides: PreflightReportOverrides = {}): PreflightReport {
   const auth = {
     app: {
@@ -51,7 +79,7 @@ function createPreflightReport(overrides: PreflightReportOverrides = {}): Prefli
     warnings: [] as string[],
   }
 
-  const report: PreflightReport = {
+  const report: Omit<PreflightReport, 'inventory' | 'rollout'> = {
     auth: auth,
     checks: [
       {category: 'profile', detail: 'Resolved profile.', name: 'Profile resolution', status: 'pass'},
@@ -82,6 +110,21 @@ function createPreflightReport(overrides: PreflightReportOverrides = {}): Prefli
     success: true,
   }
 
+  const profile = overrides.profile
+    ? {...report.profile, ...overrides.profile}
+    : report.profile
+  const checks = overrides.checks ?? report.checks
+  const reconcile = overrides.reconcile
+    ? {
+      ...report.reconcile,
+      ...overrides.reconcile,
+      summary: {
+        ...report.reconcile.summary,
+        ...overrides.reconcile.summary,
+      },
+    }
+    : report.reconcile
+
   return {
     ...report,
     ...overrides,
@@ -93,6 +136,15 @@ function createPreflightReport(overrides: PreflightReportOverrides = {}): Prefli
         operator: {...auth.operator, ...overrides.auth.operator},
       }
       : auth,
+    checks,
+    inventory: overrides.inventory ?? createInventory(profile),
+    profile,
+    reconcile,
+    rollout: overrides.rollout ?? createPreflightRolloutContract({
+      checks,
+      profile,
+      reconcile,
+    }),
   }
 }
 

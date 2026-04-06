@@ -3,6 +3,7 @@ import {resolveProfile} from './compat.js'
 import type {CantonctlConfig} from './config.js'
 import {type PreflightRunner, createPreflightChecks} from './preflight/checks.js'
 import type {PreflightReport} from './preflight/output.js'
+import {createReadinessRolloutContract} from './rollout-contract.js'
 
 export interface ReadinessReport {
   auth: PreflightReport['auth']
@@ -14,9 +15,11 @@ export interface ReadinessReport {
   }
   compatibility: PreflightReport['compatibility']
   drift: PreflightReport['drift']
+  inventory: PreflightReport['inventory']
   preflight: PreflightReport
   profile: PreflightReport['profile']
   reconcile: PreflightReport['reconcile']
+  rollout: PreflightReport['rollout']
   success: boolean
   summary: {
     failed: number
@@ -78,9 +81,17 @@ export function createReadinessRunner(
         },
         compatibility: preflight.compatibility,
         drift: preflight.drift,
+        inventory: preflight.inventory,
         preflight,
         profile: preflight.profile,
         reconcile: preflight.reconcile,
+        rollout: createReadinessRolloutContract({
+          canary: {checks: canary.checks},
+          preflight: {
+            profile: preflight.profile,
+            rollout: preflight.rollout,
+          },
+        }),
         success: preflight.success && canary.success,
         summary,
       }

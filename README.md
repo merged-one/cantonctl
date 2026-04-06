@@ -98,7 +98,7 @@ The default progression is:
 
 The profile model is the product backbone. It is what lets `cantonctl` own the project-local control plane around official runtimes without re-owning the official runtime stack itself.
 
-Today that control-plane boundary is implemented as profile resolution, LocalNet wrapping, readiness/diagnostics/discovery, the profile-first deploy rollout command, and the current lifecycle helper flows. It still does not replace upstream runtime implementations or cloud provisioning.
+Today that control-plane boundary is implemented as profile resolution, LocalNet wrapping, readiness/diagnostics/discovery, the profile-first deploy rollout command, promotion rollout planning/live gates, and the current lifecycle helper flows. It still does not replace upstream runtime implementations or cloud provisioning.
 
 ## Commands
 
@@ -118,9 +118,9 @@ Today that control-plane boundary is implemented as profile resolution, LocalNet
 | `cantonctl profiles import-localnet` | Materialize a `splice-localnet` profile from an official LocalNet workspace | LocalNet-to-profile bootstrap |
 | `cantonctl compat check [profile]` | Check stable/public compatibility for a profile | Stable/public guardrail |
 | `cantonctl operator validator licenses --profile <name>` | List approved validator licenses through the explicit operator Scan surface | Explicit operator namespace |
-| `cantonctl preflight --profile <name>` | Run the current read-only remote readiness checks | Current inspection step in rollout flows |
-| `cantonctl readiness --profile <name>` | Run the composed readiness gate for a resolved profile | JSON-first control-plane gate |
-| `cantonctl promote diff --from <a> --to <b>` | Compare source and target profiles before promotion | Current read-only lifecycle diff |
+| `cantonctl preflight --profile <name>` | Run the read-only profile rollout gate | Current inspection step in rollout flows |
+| `cantonctl readiness --profile <name>` | Run the composed readiness gate for a resolved profile | JSON-first gate reused by promotion workflows |
+| `cantonctl promote diff --from <a> --to <b>` | Plan or execute a profile-to-profile promotion rollout | Promotion plan, dry-run, and apply surface |
 | `cantonctl upgrade check --profile <name>` | Run the current read-only upgrade checks | Current lifecycle inspection step |
 | `cantonctl reset checklist --network <tier>` | Show reset-sensitive runbook reminders | Current manual reset helper |
 | `cantonctl auth login/logout/status` | Manage profile-oriented app and operator credentials | Remote environment helper |
@@ -209,9 +209,11 @@ Examples:
 - [docs/release-notes/community-fit.md](docs/release-notes/community-fit.md)
 - [docs/release-notes/net-mode.md](docs/release-notes/net-mode.md)
 - [docs/release-notes/profile-first-deploy.md](docs/release-notes/profile-first-deploy.md)
+- [docs/release-notes/promotion-rollout.md](docs/release-notes/promotion-rollout.md)
 - [docs/release-notes/operator-auth.md](docs/release-notes/operator-auth.md)
 - [docs/migration/stable-public-splice-support.md](docs/migration/stable-public-splice-support.md)
 - [docs/migration/community-fit.md](docs/migration/community-fit.md)
 - [docs/migration/net-mode.md](docs/migration/net-mode.md)
 - [docs/migration/profile-first-deploy.md](docs/migration/profile-first-deploy.md)
+- [docs/migration/promotion-rollout.md](docs/migration/promotion-rollout.md)
 - [docs/migration/operator-auth.md](docs/migration/operator-auth.md)
