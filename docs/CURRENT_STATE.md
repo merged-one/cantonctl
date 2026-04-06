@@ -6,7 +6,7 @@ Do not use it for aspirational planning. Use it to describe what exists on the c
 
 ## Product Position
 
-`cantonctl` is the Splice-aware orchestration companion for the official Canton stack.
+`cantonctl` is the Splice-aware orchestration companion and current project-local control-plane layer for the official Canton stack.
 
 It complements:
 
@@ -16,6 +16,8 @@ It complements:
 - the official dApp SDK, dApp API, Wallet Gateway, and Wallet SDK for wallet-connected integrations
 
 It wraps, not replaces, those tools.
+
+The accepted product boundary is the project-local control plane over official runtimes. On the current branch, the implemented surface is the foundation of that boundary rather than the full day-2 feature set.
 
 ## Supported Local Runtime Modes
 
@@ -40,6 +42,25 @@ The repo supports these profile kinds:
 Profiles remain the canonical way to describe environments and remote services.
 
 Local topology design for `dev --net` is separate and lives under the top-level `topologies:` config section.
+
+## Current Control-Plane Coverage
+
+The current branch implements these control-plane surfaces:
+
+- profile resolution, validation, and auth handling
+- `dev`, `dev --net`, topology preview/export, and LocalNet wrapping
+- status, compatibility, preflight, readiness, canaries, and diagnostics
+- discovery, profile import, and SDK config export
+- current deploy, promotion, upgrade, and reset helper flows
+
+These boundaries still hold on the current branch:
+
+- DPM remains the canonical build, test, codegen, sandbox, and Studio launcher
+- Daml Studio remains the canonical IDE
+- Quickstart remains the official reference app and LocalNet launch path
+- the official dApp SDK, Wallet Gateway, and Wallet SDK remain the canonical wallet-connected integration stack
+- validator, Scan, wallet, and OIDC implementations remain owned by upstream artifacts
+- cloud/Kubernetes/Terraform/Helm provisioning remains out of scope
 
 ## Stable/Public Vs Experimental
 

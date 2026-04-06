@@ -4,7 +4,7 @@ import {createResetHelper, type ResetHelper} from '../../lib/lifecycle/reset.js'
 import {createOutput} from '../../lib/output.js'
 
 export default class ResetChecklist extends Command {
-  static override description = 'Show advisory reset checklist items for a network tier'
+  static override description = 'Show the current reset checklist items for a network tier'
 
   static override examples = [
     '<%= config.bin %> reset checklist --network devnet',
@@ -50,4 +50,3 @@ export default class ResetChecklist extends Command {
     return createResetHelper()
   }
 }
-

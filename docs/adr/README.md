@@ -54,3 +54,4 @@ Links to evidence, research, related ADRs.
 | [0014](0014-dev-full-multi-node-topology.md) | Multi-node dev topology via Docker | Accepted | 2026-03-31 |
 | [0016](0016-splice-aware-companion-positioning.md) | Position `cantonctl` as a Splice-aware orchestration companion | Accepted | 2026-04-04 |
 | [0017](0017-local-topology-builder-and-net-mode.md) | Local topology builder with `dev --net` and manifest-first workbench integration | Accepted | 2026-04-04 |
+| [0018](0018-project-local-control-plane.md) | Own the project-local control plane over the official runtime stack | Accepted | 2026-04-05 |

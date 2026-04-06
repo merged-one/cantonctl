@@ -14,7 +14,7 @@ Use these sources in this order:
 
 ## Documentation Update Order
 
-Whenever a feature lands:
+Whenever functionality is added or trimmed:
 
 1. Update the command or library implementation
 2. Update or add unit and E2E coverage
@@ -49,12 +49,15 @@ Active work tracking belongs in GitHub issues, PRs, and PR checklists.
 - Prefer fixing stale docs by deleting or replacing them, not by appending caveats to obsolete plans.
 - Avoid duplicating the same policy in multiple docs when one canonical source already exists.
 - If a doc drifts from the current command/help surface, update the reference doc and help text first, then update higher-level docs.
+- Do not describe a command's current read-only or advisory behavior as a permanent product non-goal unless an accepted ADR makes that boundary explicit.
 - If a change affects local runtime behavior, verify it against both native tests and the Docker parity path when applicable.
 
 ## Naming And Positioning Rules
 
 - Use "Splice-aware orchestration companion" in top-level positioning.
+- Use "project-local control plane" or "day-2 operations layer" when describing `cantonctl`'s ownership boundary.
 - Use "wrap, do not replace" when describing ecosystem fit.
 - Use `CIP-0103`, not `CIP-103`.
 - Use `--net`, not `--full`, for the local multi-node Canton runtime.
 - Keep stable/public and experimental boundaries explicit.
+- Do not use control-plane language to imply ownership of Quickstart, validator/wallet/scan implementations, or cloud/Kubernetes/Terraform/Helm provisioning.

@@ -4,9 +4,9 @@
   <img alt="cantonctl — Splice-aware orchestration companion for the official Canton stack" src="assets/banner.svg">
 </picture>
 
-`cantonctl` is the Splice-aware orchestration companion for teams moving the same project across sandbox, official LocalNet, and validator-backed Canton/Splice environments.
+`cantonctl` is the Splice-aware orchestration companion and project-local control plane for teams moving the same project across sandbox, official LocalNet, and validator-backed Canton/Splice environments.
 
-It exists because the official tools are authoritative inside their own lanes, but no single official tool owns the project-local orchestration layer across local and remote environments. It wraps, not replaces, DPM, Daml Studio, Quickstart, and the official SDKs.
+It exists because the official tools are authoritative inside their own lanes, but no single official tool owns the project-local orchestration and day-2 operations layer across local and remote environments. It wraps, not replaces, DPM, Daml Studio, Quickstart, and the official SDKs.
 
 ## What It Is Not
 
@@ -94,7 +94,9 @@ The default progression is:
 3. `splice-localnet` when you want to wrap the official Splice LocalNet workspace
 4. `remote-validator` or `remote-sv-network` for validator-backed or SV/Scan-backed remote environments
 
-The profile model is the product backbone. It is what lets `cantonctl` stay focused on orchestration instead of re-owning the official runtime stack.
+The profile model is the product backbone. It is what lets `cantonctl` own the project-local control plane around official runtimes without re-owning the official runtime stack itself.
+
+On the current branch, that control-plane boundary is implemented as profile resolution, LocalNet wrapping, readiness/diagnostics/discovery, and current deploy and lifecycle helper flows. It still does not replace upstream runtime implementations or cloud provisioning.
 
 ## Commands
 
@@ -106,18 +108,18 @@ The profile model is the product backbone. It is what lets `cantonctl` stay focu
 | `cantonctl localnet up/down/status` | Wrap the official Splice LocalNet workspace | Quickstart-aware wrapper |
 | `cantonctl build` | Compile Daml and optionally codegen bindings | Delegates to DPM/daml |
 | `cantonctl test` | Run Daml Script tests with structured output | Delegates to DPM/daml |
-| `cantonctl deploy <network>` | Run the advisory DAR deploy wrapper for ledger-capable targets | Not a validator control plane |
+| `cantonctl deploy <network>` | Run the current DAR deploy flow for ledger-capable targets | Current ledger rollout step inside the control-plane boundary |
 | `cantonctl status` | Show profile-aware service health and ledger status | Support and diagnostics surface |
 | `cantonctl diagnostics bundle` | Export a support-friendly diagnostics bundle | Support and diagnostics surface |
-| `cantonctl profiles list/show/validate` | Inspect and validate resolved runtime profiles | Core control-plane wedge |
+| `cantonctl profiles list/show/validate` | Inspect and validate resolved runtime profiles | Current control-plane foundation |
 | `cantonctl profiles import-scan` | Synthesize profile blocks from stable/public scan discovery | Stable/public discovery helper |
 | `cantonctl profiles import-localnet` | Materialize a `splice-localnet` profile from an official LocalNet workspace | LocalNet-to-profile bootstrap |
 | `cantonctl compat check [profile]` | Check stable/public compatibility for a profile | Stable/public guardrail |
-| `cantonctl preflight --profile <name>` | Run read-only remote readiness checks | Promotion-friendly readiness gate |
+| `cantonctl preflight --profile <name>` | Run the current read-only remote readiness checks | Current inspection step in rollout flows |
 | `cantonctl readiness --profile <name>` | Run the composed readiness gate for a resolved profile | JSON-first control-plane gate |
-| `cantonctl promote diff --from <a> --to <b>` | Compare source and target profiles before promotion | Advisory lifecycle helper |
-| `cantonctl upgrade check --profile <name>` | Run advisory upgrade checks | Advisory lifecycle helper |
-| `cantonctl reset checklist --network <tier>` | Show reset-sensitive runbook reminders | Advisory lifecycle helper |
+| `cantonctl promote diff --from <a> --to <b>` | Compare source and target profiles before promotion | Current read-only lifecycle diff |
+| `cantonctl upgrade check --profile <name>` | Run the current read-only upgrade checks | Current lifecycle inspection step |
+| `cantonctl reset checklist --network <tier>` | Show reset-sensitive runbook reminders | Current manual reset helper |
 | `cantonctl auth login/logout/status` | Manage profile-oriented auth and stored bearer credentials | Remote environment helper |
 | `cantonctl discover network --scan-url <url>` | Discover network metadata from stable/public scan surfaces | Stable/public discovery helper |
 | `cantonctl canary stable-public` | Run stable/public remote canaries | CI and promotion gate |

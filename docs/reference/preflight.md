@@ -1,8 +1,8 @@
 # `cantonctl preflight`
 
-`preflight` is the read-only readiness check for remote profiles.
+`preflight` is the current read-only readiness check for remote profiles.
 
-The command is intentionally advisory. It should help teams validate profile coherence, auth mode, stable/public service reachability, and network-specific reminders before they promote or deploy.
+On this branch the command remains advisory. It helps teams validate profile coherence, auth mode, stable/public service reachability, and network-specific reminders before they promote or deploy.
 
 ## Intended Usage
 
@@ -24,7 +24,7 @@ cantonctl preflight --profile splice-devnet --json
 - no infrastructure mutation
 - no validator-internal automation in the default path
 - no wallet-internal automation in the default path
-- no deployment control-plane behavior
+- no rollout apply behavior on this branch
 
 ## Related
 
