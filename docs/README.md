@@ -27,6 +27,7 @@ The docs policy is simple:
 - [Topology](reference/topology.md)
 - [Auth](reference/auth.md)
 - [Compatibility](reference/compatibility.md)
+- [Operator surfaces](reference/operator.md)
 - [Deploy](reference/deploy.md)
 - [Status](reference/status.md)
 - [LocalNet wrapper](reference/localnet.md)

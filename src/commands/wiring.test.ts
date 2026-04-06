@@ -14,6 +14,7 @@ import Init from './init.js'
 import LocalnetDown from './localnet/down.js'
 import LocalnetStatus from './localnet/status.js'
 import LocalnetUp from './localnet/up.js'
+import OperatorValidatorLicenses from './operator/validator/licenses.js'
 import ProfilesImportLocalnet from './profiles/import-localnet.js'
 import Readiness from './readiness.js'
 import Status from './status.js'
@@ -213,6 +214,12 @@ describe('command wiring', () => {
       }
     }
 
+    class OperatorValidatorLicensesHarness extends OperatorValidatorLicenses {
+      public expose() {
+        return this.createValidatorLicensesOperator()
+      }
+    }
+
     class StatusHarness extends Status {
       public expose() {
         return {
@@ -251,6 +258,9 @@ describe('command wiring', () => {
     })
     expect(new ReadinessHarness([], {} as never).expose()).toEqual(expect.objectContaining({
       run: expect.any(Function),
+    }))
+    expect(new OperatorValidatorLicensesHarness([], {} as never).expose()).toEqual(expect.objectContaining({
+      list: expect.any(Function),
     }))
     expect(new StatusHarness([], {} as never).expose()).toEqual(expect.objectContaining({
       client: expect.objectContaining({getVersion: expect.any(Function)}),

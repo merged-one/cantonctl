@@ -17,5 +17,5 @@ The upstream manifest is the source of truth for which surfaces are safe for def
 ## Companion Rule
 
 - Use stable/public and official SDK surfaces by default
-- Keep operator-only and internal flows behind explicit experimental commands or flags
+- Keep operator-only and approved admin flows behind the explicit `operator` namespace instead of widening the default stable/public commands
 - Do not widen mixed-scope specs beyond the manifest selector
