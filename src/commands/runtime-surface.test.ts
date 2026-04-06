@@ -1371,6 +1371,66 @@ describe('runtime command surface', () => {
     expect(Object.prototype.hasOwnProperty.call(json.data, 'profile')).toBe(false)
   })
 
+  it('classifies legacy docker networks as local control-plane fallbacks when no profile can be inferred', async () => {
+    class TestStatus extends Status {
+      protected override async detectProjectTopology(): Promise<GeneratedTopology | null> {
+        return null
+      }
+
+      protected override async loadProjectConfig(): Promise<CantonctlConfig> {
+        return {
+          networks: {
+            canton: {type: 'docker'},
+          },
+          project: {name: 'demo', 'sdk-version': '3.4.11'},
+          version: 1,
+        }
+      }
+
+      protected override createStatusLedgerClient(baseUrl?: string): LedgerClient {
+        expect(baseUrl).toBe('http://localhost:7575')
+        return {
+          allocateParty: vi.fn(),
+          getActiveContracts: vi.fn(),
+          getLedgerEnd: vi.fn(),
+          getParties: vi.fn(async () => ({partyDetails: []})),
+          getVersion: vi.fn(async () => ({version: '3.4.11'})),
+          submitAndWait: vi.fn(),
+          uploadDar: vi.fn(),
+        } as never
+      }
+
+      protected override async createStatusToken(): Promise<string> {
+        return 'token'
+      }
+    }
+
+    const result = await captureOutput(() => TestStatus.run(['--network', 'canton', '--json'], {root: CLI_ROOT}))
+    expect(result.error).toBeUndefined()
+
+    const json = parseJson(result.stdout)
+    expect(json.data).toEqual(expect.objectContaining({
+      healthy: true,
+      mode: 'single-node',
+      network: 'canton',
+      services: [
+        expect.objectContaining({
+          controlPlane: expect.objectContaining({
+            endpointProvenance: 'legacy-network',
+            lifecycleOwner: 'official-local-runtime',
+            managementClass: 'apply-capable',
+            mutationScope: 'managed',
+          }),
+          detail: 'json-api-port 7575',
+          endpoint: 'http://localhost:7575',
+          name: 'ledger',
+        }),
+      ],
+      version: '3.4.11',
+    }))
+    expect(Object.prototype.hasOwnProperty.call(json.data, 'profile')).toBe(false)
+  })
+
   it('covers status private helper branches directly', async () => {
     class HelperStatus extends Status {
       protected override createStatusLedgerClient(): LedgerClient {

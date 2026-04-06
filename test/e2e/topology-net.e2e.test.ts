@@ -29,7 +29,15 @@ import {createLedgerClient} from '../../src/lib/ledger-client.js'
 import type {OutputWriter} from '../../src/lib/output.js'
 import {findDarFile} from '../../src/lib/runtime-support.js'
 import {scaffoldProject} from '../../src/lib/scaffold.js'
-import {createE2eTempDir, CANTON_IMAGE, hasCantonImage, hasDocker, hasSdk, SDK_VERSION} from './helpers.js'
+import {
+  createE2eTempDir,
+  CANTON_IMAGE,
+  findAvailableE2ePortBase,
+  hasCantonImage,
+  hasDocker,
+  hasSdk,
+  SDK_VERSION,
+} from './helpers.js'
 
 const DOCKER_AVAILABLE = hasDocker()
 const IMAGE_AVAILABLE = DOCKER_AVAILABLE && hasCantonImage()
@@ -45,20 +53,21 @@ const describeIfReady = CAN_RUN ? describe : describe.skip
 const CLI_ROOT = process.cwd()
 const DOCKER_TEST_HOST = process.env.CANTONCTL_E2E_DOCKER_HOST ?? 'localhost'
 const TOPOLOGY_NAME = 'triad'
-const BASE_PORT = 21_000
 const PROJECT_NAME = 'topology-net-test'
 
-const PARTICIPANTS = [
-  {jsonApi: 21_013, name: 'alpha', parties: ['Alice']},
-  {jsonApi: 21_023, name: 'beta', parties: ['Bob']},
-  {jsonApi: 21_033, name: 'gamma', parties: ['Carol']},
-] as const
+function createParticipants(basePort: number) {
+  return [
+    {jsonApi: basePort + 13, name: 'alpha', parties: ['Alice']},
+    {jsonApi: basePort + 23, name: 'beta', parties: ['Bob']},
+    {jsonApi: basePort + 33, name: 'gamma', parties: ['Carol']},
+  ] as const
+}
 
 function withDockerHost(baseUrl: string): string {
   return baseUrl.replace('localhost', DOCKER_TEST_HOST)
 }
 
-function writeTopologyFixture(projectDir: string): void {
+function writeTopologyFixture(projectDir: string, basePort: number): void {
   scaffoldProject({dir: projectDir, name: PROJECT_NAME, template: 'splice-dapp-sdk'})
 
   const damlYamlPath = path.join(projectDir, 'daml.yaml')
@@ -84,7 +93,7 @@ function writeTopologyFixture(projectDir: string): void {
     'topologies:',
     `  ${TOPOLOGY_NAME}:`,
     '    kind: canton-multi',
-    `    base-port: ${BASE_PORT}`,
+    `    base-port: ${basePort}`,
     `    canton-image: ${CANTON_IMAGE}`,
     '    participants:',
     '      - name: alpha',
@@ -149,13 +158,17 @@ function createNamedTopologyFullServer(config: CantonctlConfig, deps: {
 }
 
 describeIfReady('topology net E2E: named and varied local topologies', () => {
+  let basePort: number
+  let participants: ReturnType<typeof createParticipants>
   let workDir: string
   let projectDir: string
 
-  beforeAll(() => {
+  beforeAll(async () => {
+    basePort = await findAvailableE2ePortBase(40, {start: 21_000, step: 100})
+    participants = createParticipants(basePort)
     workDir = createE2eTempDir('cantonctl-e2e-topology-net-')
     projectDir = path.join(workDir, PROJECT_NAME)
-    writeTopologyFixture(projectDir)
+    writeTopologyFixture(projectDir, basePort)
   }, 30_000)
 
   afterAll(() => {
@@ -187,7 +200,7 @@ describeIfReady('topology net E2E: named and varied local topologies', () => {
 
     expect(showJson.success).toBe(true)
     expect(showJson.data.metadata).toEqual(expect.objectContaining({
-      'base-port': BASE_PORT,
+      'base-port': basePort,
       mode: 'net',
       selectedBy: 'named',
       topologyName: TOPOLOGY_NAME,
@@ -212,7 +225,7 @@ describeIfReady('topology net E2E: named and varied local topologies', () => {
     }
 
     expect(exportedManifest.metadata).toEqual(expect.objectContaining({
-      'base-port': BASE_PORT,
+      'base-port': basePort,
       topologyName: TOPOLOGY_NAME,
     }))
     expect(exportedManifest.participants.map(participant => participant.name)).toEqual(['alpha', 'beta', 'gamma'])
@@ -258,7 +271,7 @@ describeIfReady('topology net E2E: named and varied local topologies', () => {
           }))
           expect(manifest.participants.map(participant => participant.name)).toEqual(['alpha', 'beta', 'gamma'])
 
-          for (const participant of PARTICIPANTS) {
+          for (const participant of participants) {
             const version = await fetchJsonWithRetry<{version: string}>(
               `http://${DOCKER_TEST_HOST}:${participant.jsonApi}/v2/version`,
             )

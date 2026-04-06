@@ -41,6 +41,15 @@ The repo supports these profile kinds:
 
 Profiles remain the canonical way to describe environments and remote services.
 
+Resolved profile inspection now includes manifest-backed control-plane metadata per service and capability:
+
+- lifecycle owner
+- management class
+- mutation scope
+- operator-surface flag
+- endpoint provenance
+- official SDK-backed out-of-scope capability markers where applicable
+
 Local topology design for `dev --net` is separate and lives under the top-level `topologies:` config section.
 
 ## Current Control-Plane Coverage

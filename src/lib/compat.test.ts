@@ -3,6 +3,7 @@ import {describe, expect, it, vi} from 'vitest'
 import type {CantonctlConfig} from './config.js'
 import {
   createCompatibilityReport,
+  inspectProfile,
   listProfiles,
   summarizeProfileServices,
   resolveProfile,
@@ -193,6 +194,12 @@ describe('compat', () => {
     })
     expect(report.services).toEqual([
       expect.objectContaining({
+        controlPlane: expect.objectContaining({
+          endpointProvenance: 'derived-local-default',
+          lifecycleOwner: 'official-local-runtime',
+          managementClass: 'apply-capable',
+          mutationScope: 'managed',
+        }),
         endpoint: 'http://localhost:7575',
         name: 'ledger',
         sourceIds: ['canton-json-ledger-api-openapi'],
@@ -300,18 +307,36 @@ describe('compat', () => {
 
     expect(services).toEqual([
       expect.objectContaining({
+        controlPlane: expect.objectContaining({
+          endpointProvenance: 'declared',
+          lifecycleOwner: 'official-local-runtime',
+          managementClass: 'read-only',
+          mutationScope: 'observed',
+        }),
         detail: 'oidc, issuer https://issuer.example.com, audience aud',
         endpoint: 'https://issuer.example.com',
         name: 'auth',
         stability: 'config-only',
       }),
       expect.objectContaining({
+        controlPlane: expect.objectContaining({
+          endpointProvenance: 'declared',
+          lifecycleOwner: 'official-local-runtime',
+          managementClass: 'read-only',
+          mutationScope: 'observed',
+        }),
         detail: 'Validator endpoint',
         endpoint: 'https://validator.example.com',
         name: 'validator',
         stability: 'operator-only',
       }),
       expect.objectContaining({
+        controlPlane: expect.objectContaining({
+          endpointProvenance: 'declared',
+          lifecycleOwner: 'official-local-runtime',
+          managementClass: 'apply-capable',
+          mutationScope: 'managed',
+        }),
         detail: 'splice, version 0.5.x, base-port 10000, ghcr.io/example/canton:1.0.0',
         endpoint: undefined,
         name: 'localnet',
@@ -337,32 +362,68 @@ describe('compat', () => {
 
     expect(services).toEqual([
       expect.objectContaining({
+        controlPlane: expect.objectContaining({
+          endpointProvenance: 'declared',
+          lifecycleOwner: 'official-remote-runtime',
+          managementClass: 'read-only',
+          mutationScope: 'observed',
+        }),
         detail: 'ANS endpoint',
         endpoint: 'https://ans.example.com',
         name: 'ans',
       }),
       expect.objectContaining({
+        controlPlane: expect.objectContaining({
+          endpointProvenance: 'declared',
+          lifecycleOwner: 'official-remote-runtime',
+          managementClass: 'read-only',
+          mutationScope: 'observed',
+        }),
         detail: 'oidc',
         endpoint: 'https://auth.example.com',
         name: 'auth',
         stability: 'config-only',
       }),
       expect.objectContaining({
+        controlPlane: expect.objectContaining({
+          endpointProvenance: 'declared',
+          lifecycleOwner: 'official-remote-runtime',
+          managementClass: 'plan-only',
+          mutationScope: 'managed',
+        }),
         detail: 'Ledger endpoint',
         endpoint: 'https://ledger.example.com',
         name: 'ledger',
       }),
       expect.objectContaining({
+        controlPlane: expect.objectContaining({
+          endpointProvenance: 'declared',
+          lifecycleOwner: 'official-remote-runtime',
+          managementClass: 'read-only',
+          mutationScope: 'observed',
+        }),
         detail: 'Scan endpoint',
         endpoint: 'https://scan.example.com',
         name: 'scan',
       }),
       expect.objectContaining({
+        controlPlane: expect.objectContaining({
+          endpointProvenance: 'declared',
+          lifecycleOwner: 'official-remote-runtime',
+          managementClass: 'read-only',
+          mutationScope: 'observed',
+        }),
         detail: 'Scan proxy endpoint',
         endpoint: 'https://scan-proxy.example.com',
         name: 'scanProxy',
       }),
       expect.objectContaining({
+        controlPlane: expect.objectContaining({
+          endpointProvenance: 'declared',
+          lifecycleOwner: 'official-remote-runtime',
+          managementClass: 'read-only',
+          mutationScope: 'observed',
+        }),
         detail: 'Token Standard endpoint',
         endpoint: 'https://tokens.example.com',
         name: 'tokenStandard',
@@ -382,6 +443,12 @@ describe('compat', () => {
 
     expect(services).toEqual([
       expect.objectContaining({
+        controlPlane: expect.objectContaining({
+          endpointProvenance: 'derived-local-default',
+          lifecycleOwner: 'official-local-runtime',
+          managementClass: 'apply-capable',
+          mutationScope: 'managed',
+        }),
         detail: 'port 5001, auth jwt',
         endpoint: 'http://localhost:7575',
         name: 'ledger',
@@ -401,11 +468,46 @@ describe('compat', () => {
 
     expect(services).toEqual([
       expect.objectContaining({
+        controlPlane: expect.objectContaining({
+          endpointProvenance: 'declared',
+          lifecycleOwner: 'official-local-runtime',
+          managementClass: 'apply-capable',
+          mutationScope: 'managed',
+        }),
         detail: 'Localnet configuration',
         endpoint: undefined,
         name: 'localnet',
       }),
     ])
+  })
+
+  it('inspects derived control-plane capabilities alongside services', () => {
+    const inspection = inspectProfile(createConfig(), 'splice-devnet')
+
+    expect(inspection.profile).toEqual(expect.objectContaining({name: 'splice-devnet'}))
+    expect(inspection.resolvedFrom).toBe('argument')
+    expect(inspection.services).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        controlPlane: expect.objectContaining({
+          lifecycleOwner: 'official-remote-runtime',
+          managementClass: 'plan-only',
+          mutationScope: 'managed',
+        }),
+        name: 'validator',
+      }),
+    ]))
+    expect(inspection.capabilities).toEqual([expect.objectContaining({
+      controlPlane: expect.objectContaining({
+        lifecycleOwner: 'external-sdk',
+        managementClass: 'read-only',
+        mutationScope: 'out-of-scope',
+      }),
+      name: 'wallet-integration',
+      sdkPackages: [
+        {packageName: '@canton-network/dapp-sdk', sourceId: 'canton-network-dapp-sdk', version: '0.24.0'},
+        {packageName: '@canton-network/wallet-sdk', sourceId: 'canton-network-wallet-sdk', version: '0.21.1'},
+      ],
+    })])
   })
 
   it('treats public-sdk and stable-daml-interface upstream classes as passing compatibility checks', () => {

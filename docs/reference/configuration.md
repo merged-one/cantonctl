@@ -17,6 +17,20 @@ Official tooling already owns build, test, sandbox, Studio, and the reference-ap
 
 Profiles are the control plane for that layer.
 
+`cantonctl profiles show --json` exposes the derived control-plane model for a resolved profile. Those fields are inspection output, not YAML keys:
+
+| Field | Meaning |
+|---|---|
+| `profile.definitionSource` | whether the profile came from explicit `profiles:` config or a legacy `networks:` compatibility shim |
+| `services[].sourceIds` | manifest entries that anchor the service contract |
+| `services[].stability` | manifest-derived stability class |
+| `services[].controlPlane.lifecycleOwner` | which official runtime or companion layer owns the implementation |
+| `services[].controlPlane.managementClass` | whether `cantonctl` treats the service as `read-only`, `plan-only`, or `apply-capable` |
+| `services[].controlPlane.mutationScope` | whether the service is managed, merely observed, or out of scope for mutation |
+| `services[].controlPlane.operatorSurface` | whether the service depends on an operator-only upstream surface |
+| `services[].controlPlane.endpointProvenance` | whether the endpoint was declared directly, inherited from legacy `networks:`, or derived from a local default |
+| `capabilities[]` | runtime-adjacent capabilities that belong to official SDK packages instead of direct control-plane mutation |
+
 ## Example
 
 ```yaml
@@ -82,6 +96,13 @@ networks:
 | `splice-localnet` | Official LocalNet workspace wrapper |
 | `remote-validator` | Validator-backed remote target |
 | `remote-sv-network` | Scan/SV-oriented remote target |
+
+## Control-Plane Interpretation
+
+- `sandbox` and `canton-multi` are local runtime surfaces. Ledger and local auth resolution are companion-managed.
+- `splice-localnet` wraps the official LocalNet workspace. The `localnet` service is apply-capable; the runtime endpoints behind it remain official local-runtime surfaces.
+- `remote-validator` and `remote-sv-network` keep remote runtimes as the implementation owners. `cantonctl` can still classify which services are in management scope for future plan/apply flows versus read-only observation.
+- Wallet-connected integrations stay out of direct control-plane mutation. They are surfaced as SDK-backed capabilities anchored to the official dApp and Wallet SDK packages.
 
 ## Related
 

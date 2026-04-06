@@ -8,6 +8,7 @@
 import {Command, Flags} from '@oclif/core'
 
 import {type CantonctlConfig, loadConfig} from '../lib/config.js'
+import {summarizeServiceControlPlane} from '../lib/control-plane.js'
 import {
   resolveProfile,
   summarizeProfileServices,
@@ -161,6 +162,15 @@ export default class Status extends Command {
       }))
       : [
         {
+          controlPlane: summarizeServiceControlPlane({
+            definitionSource: 'legacy-network',
+            experimental: false,
+            kind: 'canton-multi',
+            name: flags.network,
+            services: {
+              ledger: {url: `http://localhost:${topology.participants[0].ports.jsonApi}`},
+            },
+          }, 'ledger'),
           detail: `json-api-port ${topology.participants[0].ports.jsonApi}`,
           endpoint: `http://localhost:${topology.participants[0].ports.jsonApi}`,
           name: 'ledger' as const,
@@ -311,6 +321,23 @@ export default class Status extends Command {
           : 'configured') as ServiceStatusEntry['status'],
       }))
       : [{
+        controlPlane: summarizeServiceControlPlane({
+          definitionSource: 'legacy-network',
+          experimental: false,
+          kind: network.type === 'sandbox'
+            ? 'sandbox'
+            : network.type === 'docker'
+              ? 'canton-multi'
+              : 'remote-validator',
+          name: networkName,
+          services: {
+            ledger: {
+              'json-api-port': network['json-api-port'],
+              port: network.port,
+              url: network.url,
+            },
+          },
+        }, 'ledger'),
         detail: network.url ? 'remote ledger endpoint' : `json-api-port ${network['json-api-port'] ?? 7575}`,
         endpoint: baseUrl,
         name: 'ledger' as const,

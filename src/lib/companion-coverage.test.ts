@@ -5,7 +5,11 @@ import {afterEach, describe, expect, it, vi} from 'vitest'
 
 import * as profileRuntimeModule from './profile-runtime.js'
 import * as scanAdapterModule from './adapters/scan.js'
-import type {ProfileServiceSummary} from './compat.js'
+import {
+  summarizeProfileServices,
+  type ProfileServiceSummary,
+} from './compat.js'
+import {summarizeProfileCapabilities} from './control-plane.js'
 import {CantonctlError, ErrorCode} from './errors.js'
 import {createCanaryRunner} from './canary/run.js'
 import {renderCanaryReport} from './canary/report.js'
@@ -62,6 +66,13 @@ function createRuntime(overrides: {
     tokenStandard: {url: 'https://tokens.example.com'},
     validator: {url: 'https://validator.example.com'},
   }
+  const profile = {
+    experimental: overrides.experimental ?? false,
+    kind: overrides.kind ?? 'remote-validator',
+    name: 'splice-devnet',
+    services,
+  } as ResolvedRuntime['profile']
+  const compatibilityServices = overrides.compatibilityServices ?? summarizeProfileServices(profile)
 
   return {
     auth: {
@@ -77,16 +88,11 @@ function createRuntime(overrides: {
       checks: [],
       failed: overrides.compatibilityFailed ?? 0,
       passed: 3,
-      profile: {experimental: overrides.experimental ?? false, kind: overrides.kind ?? 'remote-validator', name: 'splice-devnet'},
-      services: overrides.compatibilityServices ?? [{
-        detail: 'Stable/public Scan endpoint',
-        endpoint: 'https://scan.example.com',
-        name: 'scan',
-        sourceIds: ['splice-scan-external-openapi'],
-        stability: 'stable-public',
-      }],
+      profile: {experimental: profile.experimental, kind: profile.kind, name: profile.name},
+      services: compatibilityServices,
       warned: overrides.compatibilityWarned ?? 0,
     },
+    capabilities: summarizeProfileCapabilities(profile),
     credential: {
       mode: overrides.authMode ?? 'env-or-keychain-jwt',
       network: overrides.networkName ?? 'splice-devnet',
@@ -94,18 +100,14 @@ function createRuntime(overrides: {
       token: overrides.token,
     },
     networkName: overrides.networkName ?? 'splice-devnet',
-    profile: {
-      experimental: overrides.experimental ?? false,
-      kind: overrides.kind ?? 'remote-validator',
-      name: 'splice-devnet',
-      services,
-    },
+    profile,
     profileContext: {
-      experimental: overrides.experimental ?? false,
-      kind: overrides.kind ?? 'remote-validator',
-      name: 'splice-devnet',
+      experimental: profile.experimental,
+      kind: profile.kind,
+      name: profile.name,
       services,
     },
+    services: summarizeProfileServices(profile),
   } as ResolvedRuntime
 }
 

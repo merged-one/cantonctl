@@ -14,9 +14,11 @@ The command:
 
 1. Resolves the requested profile
 2. Lists configured services
-3. Classifies them against the upstream manifest
+3. Classifies them against the upstream manifest and shared control-plane policy
 4. Highlights stable/public, reference-only, operator-only, and experimental surfaces
 5. Compares the project SDK version against the pinned support baseline
+
+The same manifest-backed service inventory is exposed by `cantonctl profiles show --json`, including lifecycle owner, management class, mutation scope, and endpoint provenance.
 
 ## `cantonctl codegen sync`
 

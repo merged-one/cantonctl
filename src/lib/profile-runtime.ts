@@ -2,7 +2,13 @@ import type {CantonctlConfig} from './config.js'
 import type {ResolvedCredential} from './credential-store.js'
 import {createCredentialStore, type CredentialStore, type KeychainBackend} from './credential-store.js'
 import type {LegacyNetworkConfig, NetworkAuthMode, NormalizedProfile} from './config-profile.js'
-import {createCompatibilityReport, resolveProfile, type CompatibilityReport} from './compat.js'
+import {
+  createCompatibilityReport,
+  inspectProfile,
+  type CompatibilityReport,
+  type ProfileCapabilitySummary,
+  type ProfileServiceSummary,
+} from './compat.js'
 import {type AuthProfileMode, type ResolvedAuthProfile, resolveAuthProfile} from './auth-profile.js'
 import {createSandboxToken} from './jwt.js'
 import {createBackendWithFallback} from './keytar-backend.js'
@@ -17,11 +23,13 @@ export interface RuntimeCredential {
 
 export interface ResolvedProfileRuntime {
   auth: ResolvedAuthProfile
+  capabilities: ProfileCapabilitySummary[]
   compatibility: CompatibilityReport
   credential: RuntimeCredential
   networkName: string
   profile: NormalizedProfile
   profileContext: ReturnType<typeof resolveStableSpliceProfile>
+  services: ProfileServiceSummary[]
 }
 
 export interface ProfileRuntimeResolverDeps {
@@ -45,7 +53,8 @@ export function createProfileRuntimeResolver(
 
   return {
     async resolve(options) {
-      const {profile} = resolveProfile(options.config, options.profileName)
+      const inspection = inspectProfile(options.config, options.profileName)
+      const {profile} = inspection
       const networkName = resolveProfileNetworkName(options.config, profile.name)
       const auth = resolveProfileAuth(options.config, profile, networkName)
       const compatibility = createCompatibilityReport(options.config, profile.name)
@@ -66,11 +75,13 @@ export function createProfileRuntimeResolver(
 
       return {
         auth,
+        capabilities: inspection.capabilities,
         compatibility,
         credential,
         networkName,
         profile,
         profileContext: resolveStableSpliceProfile(options.config, profile.name),
+        services: inspection.services,
       }
     },
   }
