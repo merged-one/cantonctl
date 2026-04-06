@@ -29,6 +29,8 @@ cantonctl profiles import-localnet --workspace <path> [--write]
 
 All LocalNet commands support `--json`.
 
+`localnet up --json` and `localnet status --json` also include the same schema-versioned `inventory` contract used by `cantonctl status --json`, with `localnet-workspace` provenance for workspace-discovered services and capabilities.
+
 ## Source
 
 - Commands: [`src/commands/localnet/`](../../src/commands/localnet)

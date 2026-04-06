@@ -169,6 +169,17 @@ networks:
         kind: 'sandbox',
         name: 'local',
       }))
+      expect(json.data.inventory).toEqual(expect.objectContaining({
+        mode: 'sandbox',
+        schemaVersion: 1,
+        services: expect.arrayContaining([
+          expect.objectContaining({
+            name: 'ledger',
+            runtimeProvenance: 'legacy-network',
+            status: 'healthy',
+          }),
+        ]),
+      }))
       expect(json.data.services).toEqual(expect.arrayContaining([
         expect.objectContaining({
           endpoint: `http://localhost:${JSON_API_PORT}`,

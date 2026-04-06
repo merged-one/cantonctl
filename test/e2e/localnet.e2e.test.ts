@@ -108,6 +108,18 @@ describe('localnet wrapper E2E', () => {
     const json = parseJson(result.stdout)
     expect(json.success).toBe(true)
     expect(json.data).toEqual(expect.objectContaining({
+      inventory: expect.objectContaining({
+        mode: 'localnet-workspace',
+        profile: expect.objectContaining({kind: 'splice-localnet', name: 'sv'}),
+        schemaVersion: 1,
+        services: expect.arrayContaining([
+          expect.objectContaining({
+            name: 'validator',
+            runtimeProvenance: 'localnet-workspace',
+            status: 'healthy',
+          }),
+        ]),
+      }),
       selectedProfile: 'sv',
       services: expect.objectContaining({
         ledger: {url: 'http://canton.localhost:4100/v2'},
@@ -174,6 +186,10 @@ describe('localnet wrapper E2E', () => {
     const statusJson = parseJson(statusResult.stdout)
     expect(statusJson.success).toBe(true)
     expect(statusJson.data).toEqual(expect.objectContaining({
+      inventory: expect.objectContaining({
+        mode: 'localnet-workspace',
+        schemaVersion: 1,
+      }),
       selectedProfile: 'sv',
       workspace: workspaceDir,
     }))

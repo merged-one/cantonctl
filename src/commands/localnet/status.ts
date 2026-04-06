@@ -6,6 +6,7 @@ import {createLocalnet, type LocalnetStatusResult} from '../../lib/localnet.js'
 import {createLocalnetWorkspaceDetector} from '../../lib/localnet-workspace.js'
 import {createOutput, type OutputWriter} from '../../lib/output.js'
 import {createProcessRunner} from '../../lib/process-runner.js'
+import {createLocalnetWorkspaceInventory} from '../../lib/runtime-inventory.js'
 
 export default class LocalnetStatus extends Command {
   static override description = 'Show status for an upstream Splice LocalNet workspace'
@@ -108,9 +109,13 @@ function renderProfiles(out: OutputWriter, result: LocalnetStatusResult): void {
 }
 
 function serializeStatusResult(result: LocalnetStatusResult) {
+  const inventory = createLocalnetWorkspaceInventory(result)
   return {
+    capabilities: inventory.capabilities,
     containers: result.containers,
+    drift: inventory.drift,
     health: result.health,
+    inventory,
     profiles: result.profiles,
     selectedProfile: result.selectedProfile,
     services: result.services,

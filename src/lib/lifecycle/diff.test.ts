@@ -7,6 +7,7 @@ import {summarizeProfileCapabilities} from '../control-plane.js'
 import {summarizeProfileServices} from '../compat.js'
 import type {ProfileRuntimeResolver} from '../profile-runtime.js'
 import type {CantonctlConfig} from '../config.js'
+import {createProfileStatusInventory} from '../runtime-inventory.js'
 
 function createConfig(): CantonctlConfig {
   return {
@@ -30,6 +31,8 @@ function createRuntime(options: {
   profile: Awaited<ReturnType<ProfileRuntimeResolver['resolve']>>['profile']
   token?: string
 }): Awaited<ReturnType<ProfileRuntimeResolver['resolve']>> {
+  const capabilities = summarizeProfileCapabilities(options.profile)
+  const services = summarizeProfileServices(options.profile)
   return {
     auth: {
       description: '',
@@ -40,7 +43,7 @@ function createRuntime(options: {
       requiresExplicitExperimental: false,
       warnings: [],
     },
-    capabilities: summarizeProfileCapabilities(options.profile),
+    capabilities,
     compatibility: {
       checks: [],
       failed: 0,
@@ -50,7 +53,7 @@ function createRuntime(options: {
         kind: options.profile.kind,
         name: options.profile.name,
       },
-      services: summarizeProfileServices(options.profile),
+      services,
       warned: 0,
     },
     credential: {
@@ -59,6 +62,14 @@ function createRuntime(options: {
       source: options.credentialSource,
       token: options.token,
     },
+    inventory: createProfileStatusInventory({
+      inspection: {
+        capabilities,
+        profile: options.profile,
+        resolvedFrom: 'argument',
+        services,
+      },
+    }),
     networkName: options.networkName,
     profile: options.profile,
     profileContext: {
@@ -67,7 +78,7 @@ function createRuntime(options: {
       name: options.profile.name,
       services: options.profile.services,
     },
-    services: summarizeProfileServices(options.profile),
+    services,
   }
 }
 

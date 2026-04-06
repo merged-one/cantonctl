@@ -214,6 +214,11 @@ describe('localnet command surface', () => {
     const json = parseJson(result.stdout)
     expect(json.success).toBe(true)
     expect(json.data).toEqual(expect.objectContaining({
+      inventory: expect.objectContaining({
+        mode: 'localnet-workspace',
+        profile: expect.objectContaining({kind: 'splice-localnet', name: 'sv'}),
+        schemaVersion: 1,
+      }),
       selectedProfile: 'sv',
       services: expect.objectContaining({
         validator: expect.objectContaining({url: 'http://wallet.localhost:4000/api/validator'}),
@@ -275,6 +280,11 @@ describe('localnet command surface', () => {
     expect(json.data).toEqual(expect.objectContaining({
       health: expect.objectContaining({
         validatorReadyz: expect.objectContaining({healthy: false, status: 503}),
+      }),
+      inventory: expect.objectContaining({
+        services: expect.arrayContaining([
+          expect.objectContaining({name: 'validator', status: 'unreachable'}),
+        ]),
       }),
     }))
   })

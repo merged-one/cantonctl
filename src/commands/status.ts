@@ -8,27 +8,23 @@
 import {Command, Flags} from '@oclif/core'
 
 import {type CantonctlConfig, loadConfig} from '../lib/config.js'
-import {summarizeServiceControlPlane} from '../lib/control-plane.js'
 import {
-  resolveProfile,
-  summarizeProfileServices,
-  type ProfileServiceSummary,
+  inspectProfile,
+  type ProfileInspection,
 } from '../lib/compat.js'
 import {CantonctlError, ErrorCode} from '../lib/errors.js'
 import {createSandboxToken} from '../lib/jwt.js'
 import {createLedgerClient, type LedgerClient} from '../lib/ledger-client.js'
 import {createOutput} from '../lib/output.js'
+import {
+  createMultiNodeStatusInventory,
+  createProfileStatusInventory,
+  createSingleNodeStatusInventory,
+  summarizeStatusInventory,
+  type RuntimeInventoryNode,
+  type RuntimeInventoryService,
+} from '../lib/runtime-inventory.js'
 import {type GeneratedTopology, detectTopology} from '../lib/topology.js'
-
-interface ServiceStatusEntry extends ProfileServiceSummary {
-  status: 'configured' | 'healthy' | 'unreachable'
-}
-
-interface StatusSummary {
-  configuredServices: number
-  healthyServices: number
-  unreachableServices: number
-}
 
 interface StatusFlags {
   json: boolean
@@ -151,39 +147,17 @@ export default class Status extends Command {
     }
 
     const allHealthy = nodeStatuses.every(node => node.healthy)
-    const ledgerServiceStatus: ServiceStatusEntry['status'] = allHealthy ? 'healthy' : 'unreachable'
-    const inferredProfile = this.tryResolveNetworkProfile(config, flags.network)
-    const services: ServiceStatusEntry[] = inferredProfile
-      ? summarizeProfileServices(inferredProfile.profile).map(service => ({
-        ...service,
-        status: (service.name === 'ledger'
-          ? ledgerServiceStatus
-          : 'configured') as ServiceStatusEntry['status'],
-      }))
-      : [
-        {
-          controlPlane: summarizeServiceControlPlane({
-            definitionSource: 'legacy-network',
-            experimental: false,
-            kind: 'canton-multi',
-            name: flags.network,
-            services: {
-              ledger: {url: `http://localhost:${topology.participants[0].ports.jsonApi}`},
-            },
-          }, 'ledger'),
-          detail: `json-api-port ${topology.participants[0].ports.jsonApi}`,
-          endpoint: `http://localhost:${topology.participants[0].ports.jsonApi}`,
-          name: 'ledger' as const,
-          sourceIds: ['canton-json-ledger-api-openapi'] as const,
-          stability: 'stable-external' as const,
-          status: ledgerServiceStatus,
-        },
-      ]
+    const inventory = createMultiNodeStatusInventory({
+      inspection: this.tryInspectNetworkProfile(config, flags.network),
+      networkName: flags.network,
+      nodes: nodeStatuses as RuntimeInventoryNode[],
+    })
+    const services = inventory.services
 
     if (!flags.json) {
       out.log('Mode: multi-node (Docker topology)')
-      if (inferredProfile) {
-        out.log(`Profile: ${inferredProfile.profile.name} (${inferredProfile.profile.kind})`)
+      if (inventory.profile) {
+        out.log(`Profile: ${inventory.profile.name} (${inventory.profile.kind})`)
       }
       out.log('')
       out.table(
@@ -205,22 +179,21 @@ export default class Status extends Command {
     if (flags.json) {
       out.result({
         data: {
+          capabilities: inventory.capabilities,
+          drift: inventory.drift,
+          inventory,
           mode: 'multi-node',
           network: flags.network,
-          nodes: nodeStatuses.map(node => ({
+          nodes: inventory.nodes?.map(node => ({
             healthy: node.healthy,
             name: node.name,
             parties: node.parties.map(party => ({displayName: party.displayName, identifier: party.identifier})),
             port: node.port,
             version: node.version,
           })),
-          profile: inferredProfile ? {
-            experimental: inferredProfile.profile.experimental,
-            kind: inferredProfile.profile.kind,
-            name: inferredProfile.profile.name,
-          } : undefined,
+          profile: inventory.profile,
           services,
-          summary: this.buildSummary(services),
+          summary: summarizeStatusInventory(services),
         },
         success: allHealthy,
       })
@@ -236,14 +209,13 @@ export default class Status extends Command {
     config: CantonctlConfig,
     out: ReturnType<typeof createOutput>,
   ): Promise<void> {
-    const {profile} = resolveProfile(config, flags.profile)
-    const services: ServiceStatusEntry[] = summarizeProfileServices(profile)
-      .map(service => ({...service, status: 'configured'}))
+    const inspection = inspectProfile(config, flags.profile)
+    const {profile} = inspection
 
     let healthy: boolean | undefined
     let parties: Array<Record<string, unknown>> = []
     let version: string | undefined
-    const ledgerService = services.find(service => service.name === 'ledger')
+    const ledgerService = inspection.services.find(service => service.name === 'ledger')
 
     if (ledgerService && this.shouldCheckLedgerHealth(profile)) {
       const token = await this.createStatusToken(config)
@@ -251,9 +223,19 @@ export default class Status extends Command {
       healthy = ledgerStatus.healthy
       parties = ledgerStatus.parties
       version = ledgerStatus.version
-
-      ledgerService.status = ledgerStatus.healthy ? 'healthy' : 'unreachable'
     }
+    const inventory = createProfileStatusInventory({
+      inspection,
+      ledger: healthy === undefined || !ledgerService
+        ? undefined
+        : {
+          endpoint: ledgerService.endpoint!,
+          healthy,
+          parties,
+          version,
+        },
+    })
+    const services = inventory.services
 
     if (!flags.json) {
       out.log(`Profile: ${profile.name}`)
@@ -280,16 +262,15 @@ export default class Status extends Command {
     if (flags.json) {
       out.result({
         data: {
+          capabilities: inventory.capabilities,
+          drift: inventory.drift,
           healthy,
+          inventory,
           mode: 'profile',
           parties: parties.map(party => ({displayName: party.displayName, identifier: party.identifier})),
-          profile: {
-            experimental: profile.experimental,
-            kind: profile.kind,
-            name: profile.name,
-          },
+          profile: inventory.profile,
           services,
-          summary: this.buildSummary(services),
+          summary: summarizeStatusInventory(services),
           version,
         },
         success: healthy === undefined ? true : healthy,
@@ -312,45 +293,24 @@ export default class Status extends Command {
     const token = await this.createStatusToken(config)
     const ledgerStatus = await this.getLedgerStatus(baseUrl, token)
 
-    const inferredProfile = this.tryResolveNetworkProfile(config, networkName)
-    const services: ServiceStatusEntry[] = inferredProfile
-      ? summarizeProfileServices(inferredProfile.profile).map(service => ({
-        ...service,
-        status: (service.name === 'ledger'
-          ? (ledgerStatus.healthy ? 'healthy' : 'unreachable')
-          : 'configured') as ServiceStatusEntry['status'],
-      }))
-      : [{
-        controlPlane: summarizeServiceControlPlane({
-          definitionSource: 'legacy-network',
-          experimental: false,
-          kind: network.type === 'sandbox'
-            ? 'sandbox'
-            : network.type === 'docker'
-              ? 'canton-multi'
-              : 'remote-validator',
-          name: networkName,
-          services: {
-            ledger: {
-              'json-api-port': network['json-api-port'],
-              port: network.port,
-              url: network.url,
-            },
-          },
-        }, 'ledger'),
-        detail: network.url ? 'remote ledger endpoint' : `json-api-port ${network['json-api-port'] ?? 7575}`,
+    const inventory = createSingleNodeStatusInventory({
+      inspection: this.tryInspectNetworkProfile(config, networkName),
+      ledger: {
         endpoint: baseUrl,
-        name: 'ledger' as const,
-        sourceIds: ['canton-json-ledger-api-openapi'] as const,
-        stability: 'stable-external' as const,
-        status: ledgerStatus.healthy ? 'healthy' as const : 'unreachable' as const,
-      }]
+        healthy: ledgerStatus.healthy,
+        parties: ledgerStatus.parties,
+        version: ledgerStatus.version,
+      },
+      networkName,
+      networkType: network.type,
+    })
+    const services = inventory.services
 
     if (!flags.json) {
       out.log(`Network: ${networkName}`)
       out.log(`Mode: ${network.type}`)
-      if (inferredProfile) {
-        out.log(`Profile: ${inferredProfile.profile.name} (${inferredProfile.profile.kind})`)
+      if (inventory.profile) {
+        out.log(`Profile: ${inventory.profile.name} (${inventory.profile.kind})`)
       }
       out.log('')
 
@@ -379,17 +339,16 @@ export default class Status extends Command {
     if (flags.json) {
       out.result({
         data: {
+          capabilities: inventory.capabilities,
+          drift: inventory.drift,
           healthy: ledgerStatus.healthy,
+          inventory,
           mode: network.type === 'sandbox' ? 'sandbox' : 'single-node',
           network: networkName,
           parties: ledgerStatus.parties.map(party => ({displayName: party.displayName, identifier: party.identifier})),
-          profile: inferredProfile ? {
-            experimental: inferredProfile.profile.experimental,
-            kind: inferredProfile.profile.kind,
-            name: inferredProfile.profile.name,
-          } : undefined,
+          profile: inventory.profile,
           services,
-          summary: this.buildSummary(services),
+          summary: summarizeStatusInventory(services),
           version: ledgerStatus.version,
         },
         success: ledgerStatus.healthy,
@@ -432,7 +391,7 @@ export default class Status extends Command {
 
   private printServiceTable(
     out: ReturnType<typeof createOutput>,
-    services: ServiceStatusEntry[],
+    services: RuntimeInventoryService[],
   ): void {
     out.table(
       ['Service', 'Status', 'Endpoint', 'Stability'],
@@ -445,14 +404,6 @@ export default class Status extends Command {
     )
   }
 
-  private buildSummary(services: ServiceStatusEntry[]): StatusSummary {
-    return {
-      configuredServices: services.length,
-      healthyServices: services.filter(service => service.status === 'healthy').length,
-      unreachableServices: services.filter(service => service.status === 'unreachable').length,
-    }
-  }
-
   private shouldCheckLedgerHealth(profile: NonNullable<CantonctlConfig['profiles']>[string]): boolean {
     const ledger = profile.services.ledger
     if (!ledger) return false
@@ -461,27 +412,24 @@ export default class Status extends Command {
       || /^https?:\/\/127\.0\.0\.1(?::\d+)?/i.test(ledger.url)
   }
 
-  private tryResolveNetworkProfile(
+  private tryInspectNetworkProfile(
     config: CantonctlConfig,
     networkName: string,
-  ): {profile: NonNullable<CantonctlConfig['profiles']>[string]} | undefined {
+  ): ProfileInspection | undefined {
     const explicitProfileName = config.networkProfiles?.[networkName]
     if (explicitProfileName) {
-      const explicitProfile = config.profiles?.[explicitProfileName]
-      if (explicitProfile) {
-        return {profile: explicitProfile}
+      if (config.profiles?.[explicitProfileName]) {
+        return inspectProfile(config, explicitProfileName)
       }
     }
 
-    const sameNameProfile = config.profiles?.[networkName]
-    if (sameNameProfile) {
-      return {profile: sameNameProfile}
+    if (config.profiles?.[networkName]) {
+      return inspectProfile(config, networkName)
     }
 
     if (networkName === 'local' && config['default-profile']) {
-      const defaultProfile = config.profiles?.[config['default-profile']]
-      if (defaultProfile) {
-        return {profile: defaultProfile}
+      if (config.profiles?.[config['default-profile']]) {
+        return inspectProfile(config, config['default-profile'])
       }
     }
 
