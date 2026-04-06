@@ -214,10 +214,14 @@ describe('localnet command surface', () => {
     const json = parseJson(result.stdout)
     expect(json.success).toBe(true)
     expect(json.data).toEqual(expect.objectContaining({
+      drift: [],
       inventory: expect.objectContaining({
         mode: 'localnet-workspace',
         profile: expect.objectContaining({kind: 'splice-localnet', name: 'sv'}),
         schemaVersion: 1,
+      }),
+      reconcile: expect.objectContaining({
+        supportedActions: [],
       }),
       selectedProfile: 'sv',
       services: expect.objectContaining({
@@ -278,12 +282,20 @@ describe('localnet command surface', () => {
     const json = parseJson(result.stdout)
     expect(json.success).toBe(false)
     expect(json.data).toEqual(expect.objectContaining({
+      drift: expect.arrayContaining([
+        expect.objectContaining({code: 'service-unreachable', target: 'validator'}),
+      ]),
       health: expect.objectContaining({
         validatorReadyz: expect.objectContaining({healthy: false, status: 503}),
       }),
       inventory: expect.objectContaining({
         services: expect.arrayContaining([
           expect.objectContaining({name: 'validator', status: 'unreachable'}),
+        ]),
+      }),
+      reconcile: expect.objectContaining({
+        supportedActions: expect.arrayContaining([
+          expect.objectContaining({command: 'cantonctl localnet up --workspace /workspace --profile sv'}),
         ]),
       }),
     }))

@@ -1,5 +1,6 @@
 import {createScanAdapter, type ScanAdapter, type ScanAdapterOptions} from '../adapters/scan.js'
 import type {CantonctlConfig} from '../config.js'
+import {createControlPlaneDriftReport} from '../control-plane-drift.js'
 import {CantonctlError, ErrorCode} from '../errors.js'
 import {type ProfileRuntimeResolver, createProfileRuntimeResolver} from '../profile-runtime.js'
 import {type PreflightCheck, type PreflightReport, summarizePreflightDetail} from './output.js'
@@ -97,6 +98,11 @@ export function createPreflightChecks(deps: PreflightDeps = {}): PreflightRunner
       }))
 
       const success = checks.every(check => check.status !== 'fail')
+      const driftReport = createControlPlaneDriftReport({
+        checks,
+        inventory: runtime.inventory,
+        runtime,
+      })
 
       return {
         auth: {
@@ -123,6 +129,7 @@ export function createPreflightChecks(deps: PreflightDeps = {}): PreflightRunner
           passed: runtime.compatibility.passed,
           warned: runtime.compatibility.warned,
         },
+        drift: driftReport.items,
         egressIp,
         network: {
           checklist: policy.checklist,
@@ -136,6 +143,7 @@ export function createPreflightChecks(deps: PreflightDeps = {}): PreflightRunner
           kind: runtime.profile.kind,
           name: runtime.profile.name,
         },
+        reconcile: driftReport.reconcile,
         success,
       }
     },

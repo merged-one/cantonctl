@@ -12,6 +12,10 @@ import {
   inspectProfile,
   type ProfileInspection,
 } from '../lib/compat.js'
+import {
+  createControlPlaneDriftReport,
+  renderControlPlaneDriftReport,
+} from '../lib/control-plane-drift.js'
 import {CantonctlError, ErrorCode} from '../lib/errors.js'
 import {createSandboxToken} from '../lib/jwt.js'
 import {createLedgerClient, type LedgerClient} from '../lib/ledger-client.js'
@@ -164,6 +168,7 @@ export default class Status extends Command {
     })
     const services = inventory.services
     const runtime = inspection ? await this.tryResolveStatusRuntime(config, inspection.profile.name) : undefined
+    const driftReport = createControlPlaneDriftReport({inventory, runtime})
 
     if (!flags.json) {
       out.log('Mode: multi-node (Docker topology)')
@@ -191,6 +196,7 @@ export default class Status extends Command {
       )
       out.log('')
       this.printServiceTable(out, services)
+      renderControlPlaneDriftReport(out, driftReport)
     }
 
     if (flags.json) {
@@ -198,7 +204,7 @@ export default class Status extends Command {
         data: {
           auth: runtime ? this.summarizeRuntimeAuth(runtime) : undefined,
           capabilities: inventory.capabilities,
-          drift: inventory.drift,
+          drift: driftReport.items,
           inventory,
           mode: 'multi-node',
           network: flags.network,
@@ -210,6 +216,7 @@ export default class Status extends Command {
             version: node.version,
           })),
           profile: inventory.profile,
+          reconcile: driftReport.reconcile,
           services,
           summary: summarizeStatusInventory(services),
         },
@@ -255,6 +262,7 @@ export default class Status extends Command {
     })
     const services = inventory.services
     const runtime = await this.resolveStatusRuntime(config, profile.name)
+    const driftReport = createControlPlaneDriftReport({inventory, runtime})
 
     if (!flags.json) {
       out.log(`Profile: ${profile.name}`)
@@ -280,6 +288,7 @@ export default class Status extends Command {
           ]),
         )
       }
+      renderControlPlaneDriftReport(out, driftReport)
     }
 
     if (flags.json) {
@@ -287,12 +296,13 @@ export default class Status extends Command {
         data: {
           auth: this.summarizeRuntimeAuth(runtime),
           capabilities: inventory.capabilities,
-          drift: inventory.drift,
+          drift: driftReport.items,
           healthy,
           inventory,
           mode: 'profile',
           parties: parties.map(party => ({displayName: party.displayName, identifier: party.identifier})),
           profile: inventory.profile,
+          reconcile: driftReport.reconcile,
           services,
           summary: summarizeStatusInventory(services),
           version,
@@ -331,6 +341,7 @@ export default class Status extends Command {
     })
     const services = inventory.services
     const runtime = inspection ? await this.tryResolveStatusRuntime(config, inspection.profile.name) : undefined
+    const driftReport = createControlPlaneDriftReport({inventory, runtime})
 
     if (!flags.json) {
       out.log(`Network: ${networkName}`)
@@ -366,6 +377,7 @@ export default class Status extends Command {
           ]),
         )
       }
+      renderControlPlaneDriftReport(out, driftReport)
     }
 
     if (flags.json) {
@@ -373,13 +385,14 @@ export default class Status extends Command {
         data: {
           auth: runtime ? this.summarizeRuntimeAuth(runtime) : undefined,
           capabilities: inventory.capabilities,
-          drift: inventory.drift,
+          drift: driftReport.items,
           healthy: ledgerStatus.healthy,
           inventory,
           mode: network.type === 'sandbox' ? 'sandbox' : 'single-node',
           network: networkName,
           parties: ledgerStatus.parties.map(party => ({displayName: party.displayName, identifier: party.identifier})),
           profile: inventory.profile,
+          reconcile: driftReport.reconcile,
           services,
           summary: summarizeStatusInventory(services),
           version: ledgerStatus.version,

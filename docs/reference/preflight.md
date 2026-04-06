@@ -18,6 +18,8 @@ cantonctl preflight --profile splice-devnet --json
 - Scan reachability when configured
 - stable/public service reachability checks where the profile exposes them
 - network reminders for DevNet, TestNet, and MainNet
+- drift classification over auth, service reachability, and pinned upstream-line expectations
+- reconcile planning that emits companion-supported actions only when a supported control surface exists
 
 ## Auth Contract
 
@@ -33,12 +35,20 @@ For remote mutating profiles, missing operator material fails the `Operator cred
 
 In JSON mode, the `auth` block includes nested `app` and `operator` entries with credential source, env var name, requirement status, and operator prerequisites.
 
+`preflight --json` also includes:
+
+- `drift[]`: classified control-plane drift with severity, boundary owner, and supported-vs-manual resolution
+- `reconcile.supportedActions[]`: companion-supported next steps such as `cantonctl auth login`
+- `reconcile.runbook[]`: explicit upstream or operator runbooks when the current surface is read-only, operator-only, or otherwise outside the companion mutation boundary
+
 ## Explicit Non-Goals
 
 - no infrastructure mutation
 - no validator-internal automation in the default path
 - no wallet-internal automation in the default path
 - no rollout apply behavior today
+
+`preflight` may recommend a supported companion action, but it does not execute it.
 
 ## Related
 

@@ -105,6 +105,7 @@ function createPreflightReport(success: boolean) {
       },
     ],
     compatibility: {failed: success ? 0 : 1, passed: 3, warned: 1},
+    drift: [],
     egressIp: success ? '203.0.113.10' : undefined,
     network: {
       checklist: ['Confirm egress IP'],
@@ -117,6 +118,11 @@ function createPreflightReport(success: boolean) {
       experimental: success,
       kind: 'remote-validator',
       name: 'splice-devnet',
+    },
+    reconcile: {
+      runbook: [],
+      summary: {failed: 0, info: 0, manualRunbooks: 0, supportedActions: 0, warned: 0},
+      supportedActions: [],
     },
     success,
   } as const
@@ -1001,6 +1007,7 @@ describe('companion command surface', () => {
           status: 'fail',
         }],
         compatibility: {failed: 1, passed: 1, warned: 0},
+        drift: [],
         egressIp: undefined,
         network: {
           checklist: [],
@@ -1014,12 +1021,23 @@ describe('companion command surface', () => {
           kind: 'remote-validator',
           name: 'splice-devnet',
         },
+        reconcile: {
+          runbook: [],
+          summary: {failed: 0, info: 0, manualRunbooks: 0, supportedActions: 0, warned: 0},
+          supportedActions: [],
+        },
         success: false,
       },
+      drift: [],
       profile: {
         experimental: false,
         kind: 'remote-validator',
         name: 'splice-devnet',
+      },
+      reconcile: {
+        runbook: [],
+        summary: {failed: 0, info: 0, manualRunbooks: 0, supportedActions: 0, warned: 0},
+        supportedActions: [],
       },
       success: false,
       summary: {
@@ -1066,6 +1084,7 @@ describe('companion command surface', () => {
           status: 'pass',
         }],
         compatibility: {failed: 0, passed: 2, warned: 0},
+        drift: [],
         egressIp: undefined,
         network: {
           checklist: [],
@@ -1079,12 +1098,23 @@ describe('companion command surface', () => {
           kind: 'remote-validator',
           name: 'splice-devnet',
         },
+        reconcile: {
+          runbook: [],
+          summary: {failed: 0, info: 0, manualRunbooks: 0, supportedActions: 0, warned: 0},
+          supportedActions: [],
+        },
         success: true,
       },
+      drift: [],
       profile: {
         experimental: false,
         kind: 'remote-validator',
         name: 'splice-devnet',
+      },
+      reconcile: {
+        runbook: [],
+        summary: {failed: 0, info: 0, manualRunbooks: 0, supportedActions: 0, warned: 0},
+        supportedActions: [],
       },
       success: true,
       summary: {

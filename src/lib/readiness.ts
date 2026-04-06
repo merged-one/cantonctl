@@ -13,8 +13,10 @@ export interface ReadinessReport {
     success: boolean
   }
   compatibility: PreflightReport['compatibility']
+  drift: PreflightReport['drift']
   preflight: PreflightReport
   profile: PreflightReport['profile']
+  reconcile: PreflightReport['reconcile']
   success: boolean
   summary: {
     failed: number
@@ -75,8 +77,10 @@ export function createReadinessRunner(
           success: canary.success,
         },
         compatibility: preflight.compatibility,
+        drift: preflight.drift,
         preflight,
         profile: preflight.profile,
+        reconcile: preflight.reconcile,
         success: preflight.success && canary.success,
         summary,
       }

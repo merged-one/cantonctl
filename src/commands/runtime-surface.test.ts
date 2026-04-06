@@ -185,6 +185,7 @@ describe('runtime command surface', () => {
     const json = parseJson(result.stdout)
     expect(json.success).toBe(true)
     expect(json.data).toEqual(expect.objectContaining({
+      drift: [],
       healthy: true,
       inventory: expect.objectContaining({
         profile: expect.objectContaining({kind: 'sandbox', name: 'sandbox'}),
@@ -198,6 +199,9 @@ describe('runtime command surface', () => {
         ]),
       }),
       profile: expect.objectContaining({kind: 'sandbox', name: 'sandbox'}),
+      reconcile: expect.objectContaining({
+        supportedActions: [],
+      }),
       services: [
         expect.objectContaining({
           endpoint: 'http://localhost:7575',

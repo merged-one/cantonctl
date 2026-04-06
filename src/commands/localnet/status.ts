@@ -1,6 +1,7 @@
 import {Command, Flags} from '@oclif/core'
 import * as fs from 'node:fs'
 
+import {createControlPlaneDriftReport, renderControlPlaneDriftReport} from '../../lib/control-plane-drift.js'
 import {CantonctlError} from '../../lib/errors.js'
 import {createLocalnet, type LocalnetStatusResult} from '../../lib/localnet.js'
 import {createLocalnetWorkspaceDetector} from '../../lib/localnet-workspace.js'
@@ -59,6 +60,8 @@ export default class LocalnetStatus extends Command {
             ]),
           )
         }
+
+        renderDrift(out, result)
       }
 
       if (!result.health.validatorReadyz.healthy) {
@@ -110,17 +113,25 @@ function renderProfiles(out: OutputWriter, result: LocalnetStatusResult): void {
 
 function serializeStatusResult(result: LocalnetStatusResult) {
   const inventory = createLocalnetWorkspaceInventory(result)
+  const driftReport = createControlPlaneDriftReport({inventory})
   return {
     capabilities: inventory.capabilities,
     containers: result.containers,
-    drift: inventory.drift,
+    drift: driftReport.items,
     health: result.health,
     inventory,
     profiles: result.profiles,
+    reconcile: driftReport.reconcile,
     selectedProfile: result.selectedProfile,
     services: result.services,
     workspace: result.workspace.root,
   }
+}
+
+function renderDrift(out: OutputWriter, result: LocalnetStatusResult): void {
+  const inventory = createLocalnetWorkspaceInventory(result)
+  const report = createControlPlaneDriftReport({inventory})
+  renderControlPlaneDriftReport(out, report)
 }
 
 function handleError(error: unknown, out: OutputWriter, command: Command): never {

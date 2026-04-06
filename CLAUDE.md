@@ -58,6 +58,7 @@ Named local Canton topologies are defined under `topologies:` in `cantonctl.yaml
 | `src/lib/splice-public.ts` | Stable/public Splice surface orchestration |
 | `src/lib/operator-surface.ts` | Explicit operator-surface registry and boundary enforcement |
 | `src/lib/operator/*.ts` | Approved operator-mode actions over official upstream endpoints |
+| `src/lib/control-plane-drift.ts` | Shared drift classification and reconcile planning across status, preflight, readiness, and LocalNet |
 | `src/lib/preflight/checks.ts` | Profile-first remote readiness checks |
 | `src/lib/control-plane-operation.ts` | Reusable plan/apply/dry-run execution engine for control-plane workflows |
 | `src/lib/lifecycle/*.ts` | Advisory promotion, reset, and upgrade helpers |

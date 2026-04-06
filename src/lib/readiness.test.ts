@@ -60,6 +60,7 @@ function createPreflightReport(overrides: PreflightReportOverrides = {}): Prefli
       {category: 'health', detail: 'Endpoint not exposed.', name: 'Validator readyz', status: 'skip'},
     ],
     compatibility: {failed: 0, passed: 3, warned: 1},
+    drift: [],
     egressIp: '203.0.113.10',
     network: {
       checklist: [],
@@ -72,6 +73,11 @@ function createPreflightReport(overrides: PreflightReportOverrides = {}): Prefli
       experimental: false,
       kind: 'remote-validator',
       name: 'splice-devnet',
+    },
+    reconcile: {
+      runbook: [],
+      summary: {failed: 0, info: 0, manualRunbooks: 0, supportedActions: 0, warned: 0},
+      supportedActions: [],
     },
     success: true,
   }
@@ -137,7 +143,9 @@ describe('createReadinessRunner', () => {
       suites: ['scan', 'ans', 'validator-user'],
     })
     expect(report.canary.selectedSuites).toEqual(['scan', 'ans', 'validator-user'])
+    expect(report.drift).toEqual([])
     expect(report.canary.skippedSuites).toEqual(['token-standard'])
+    expect(report.reconcile.supportedActions).toEqual([])
     expect(report.summary).toEqual({
       failed: 0,
       passed: 4,

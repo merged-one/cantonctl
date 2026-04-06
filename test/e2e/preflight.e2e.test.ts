@@ -166,6 +166,14 @@ profiles:
     const json = parseJson(result.stdout)
     expect(json.success).toBe(true)
     expect(json.data).toEqual(expect.objectContaining({
+      drift: expect.arrayContaining([
+        expect.objectContaining({
+          code: 'upstream-line-mismatch',
+          severity: 'warn',
+          source: 'compatibility',
+          target: 'compatibility',
+        }),
+      ]),
       egressIp: '203.0.113.10',
       network: expect.objectContaining({
         name: 'splice-devnet',
@@ -173,6 +181,16 @@ profiles:
         tier: 'devnet',
       }),
       profile: expect.objectContaining({kind: 'remote-validator', name: 'splice-devnet'}),
+      reconcile: expect.objectContaining({
+        runbook: expect.arrayContaining([
+          expect.objectContaining({
+            code: 'align-upstream-line',
+            owner: 'official-stack',
+            targets: ['compatibility'],
+          }),
+        ]),
+        supportedActions: [],
+      }),
     }))
     expect(json.data).toEqual(expect.objectContaining({
       checks: expect.arrayContaining([
@@ -215,10 +233,20 @@ profiles:
 
     expect(json.success).toBe(false)
     expect(json.data).toEqual(expect.objectContaining({
+      drift: expect.arrayContaining([
+        expect.objectContaining({code: 'auth-mismatch', target: 'app-auth'}),
+        expect.objectContaining({code: 'auth-mismatch', target: 'operator-auth'}),
+      ]),
       checks: expect.arrayContaining([
         expect.objectContaining({name: 'App credential material', status: 'fail'}),
         expect.objectContaining({name: 'Operator credential material', status: 'fail'}),
       ]),
+      reconcile: expect.objectContaining({
+        supportedActions: expect.arrayContaining([
+          expect.objectContaining({command: 'cantonctl auth login splice-devnet'}),
+          expect.objectContaining({command: 'cantonctl auth login splice-devnet --scope operator'}),
+        ]),
+      }),
     }))
   })
 
@@ -257,6 +285,9 @@ profiles:
 
     expect(json.success).toBe(false)
     expect(json.data).toEqual(expect.objectContaining({
+      drift: expect.arrayContaining([
+        expect.objectContaining({code: 'service-unreachable', target: 'scan'}),
+      ]),
       checks: expect.arrayContaining([
         expect.objectContaining({name: 'Scan reachability', status: 'fail'}),
       ]),
