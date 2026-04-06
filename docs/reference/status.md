@@ -18,6 +18,8 @@ cantonctl status [flags]
 - ledger health when a ledger-capable target is available
 - ledger version and party list when available
 - multi-node summaries for the Canton-only topology
+- drift classification across runtime, auth, and compatibility state when a resolved profile/runtime is available
+- reconcile output that separates companion-supported actions from upstream-owned manual runbooks
 
 ## JSON Contract
 
@@ -27,6 +29,9 @@ cantonctl status [flags]
 - `inventory.services[]`: service-level endpoint, health, runtime provenance, warnings, and drift hints
 - `inventory.capabilities[]`: capability-level ownership, management eligibility, stability, warnings, and drift hints
 - `inventory.drift[]`: aggregated profile-versus-runtime mismatches
+- `drift[]`: the richer control-plane drift contract used by later mutating commands, including severity, boundary ownership, and supported-vs-manual resolution
+- `reconcile.supportedActions[]`: companion-supported next steps such as `auth login`, `dev`, `dev --net`, or `localnet up`
+- `reconcile.runbook[]`: explicit upstream- or operator-owned manual steps for unresolved boundary, endpoint, or version-line drift
 - `auth.app`: app credential source, env var name, and whether explicit app material is required
 - `auth.operator`: operator credential source, env var name, requirement status, description, and prerequisites when runtime auth resolution succeeds
 
@@ -36,7 +41,7 @@ Runtime provenance distinguishes configured endpoints from discovered runtime da
 - `generated-topology` for `dev --net` runtime discovery
 - `remote-discovery` for remote network targets
 
-Human output stays concise. When `status` can resolve a profile runtime, it also prints whether operator auth is required and where that operator material was resolved from.
+Human output stays concise. When `status` can resolve a profile runtime, it also prints whether operator auth is required, any resolved drift, and whether the next step is a companion-supported action or an upstream-owned runbook.
 
 ## Flags
 

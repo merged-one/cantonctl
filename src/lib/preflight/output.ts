@@ -1,3 +1,8 @@
+import {
+  renderControlPlaneDriftReport,
+  type ControlPlaneDriftItem,
+  type ControlPlaneDriftReconcilePlan,
+} from '../control-plane-drift.js'
 import type {OutputWriter} from '../output.js'
 import type {ResolvedProfileRuntime} from '../profile-runtime.js'
 import {summarizeCredentialSource} from '../profile-runtime.js'
@@ -38,6 +43,7 @@ export interface PreflightReport {
     passed: number
     warned: number
   }
+  drift: ControlPlaneDriftItem[]
   egressIp?: string
   network: {
     checklist: string[]
@@ -51,6 +57,7 @@ export interface PreflightReport {
     kind: ResolvedProfileRuntime['profile']['kind']
     name: string
   }
+  reconcile: ControlPlaneDriftReconcilePlan
   success: boolean
 }
 
@@ -74,6 +81,8 @@ export function renderPreflightReport(out: OutputWriter, report: PreflightReport
     ['Check', 'Status', 'Detail'],
     report.checks.map(check => [check.name, check.status, check.detail]),
   )
+
+  renderControlPlaneDriftReport(out, {items: report.drift, reconcile: report.reconcile})
 
   if (report.network.reminders.length > 0) {
     out.log('')

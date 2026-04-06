@@ -19,10 +19,11 @@ cantonctl readiness [--profile <name>] [--json]
 
 - resolves the selected profile using the same profile model as the rest of the CLI
 - reuses `preflight` for profile, split auth, compatibility, and network checks
+- passes through the same drift and reconcile contract exposed by `preflight`
 - runs only the stable/public canary suites that match the configured services
 - exits non-zero only when blocking failures are present
 
-For remote profiles with mutating surfaces, readiness reports whether explicit operator credentials are present alongside the app credential path used for read checks.
+For remote profiles with mutating surfaces, readiness reports whether explicit operator credentials are present alongside the app credential path used for read checks. In JSON mode it also includes the preflight-derived `drift[]` and `reconcile` output so later control-plane workflows can reuse the same classification.
 
 ## Related
 

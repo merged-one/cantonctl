@@ -1,9 +1,12 @@
 import {afterEach, describe, expect, it, vi} from 'vitest'
 
 import type {CantonctlConfig} from '../config.js'
+import {summarizeProfileCapabilities} from '../control-plane.js'
+import {summarizeProfileServices} from '../compat.js'
 import {CantonctlError, ErrorCode} from '../errors.js'
 import type {ProfileRuntimeResolver} from '../profile-runtime.js'
 import * as profileRuntimeModule from '../profile-runtime.js'
+import {createProfileStatusInventory} from '../runtime-inventory.js'
 import * as scanAdapterModule from '../adapters/scan.js'
 import {createPreflightChecks} from './checks.js'
 
@@ -64,41 +67,57 @@ function createRuntimeResolver(overrides: Partial<Awaited<ReturnType<ProfileRunt
     credentialSource: 'stored',
     network: 'devnet',
   })
+  const defaultProfile = createConfig().profiles!['splice-devnet']
 
   return () => ({
-    resolve: vi.fn().mockResolvedValue({
-      auth,
-      compatibility: {
-        checks: [],
-        failed: 0,
-        passed: 2,
-        profile: {experimental: false, kind: 'remote-validator', name: 'splice-devnet'},
-        services: [],
-        warned: 0,
-      },
-      credential: {
-        mode: 'env-or-keychain-jwt',
-        network: 'devnet',
-        scope: 'app',
-        source: 'stored',
-        token: 'jwt-token',
-      },
-      operatorCredential: {
-        mode: 'env-or-keychain-jwt',
-        network: 'devnet',
-        scope: 'operator',
-        source: 'stored',
-        token: 'operator-token',
-      },
-      networkName: 'devnet',
-      profile: createConfig().profiles!['splice-devnet'],
-      profileContext: {
-        experimental: false,
-        kind: 'remote-validator',
-        name: 'splice-devnet',
-        services: createConfig().profiles!['splice-devnet'].services,
-      },
-      ...overrides,
+    resolve: vi.fn().mockImplementation(async () => {
+      const profile = (overrides.profile as typeof defaultProfile | undefined) ?? defaultProfile
+      const resolved = {
+        auth,
+        compatibility: {
+          checks: [],
+          failed: 0,
+          passed: 2,
+          profile: {experimental: false, kind: 'remote-validator', name: 'splice-devnet'},
+          services: [],
+          warned: 0,
+        },
+        credential: {
+          mode: 'env-or-keychain-jwt',
+          network: 'devnet',
+          scope: 'app',
+          source: 'stored',
+          token: 'jwt-token',
+        },
+        operatorCredential: {
+          mode: 'env-or-keychain-jwt',
+          network: 'devnet',
+          scope: 'operator',
+          source: 'stored',
+          token: 'operator-token',
+        },
+        networkName: 'devnet',
+        profile,
+        profileContext: {
+          experimental: profile.experimental,
+          kind: profile.kind,
+          name: profile.name,
+          services: profile.services,
+        },
+        ...overrides,
+      }
+
+      return {
+        ...resolved,
+        inventory: overrides.inventory ?? createProfileStatusInventory({
+          inspection: {
+            capabilities: summarizeProfileCapabilities(profile),
+            profile,
+            resolvedFrom: 'argument',
+            services: summarizeProfileServices(profile),
+          },
+        }),
+      }
     }),
   })
 }
@@ -163,6 +182,7 @@ describe('preflight checks', () => {
 
     const report = await runner.run({config: createConfig(), profileName: 'splice-devnet'})
     expect(report.success).toBe(true)
+    expect(report.drift).toEqual([])
     expect(report.egressIp).toBe('203.0.113.10')
     expect(report.checks).toEqual(expect.arrayContaining([
       expect.objectContaining({name: 'Profile resolution', status: 'pass'}),
@@ -200,6 +220,14 @@ describe('preflight checks', () => {
 
     const report = await runner.run({config: createConfig(), profileName: 'splice-devnet'})
     expect(report.success).toBe(false)
+    expect(report.drift).toEqual(expect.arrayContaining([
+      expect.objectContaining({code: 'auth-mismatch', target: 'app-auth'}),
+      expect.objectContaining({code: 'auth-mismatch', target: 'operator-auth'}),
+    ]))
+    expect(report.reconcile.supportedActions).toEqual(expect.arrayContaining([
+      expect.objectContaining({command: 'cantonctl auth login devnet'}),
+      expect.objectContaining({command: 'cantonctl auth login devnet --scope operator'}),
+    ]))
     expect(report.checks).toEqual(expect.arrayContaining([
       expect.objectContaining({name: 'App credential material', status: 'fail'}),
       expect.objectContaining({name: 'Operator credential material', status: 'fail'}),
@@ -227,6 +255,9 @@ describe('preflight checks', () => {
     })
 
     const report = await runner.run({config: createConfig(), profileName: 'splice-devnet'})
+    expect(report.drift).toEqual(expect.arrayContaining([
+      expect.objectContaining({code: 'upstream-line-mismatch'}),
+    ]))
     expect(report.checks).toEqual(expect.arrayContaining([
       expect.objectContaining({
         detail: 'Compatibility baseline passed with 2 warning(s).',
@@ -383,6 +414,9 @@ describe('preflight checks', () => {
     expect(missingScan.checks).toEqual(expect.arrayContaining([
       expect.objectContaining({name: 'Scan reachability', status: 'fail'}),
     ]))
+    expect(missingScan.drift).toEqual(expect.arrayContaining([
+      expect.objectContaining({code: 'service-missing', target: 'scan'}),
+    ]))
 
     const localFetch = vi.fn().mockResolvedValue(new Response('', {status: 200}))
     const sandboxProfile = {
@@ -448,6 +482,10 @@ describe('preflight checks', () => {
     expect(scanAuthFailure.checks).toEqual(expect.arrayContaining([
       expect.objectContaining({name: 'Scan reachability', detail: 'Authentication failed for the configured service endpoint.', status: 'fail'}),
     ]))
+    expect(scanAuthFailure.drift).toEqual(expect.arrayContaining([
+      expect.objectContaining({code: 'service-unreachable', target: 'scan'}),
+      expect.objectContaining({code: 'managed-surface-mismatch', target: 'scan'}),
+    ]))
   })
 
   it('covers health probe warning branches and default egress lookup fallbacks', async () => {
@@ -486,6 +524,14 @@ describe('preflight checks', () => {
       expect.objectContaining({name: 'Auth livez', status: 'pass'}),
       expect.objectContaining({name: 'Scan readyz', detail: 'HTTP 503', status: 'warn'}),
       expect.objectContaining({name: 'Validator livez', detail: 'socket hang up', status: 'warn'}),
+    ]))
+    expect(report.drift).toEqual(expect.arrayContaining([
+      expect.objectContaining({code: 'auth-mismatch', target: 'auth-auth'}),
+      expect.objectContaining({code: 'service-unreachable', target: 'scan'}),
+      expect.objectContaining({code: 'service-unreachable', target: 'validator'}),
+      expect.objectContaining({code: 'managed-surface-mismatch', target: 'scan'}),
+      expect.objectContaining({code: 'managed-surface-mismatch', target: 'validator'}),
+      expect.objectContaining({code: 'operator-surface-unmanaged', target: 'validator'}),
     ]))
 
     const ipifyFailure = await createPreflightChecks({

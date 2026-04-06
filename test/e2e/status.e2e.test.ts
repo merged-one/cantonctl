@@ -155,8 +155,10 @@ networks:
 
       const json = JSON.parse(result.stdout) as {
         data: {
+          drift?: Array<Record<string, unknown>>
           healthy: boolean
           profile?: {kind: string; name: string}
+          reconcile?: {supportedActions?: Array<Record<string, unknown>>}
           services?: Array<{endpoint?: string; name: string; status: string}>
           version?: string
         }
@@ -165,6 +167,7 @@ networks:
 
       expect(json.success).toBe(true)
       expect(json.data.healthy).toBe(true)
+      expect(json.data.drift).toEqual([])
       expect(json.data.profile).toEqual(expect.objectContaining({
         kind: 'sandbox',
         name: 'local',
@@ -187,6 +190,9 @@ networks:
           status: 'healthy',
         }),
       ]))
+      expect(json.data.reconcile).toEqual(expect.objectContaining({
+        supportedActions: [],
+      }))
       expect(json.data.version).toBeTruthy()
     } finally {
       cwdSpy.mockRestore()

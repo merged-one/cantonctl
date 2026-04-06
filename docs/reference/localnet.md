@@ -31,6 +31,12 @@ All LocalNet commands support `--json`.
 
 `localnet up --json` and `localnet status --json` also include the same schema-versioned `inventory` contract used by `cantonctl status --json`, with `localnet-workspace` provenance for workspace-discovered services and capabilities.
 
+They also include:
+
+- `drift[]`: LocalNet workspace drift classification, including service reachability and boundary ownership
+- `reconcile.supportedActions[]`: companion-supported LocalNet recovery steps such as `cantonctl localnet up --workspace ...`
+- `reconcile.runbook[]`: explicit manual steps when the workspace exposes surfaces outside the current managed boundary
+
 ## Source
 
 - Commands: [`src/commands/localnet/`](../../src/commands/localnet)

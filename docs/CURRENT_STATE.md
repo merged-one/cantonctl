@@ -60,6 +60,13 @@ Resolved profile inspection now includes manifest-backed control-plane metadata 
 - management eligibility
 - drift hints between resolved profile intent and discovered runtime state
 
+On top of the raw inventory, `status`, `preflight`, `readiness`, and LocalNet JSON now expose a shared control-plane drift and reconcile contract that:
+
+- classifies auth, reachability, endpoint, profile-kind, operator-surface, and upstream-line drift
+- marks whether a drift item falls inside a companion-supported action or an upstream/manual boundary
+- emits supported local/runtime actions only for existing companion surfaces such as `auth login`, `dev`, `dev --net`, and `localnet up`
+- emits explicit operator or official-stack runbook items for unresolved boundary drift
+
 `cantonctl localnet up|status --json` emits the same inventory contract for official LocalNet workspace discovery.
 
 `cantonctl deploy` is now profile-first and supports plan, dry-run, and apply modes with structured artifact, fan-out, target, and step reporting. It can fan out across generated `canton-multi` participants, target LocalNet's exposed ledger endpoint, or apply against remote ledger-capable profiles.
@@ -81,6 +88,7 @@ The current release implements these control-plane surfaces:
 - explicit `operator` namespace coverage for approved admin/runtime actions
 - `dev`, `dev --net`, topology preview/export, and LocalNet wrapping
 - status, compatibility, preflight, readiness, canaries, and diagnostics
+- drift classification and reconcile planning over those read/check surfaces
 - discovery, profile import, and SDK config export
 - profile-first deploy rollout plus current promotion, upgrade, and reset helper flows
 

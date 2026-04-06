@@ -224,6 +224,7 @@ describe('preflight output helpers', () => {
         {category: 'health', detail: 'Readyz requires auth.', endpoint: 'https://scan.example.com/readyz', name: 'scan-readyz', status: 'warn'},
       ],
       compatibility: {failed: 0, passed: 3, warned: 1},
+      drift: [],
       egressIp: '203.0.113.10',
       network: {
         checklist: ['Confirm egress'],
@@ -233,6 +234,11 @@ describe('preflight output helpers', () => {
         tier: 'devnet',
       },
       profile: {experimental: true, kind: 'remote-validator', name: 'splice-devnet'},
+      reconcile: {
+        runbook: [],
+        summary: {failed: 0, info: 0, manualRunbooks: 0, supportedActions: 0, warned: 0},
+        supportedActions: [],
+      },
       success: true,
     })
 
@@ -250,8 +256,14 @@ describe('preflight output helpers', () => {
       }),
       checks: [{category: 'scan', detail: 'Scan missing.', name: 'scan', status: 'fail'}],
       compatibility: {failed: 1, passed: 0, warned: 0},
+      drift: [],
       network: {checklist: [], name: 'splice-mainnet', reminders: [], resetExpectation: 'no-resets-expected', tier: 'mainnet'},
       profile: {experimental: false, kind: 'remote-validator', name: 'splice-mainnet'},
+      reconcile: {
+        runbook: [],
+        summary: {failed: 0, info: 0, manualRunbooks: 0, supportedActions: 0, warned: 0},
+        supportedActions: [],
+      },
       success: false,
     })
 
@@ -270,8 +282,14 @@ describe('preflight output helpers', () => {
         {category: 'health', detail: 'ok', name: 'Auth readyz', status: 'warn'},
       ],
       compatibility: {failed: 0, passed: 1, warned: 2},
+      drift: [],
       network: {checklist: [], name: 'partner-lab', reminders: [], resetExpectation: 'unknown', tier: 'custom'},
       profile: {experimental: false, kind: 'remote-validator', name: 'partner-lab'},
+      reconcile: {
+        runbook: [],
+        summary: {failed: 0, info: 0, manualRunbooks: 0, supportedActions: 0, warned: 0},
+        supportedActions: [],
+      },
       success: true,
     })
 
