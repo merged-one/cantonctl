@@ -2,7 +2,7 @@
 
 `preflight` is the current read-only readiness check for remote profiles.
 
-On this branch the command remains advisory. It helps teams validate profile coherence, app and operator auth material, stable/public service reachability, and network-specific reminders before they promote or deploy.
+In `0.3.5`, the command remains advisory. It helps teams validate profile coherence, app and operator auth material, stable/public service reachability, and network-specific reminders before they promote or deploy.
 
 ## Intended Usage
 
@@ -38,7 +38,7 @@ In JSON mode, the `auth` block includes nested `app` and `operator` entries with
 - no infrastructure mutation
 - no validator-internal automation in the default path
 - no wallet-internal automation in the default path
-- no rollout apply behavior on this branch
+- no rollout apply behavior today
 
 ## Related
 

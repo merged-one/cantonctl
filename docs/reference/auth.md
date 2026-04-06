@@ -15,7 +15,7 @@ This is a companion surface. It helps teams wire auth around profiles and stable
 `cantonctl` tracks two credential scopes per resolved network:
 
 - `app`: read and user-facing flows such as readiness, preflight, and stable/public surfaces
-- `operator`: mutating control-plane flows such as `deploy` and later operator commands
+- `operator`: mutating control-plane flows such as `deploy` and any explicit operator-only companion surfaces
 
 Local profiles (`sandbox`, `canton-multi`, `splice-localnet`) can use the built-in fallback token for both scopes. Remote mutating flows never inherit that fallback path.
 

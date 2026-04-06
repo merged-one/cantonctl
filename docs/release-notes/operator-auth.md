@@ -1,4 +1,4 @@
-# vNEXT Operator Auth Scopes
+# Operator Auth Scopes
 
 `cantonctl` now separates remote auth handling into app and operator scopes.
 

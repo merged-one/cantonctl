@@ -1,4 +1,4 @@
-# vNEXT Profile-First Deploy Migration
+# Profile-First Deploy Migration
 
 ## Preferred Invocation
 

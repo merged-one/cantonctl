@@ -1,4 +1,4 @@
-# vNEXT Community-Fit Repositioning
+# Community-Fit Repositioning
 
 This release repositions `cantonctl` as a Splice-aware orchestration companion over the official Canton stack.
 

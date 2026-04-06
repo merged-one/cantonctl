@@ -8,6 +8,8 @@
 
 It exists because the official tools are authoritative inside their own lanes, but no single official tool owns the project-local orchestration and day-2 operations layer across local and remote environments. It wraps, not replaces, DPM, Daml Studio, Quickstart, and the official SDKs.
 
+The current `main` branch packages as [`cantonctl@0.3.5`](https://www.npmjs.com/package/cantonctl), and this README describes that released surface.
+
 ## What It Is Not
 
 - Not the canonical build, test, codegen, sandbox, or studio tool. Use DPM first.
@@ -96,7 +98,7 @@ The default progression is:
 
 The profile model is the product backbone. It is what lets `cantonctl` own the project-local control plane around official runtimes without re-owning the official runtime stack itself.
 
-On the current branch, that control-plane boundary is implemented as profile resolution, LocalNet wrapping, readiness/diagnostics/discovery, the profile-first deploy rollout command, and current lifecycle helper flows. It still does not replace upstream runtime implementations or cloud provisioning.
+Today that control-plane boundary is implemented as profile resolution, LocalNet wrapping, readiness/diagnostics/discovery, the profile-first deploy rollout command, and the current lifecycle helper flows. It still does not replace upstream runtime implementations or cloud provisioning.
 
 ## Commands
 
@@ -195,11 +197,13 @@ Examples:
 
 ## Release And Migration Notes
 
-- [docs/release-notes/v0.4.0-splice-support.md](docs/release-notes/v0.4.0-splice-support.md)
-- [docs/release-notes/vNEXT-community-fit.md](docs/release-notes/vNEXT-community-fit.md)
-- [docs/release-notes/vNEXT-net-mode.md](docs/release-notes/vNEXT-net-mode.md)
-- [docs/release-notes/vNEXT-profile-first-deploy.md](docs/release-notes/vNEXT-profile-first-deploy.md)
-- [docs/migration/v0.4.0-splice-support.md](docs/migration/v0.4.0-splice-support.md)
-- [docs/migration/vNEXT-community-fit.md](docs/migration/vNEXT-community-fit.md)
-- [docs/migration/vNEXT-net-mode.md](docs/migration/vNEXT-net-mode.md)
-- [docs/migration/vNEXT-profile-first-deploy.md](docs/migration/vNEXT-profile-first-deploy.md)
+- [docs/release-notes/stable-public-splice-support.md](docs/release-notes/stable-public-splice-support.md)
+- [docs/release-notes/community-fit.md](docs/release-notes/community-fit.md)
+- [docs/release-notes/net-mode.md](docs/release-notes/net-mode.md)
+- [docs/release-notes/profile-first-deploy.md](docs/release-notes/profile-first-deploy.md)
+- [docs/release-notes/operator-auth.md](docs/release-notes/operator-auth.md)
+- [docs/migration/stable-public-splice-support.md](docs/migration/stable-public-splice-support.md)
+- [docs/migration/community-fit.md](docs/migration/community-fit.md)
+- [docs/migration/net-mode.md](docs/migration/net-mode.md)
+- [docs/migration/profile-first-deploy.md](docs/migration/profile-first-deploy.md)
+- [docs/migration/operator-auth.md](docs/migration/operator-auth.md)

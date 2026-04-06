@@ -101,7 +101,7 @@ networks:
 
 - `sandbox` and `canton-multi` are local runtime surfaces. Ledger and local auth resolution are companion-managed.
 - `splice-localnet` wraps the official LocalNet workspace. The `localnet` service is apply-capable; the runtime endpoints behind it remain official local-runtime surfaces.
-- `remote-validator` and `remote-sv-network` keep remote runtimes as the implementation owners. `cantonctl` can still classify which services are in management scope for future plan/apply flows versus read-only observation.
+- `remote-validator` and `remote-sv-network` keep remote runtimes as the implementation owners. `cantonctl` still classifies which services are in management scope for current plan/apply surfaces such as `deploy` versus read-only observation.
 - Wallet-connected integrations stay out of direct control-plane mutation. They are surfaced as SDK-backed capabilities anchored to the official dApp and Wallet SDK packages.
 
 ## Related

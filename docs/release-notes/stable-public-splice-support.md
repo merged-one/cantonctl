@@ -1,21 +1,20 @@
-# v0.4.0 Release Notes: Full Canton + Splice Stable/Public Support
+# Stable/Public Splice Support Release Notes
 
 ## Highlights
 
-- raises PR-required CI from unit + SDK E2E to a stable/public release gate
+- raises PR-required CI from narrow unit-plus-smoke coverage to the manifest-defined stable/public release gate
 - adds stable/public LocalNet smoke coverage for wrapper health, scan reachability, and token/validator flows
 - separates experimental scan-proxy coverage from the GA matrix
-- documents the support boundary between `dev --full`, `localnet`, and operator-only surfaces
+- documents the support boundary between `dev --net`, `localnet`, and operator-only surfaces
 
 ## Required CI Gate
 
-The required PR gate now proves the public support claim with:
+The required PR gate now proves the public support claim through the suites defined in [`scripts/ci/manifest.js`](../../scripts/ci/manifest.js) and [`.github/workflows/ci.yml`](../../.github/workflows/ci.yml), including:
 
-- `unit-tests`
-- `generated-spec-tests`
-- `e2e-tests (sdk-core)`
-- `e2e-tests (stable-public)`
-- `e2e-tests (sandbox)`
+- generated-spec verification
+- stable/public release coverage
+- sandbox smoke coverage
+- Docker-backed topology coverage where the support claim depends on it
 
 Stable/public E2E now covers:
 
@@ -28,17 +27,17 @@ Stable/public E2E now covers:
 - LocalNet wrapper boot/status/down
 - `splice-localnet` stable/public scan and validator smoke
 
-Non-blocking or clearly separate coverage remains in dedicated jobs:
+Non-blocking or clearly separate coverage remains isolated in dedicated jobs:
 
-- `e2e-tests (experimental)` for scan-proxy-only paths
-- `e2e-tests (docker)` for heavier `dev --full` Docker topology coverage
+- experimental coverage for scan-proxy-only paths
+- heavier Docker topology coverage for `dev --net`
 
 ## Support Status
 
 GA / stable-public:
 
 - sandbox development workflow
-- `dev --full` Canton-only multi-node topology
+- `dev --net` Canton-only multi-node topology
 - profile-based config plus legacy config compatibility
 - direct Scan update, ACS, and current-state reads
 - token-standard holdings and transfer-factory transfer path
@@ -54,8 +53,8 @@ Experimental or operator-only:
 
 ## Migration Notes
 
-Read [docs/migration/v0.4.0-splice-support.md](../migration/v0.4.0-splice-support.md) before upgrading if you:
+Read [docs/migration/stable-public-splice-support.md](../migration/stable-public-splice-support.md) before upgrading if you:
 
 - still use `networks:`-only config
-- treated `dev --full` as a Splice runtime
+- treated `dev --net` or the older `dev --full` name as a Splice runtime
 - need to separate LocalNet workspace lifecycle from Canton-only multi-node dev

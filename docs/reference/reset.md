@@ -14,4 +14,4 @@ cantonctl reset checklist --network mainnet --json
 - `devnet` and `testnet` emphasize reset-aware runbooks
 - `mainnet` emphasizes continuity, backups, and investigation of unexpected discontinuities
 
-On this branch, `reset checklist` remains a reporting surface rather than an apply flow.
+Today, `reset checklist` remains a reporting surface rather than an apply flow.

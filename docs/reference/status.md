@@ -21,7 +21,7 @@ cantonctl status [flags]
 
 ## JSON Contract
 
-`status --json` includes a schema-versioned `inventory` block that is the authoritative machine-readable runtime inventory for later control-plane work.
+`status --json` includes a schema-versioned `inventory` block that is the authoritative machine-readable runtime inventory for current control-plane commands and automation.
 
 - `inventory.schemaVersion`: current inventory contract version
 - `inventory.services[]`: service-level endpoint, health, runtime provenance, warnings, and drift hints

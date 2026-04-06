@@ -2,6 +2,8 @@
 
 Start here for the canonical documentation system.
 
+This docs tree reflects `cantonctl@0.3.5` on `main`.
+
 The docs policy is simple:
 
 - [CURRENT_STATE.md](CURRENT_STATE.md) is the live product snapshot
@@ -49,11 +51,13 @@ The docs policy is simple:
 
 ## Release And Migration
 
-- [v0.4.0 Splice support notes](release-notes/v0.4.0-splice-support.md)
-- [vNEXT community-fit release notes](release-notes/vNEXT-community-fit.md)
-- [vNEXT net-mode release notes](release-notes/vNEXT-net-mode.md)
-- [vNEXT profile-first deploy release notes](release-notes/vNEXT-profile-first-deploy.md)
-- [v0.4.0 Splice support migration](migration/v0.4.0-splice-support.md)
-- [vNEXT community-fit migration](migration/vNEXT-community-fit.md)
-- [vNEXT net-mode migration](migration/vNEXT-net-mode.md)
-- [vNEXT profile-first deploy migration](migration/vNEXT-profile-first-deploy.md)
+- [Stable/public Splice support notes](release-notes/stable-public-splice-support.md)
+- [Community-fit release notes](release-notes/community-fit.md)
+- [Net-mode release notes](release-notes/net-mode.md)
+- [Profile-first deploy release notes](release-notes/profile-first-deploy.md)
+- [Operator-auth release notes](release-notes/operator-auth.md)
+- [Stable/public Splice support migration](migration/stable-public-splice-support.md)
+- [Community-fit migration](migration/community-fit.md)
+- [Net-mode migration](migration/net-mode.md)
+- [Profile-first deploy migration](migration/profile-first-deploy.md)
+- [Operator-auth migration](migration/operator-auth.md)

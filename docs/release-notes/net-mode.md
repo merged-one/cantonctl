@@ -1,4 +1,4 @@
-# vNEXT Net-Mode Release Notes
+# Net-Mode Release Notes
 
 This release replaces the old local multi-node flag with the new topology-oriented naming.
 

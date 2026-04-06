@@ -1,4 +1,4 @@
-# v0.4.0 Migration Guide: Splice Support
+# Migration Guide: Stable/Public Splice Support
 
 ## Who Should Read This
 
@@ -10,11 +10,11 @@ Read this guide if you:
 
 ## What Changed
 
-v0.4.0 raises the support bar around the stable/public Canton + Splice surfaces:
+This change raises the support bar around the stable/public Canton + Splice surfaces:
 
 - PR CI now requires generated-spec verification, SDK core E2E, stable/public Splice E2E, and sandbox smoke.
 - Stable/public Splice flows are documented and tested separately from experimental/operator-only flows.
-- LocalNet is represented explicitly as a `splice-localnet` profile or an upstream workspace wrapper. It is no longer implied by `dev --full`.
+- LocalNet is represented explicitly as a `splice-localnet` profile or an upstream workspace wrapper. It is no longer implied by `dev --net`.
 
 ## Config Migration
 
@@ -81,28 +81,30 @@ What stays compatible:
 - legacy `networks.local.type: docker` still normalizes to `canton-multi`
 - new scaffolds default to explicit `profiles:` plus `default-profile`
 
-## `dev --full` vs LocalNet
+## `dev --net` vs LocalNet
 
-The old mental model to drop is: "`dev --full` means Splice LocalNet."
+Legacy `dev --full` references map to today's `dev --net`.
 
-That is not the supported split in v0.4.0:
+The old mental model to drop is: "`dev --net` means Splice LocalNet."
 
-- `cantonctl dev --full` remains the Canton-only multi-node Docker topology generated under `.cantonctl/`
+That is not the supported split today:
+
+- `cantonctl dev --net` remains the Canton-only multi-node Docker topology generated under `.cantonctl/`
 - `cantonctl localnet up|status|down --workspace ...` wraps an official upstream Splice LocalNet workspace
 - `kind: splice-localnet` is the profile shape for stable/public Splice commands against LocalNet-style service URLs
 
-If you were using `dev --full` as a stand-in for Splice:
+If you were using `dev --net` or the older `dev --full` name as a stand-in for Splice:
 
-1. Keep `dev --full` for Canton-only multi-node contract and topology work.
+1. Keep `dev --net` for Canton-only multi-node contract and topology work.
 2. Use `localnet` commands when you need an upstream Splice workspace lifecycle.
 3. Use `splice-localnet` or `remote-validator` profiles for stable/public Scan, token-standard, ANS, and validator-user commands.
 
 ## GA vs Experimental
 
-GA/stable-public in v0.4.0:
+Stable/public today:
 
 - sandbox dev/build/test/deploy/status flows
-- `dev --full` as Canton-only multi-node mode
+- `dev --net` as Canton-only multi-node mode
 - profile migration and `compat check`
 - `codegen sync` plus generated-spec verification
 - direct Scan update/ACS/current-state reads
@@ -121,6 +123,6 @@ Still experimental or operator-only:
 
 1. Run `cantonctl profiles list` and confirm the intended `default-profile`.
 2. Replace any implicit remote URL assumptions with named `profiles:`.
-3. Audit scripts that used `dev --full` as "Splice mode" and move them to `localnet` or `splice-localnet`.
+3. Audit scripts that used `dev --net` or the older `dev --full` name as "Splice mode" and move them to `localnet` or `splice-localnet`.
 4. Re-run `cantonctl compat check` for each published profile.
 5. Re-run CI so the new required stable/public matrix is exercised before release.

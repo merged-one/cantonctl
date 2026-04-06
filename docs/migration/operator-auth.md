@@ -1,4 +1,4 @@
-# vNEXT Operator Auth Migration
+# Operator Auth Migration
 
 Remote profiles now distinguish between app credentials and operator credentials.
 

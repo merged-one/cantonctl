@@ -3,7 +3,7 @@
 **Author:** Merged One  
 **Status:** Submitted  
 **Created:** 2026-03-31  
-**Updated:** 2026-04-04
+**Updated:** 2026-04-06
 
 **Repositories:**
 
@@ -12,7 +12,7 @@
 
 **npm packages:**
 
-- [`cantonctl@0.3.4`](https://www.npmjs.com/package/cantonctl)
+- [`cantonctl@0.3.5`](https://www.npmjs.com/package/cantonctl)
 - [`cantonjs@0.2.0`](https://www.npmjs.com/package/cantonjs)
 
 ---
@@ -38,7 +38,7 @@ The problem is no longer “there is no Canton platform.” The problem is the g
 - official wallet and dApp integration tooling,
 - and the operational reality of profile-driven remote environments.
 
-`cantonctl` fills that gap with machine-readable wrappers, compatibility checks, diagnostics, discovery, and advisory helpers across sandbox, LocalNet, and remote validator-backed environments.
+`cantonctl` fills that gap with machine-readable wrappers, compatibility checks, diagnostics, discovery, runtime inventory, deploy rollout, and current lifecycle helpers across sandbox, LocalNet, and remote validator-backed environments.
 
 ## Official Boundaries
 
@@ -54,10 +54,11 @@ The problem is no longer “there is no Canton platform.” The problem is the g
 ### What `cantonctl` owns
 
 - profile-aware config resolution
-- auth, compatibility, and status helpers
+- auth, compatibility, status, readiness, and runtime-inventory helpers
 - the wrapper around the official Splice LocalNet workspace
 - stable/public CLI flows over Scan, token-standard, ANS, and validator-user surfaces
-- advisory helpers for preflight, promotion, reset, upgrade, discovery, canaries, diagnostics, and SDK config export
+- profile-first deploy rollout plus read-only preflight, promotion, reset, and upgrade helpers
+- discovery, canaries, diagnostics, and SDK config export
 
 The rule is simple: wrap, do not replace.
 
@@ -65,6 +66,8 @@ The rule is simple: wrap, do not replace.
 
 - profile kinds: `sandbox`, `canton-multi`, `splice-localnet`, `remote-validator`, `remote-sv-network`
 - LocalNet wrapping over the official workspace
+- manifest-backed control-plane metadata and authoritative runtime inventory
+- separate app and operator credential handling for remote mutations
 - stable/public Splice command surfaces
 - upstream manifest discipline for stability classes and generated clients
 - explicit experimental boundaries
@@ -98,23 +101,28 @@ Non-primary users:
 
 ## Product Direction
 
-### Docs and positioning first
+### Docs and positioning delivered
 
 - rewrite README, package metadata, command help, and proposal language
 - add ecosystem-fit guidance and explicit non-goals
 - make the docs DPM-first, Quickstart-aware, and profile-first
 - reframe `serve` and `playground` as adjunct workbench surfaces
 
-### Runtime additions next
+### Runtime additions already delivered
 
 - `preflight --profile --json`
-- promotion, reset, and upgrade advisory helpers
+- promotion, reset, and upgrade helper surfaces
 - lightweight diagnostics bundle export
 - Scan-based discovery and profile synthesis
 - stable/public canaries for CI gates
 - SDK config export for official SDK consumers
+- profile-first deploy rollout with plan and dry-run modes
+- separate app and operator auth handling for remote mutations
+- authoritative runtime inventory via `status --json`
 
-All new default-path runtime work must remain stable/public-first.
+### Remaining control-plane expansion
+
+Further plan/apply work is tracked in GitHub issues and PRs, not in this proposal document.
 
 ## Language To Retire
 

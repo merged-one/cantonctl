@@ -4,6 +4,8 @@ This document is the canonical high-level snapshot of the repository's supported
 
 Do not use it for aspirational planning. Use it to describe what exists on the current branch and what users should rely on today.
 
+On `main`, this snapshot matches the current package release: `cantonctl@0.3.5`.
+
 ## Product Position
 
 `cantonctl` is the Splice-aware orchestration companion and current project-local control-plane layer for the official Canton stack.
@@ -17,7 +19,7 @@ It complements:
 
 It wraps, not replaces, those tools.
 
-The accepted product boundary is the project-local control plane over official runtimes. On the current branch, the implemented surface is the foundation of that boundary rather than the full day-2 feature set.
+The accepted product boundary is the project-local control plane over official runtimes. In `0.3.5`, the implemented surface is the foundation of that boundary rather than the full day-2 feature set.
 
 ## Supported Local Runtime Modes
 
@@ -72,7 +74,7 @@ Local topology design for `dev --net` is separate and lives under the top-level 
 
 ## Current Control-Plane Coverage
 
-The current branch implements these control-plane surfaces:
+The current release implements these control-plane surfaces:
 
 - profile resolution, validation, and auth handling
 - separate app vs operator credential resolution and reporting for remote control-plane actions
@@ -81,7 +83,7 @@ The current branch implements these control-plane surfaces:
 - discovery, profile import, and SDK config export
 - profile-first deploy rollout plus current promotion, upgrade, and reset helper flows
 
-These boundaries still hold on the current branch:
+These boundaries still hold today:
 
 - DPM remains the canonical build, test, codegen, sandbox, and Studio launcher
 - `deploy` consumes built DARs but does not own compilation or codegen

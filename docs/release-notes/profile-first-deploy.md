@@ -1,4 +1,4 @@
-# vNEXT Profile-First Deploy Release Notes
+# Profile-First Deploy Release Notes
 
 This release promotes `cantonctl deploy` from a legacy network-oriented helper into the profile-first DAR rollout command for ledger-capable targets.
 

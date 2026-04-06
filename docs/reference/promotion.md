@@ -2,7 +2,7 @@
 
 Compare two profiles before promotion.
 
-`promote diff` is currently read-only on this branch. It does not yet roll out changes or mutate remote infrastructure.
+`promote diff` is currently read-only. It does not yet roll out changes or mutate remote infrastructure.
 
 ## Usage
 
