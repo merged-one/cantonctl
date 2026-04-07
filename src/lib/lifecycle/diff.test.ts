@@ -210,18 +210,18 @@ describe('lifecycle helpers', () => {
     ]))
   })
 
-  it('creates reset checklists with different expectations by network', () => {
+  it('creates reset checklists with different expectations by network', async () => {
     const helper = createResetHelper()
-    expect(helper.createChecklist({network: 'devnet'})).toEqual(expect.objectContaining({
-      network: 'devnet',
+    await expect(helper.createChecklist({network: 'devnet'})).resolves.toEqual(expect.objectContaining({
+      network: expect.objectContaining({name: 'devnet'}),
       resetExpectation: 'resets-expected',
     }))
-    expect(helper.createChecklist({network: 'testnet'})).toEqual(expect.objectContaining({
-      network: 'testnet',
+    await expect(helper.createChecklist({network: 'testnet'})).resolves.toEqual(expect.objectContaining({
+      network: expect.objectContaining({name: 'testnet'}),
       resetExpectation: 'resets-expected',
     }))
-    expect(helper.createChecklist({network: 'mainnet'})).toEqual(expect.objectContaining({
-      network: 'mainnet',
+    await expect(helper.createChecklist({network: 'mainnet'})).resolves.toEqual(expect.objectContaining({
+      network: expect.objectContaining({name: 'mainnet'}),
       resetExpectation: 'no-resets-expected',
     }))
   })

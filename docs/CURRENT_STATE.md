@@ -19,7 +19,7 @@ It complements:
 
 It wraps, not replaces, those tools.
 
-The accepted product boundary is the project-local control plane over official runtimes. In `0.3.5`, the implemented surface is the foundation of that boundary rather than the full day-2 feature set.
+The accepted product boundary is the project-local control plane over official runtimes. In `0.3.5`, the implemented surface now includes the first day-2 rollout workflows, but it still does not attempt full ownership of upstream runtime internals or infrastructure provisioning.
 
 ## Supported Local Runtime Modes
 
@@ -73,6 +73,8 @@ On top of the raw inventory, `status`, `preflight`, `readiness`, and LocalNet JS
 
 `cantonctl deploy` is now profile-first and supports plan, dry-run, and apply modes with structured artifact, fan-out, target, and step reporting. It can fan out across generated `canton-multi` participants, target LocalNet's exposed ledger endpoint, or apply against remote ledger-capable profiles.
 
+`cantonctl upgrade check` and `cantonctl reset checklist` now use the same plan/dry-run/apply rollout contract. Supported apply automation is currently limited to cycling an existing official LocalNet workspace for `splice-localnet` profiles; remote upgrade/reset mutation stays manual-only.
+
 Remote auth handling is now explicitly split between app and operator scopes:
 
 - app credentials support read and user-facing flows
@@ -92,7 +94,7 @@ The current release implements these control-plane surfaces:
 - status, compatibility, preflight, readiness, canaries, and diagnostics
 - drift classification and reconcile planning over those read/check surfaces
 - discovery, profile import, and SDK config export
-- profile-first deploy rollout, promotion rollout planning/live gates, and current upgrade/reset helper flows
+- profile-first deploy rollout, promotion rollout planning/live gates, and upgrade/reset rollout workflows
 
 These boundaries still hold today:
 
@@ -112,7 +114,7 @@ Stable/public companion surfaces include:
 - auth, compatibility, readiness, preflight, and status checks
 - LocalNet wrapping
 - LocalNet profile import
-- preflight, promotion rollout, upgrade/reset, and diagnostics helpers
+- preflight, promotion rollout, upgrade/reset rollout, and diagnostics helpers
 - stable/public Scan, token-standard, ANS, and validator-user flows
 - stable/public discovery, canaries, and SDK config export
 

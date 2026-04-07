@@ -26,7 +26,7 @@ describe('help positioning', () => {
     expect(Deploy.description).toContain('built DAR')
     expect(OperatorValidatorLicenses.description).toContain('explicit operator Scan surface')
     expect(Preflight.description).toContain('current read-only readiness checks')
-    expect(UpgradeCheck.description).toContain('current read-only upgrade checks')
+    expect(UpgradeCheck.description).toContain('upgrade workflow')
   })
 
   it('keeps retired umbrella language out of key command descriptions', () => {

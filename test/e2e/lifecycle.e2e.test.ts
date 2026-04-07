@@ -5,7 +5,7 @@ import * as path from 'node:path'
 import type {AddressInfo} from 'node:net'
 
 import {captureOutput} from '@oclif/test'
-import {afterAll, beforeAll, describe, expect, it} from 'vitest'
+import {afterAll, beforeAll, describe, expect, it, vi} from 'vitest'
 
 import PromoteDiff from '../../src/commands/promote/diff.js'
 import ResetChecklist from '../../src/commands/reset/checklist.js'
@@ -16,8 +16,9 @@ import {createPreflightChecks} from '../../src/lib/preflight/checks.js'
 import {createProfileRuntimeResolver} from '../../src/lib/profile-runtime.js'
 import {createReadinessRunner} from '../../src/lib/readiness.js'
 import {createLifecycleDiff} from '../../src/lib/lifecycle/diff.js'
+import {createResetRunner} from '../../src/lib/lifecycle/reset.js'
 import {createPromotionRunner} from '../../src/lib/promotion-rollout.js'
-import {createUpgradeChecker} from '../../src/lib/lifecycle/upgrade.js'
+import {createUpgradeRunner} from '../../src/lib/lifecycle/upgrade.js'
 
 const CLI_ROOT = process.cwd()
 
@@ -110,8 +111,8 @@ function createPromoteHarness(env: Record<string, string | undefined>): typeof P
 
 function createUpgradeHarness(env: Record<string, string | undefined>): typeof UpgradeCheck {
   return class TestUpgradeCheck extends UpgradeCheck {
-    protected override createUpgradeChecker() {
-      return createUpgradeChecker({
+    protected override createUpgradeRunner() {
+      return createUpgradeRunner({
         createProfileRuntimeResolver: () => createProfileRuntimeResolver({
           createBackendWithFallback: async () => ({backend: createInMemoryBackend(), isKeychain: false}),
           env,
@@ -119,6 +120,205 @@ function createUpgradeHarness(env: Record<string, string | undefined>): typeof U
       })
     }
   }
+}
+
+function createLifecycleReadinessReport(success: boolean) {
+  return {
+    auth: {scope: 'app', source: 'stored', warnings: []},
+    canary: {checks: [], selectedSuites: [], skippedSuites: [], success},
+    compatibility: {failed: 0, warned: 0},
+    drift: [],
+    inventory: {
+      capabilities: [],
+      mode: 'profile',
+      schemaVersion: 1,
+      services: [],
+      summary: {
+        configuredCapabilities: 0,
+        configuredServices: 0,
+        driftedCapabilities: 0,
+        healthyCapabilities: 0,
+        healthyServices: 0,
+        unreachableCapabilities: 0,
+        unreachableServices: 0,
+        warnedCapabilities: 0,
+      },
+      drift: [],
+    },
+    preflight: {
+      auth: {scope: 'app', source: 'stored', warnings: []},
+      checks: [],
+      compatibility: {failed: 0, warned: 0},
+      drift: [],
+      inventory: {
+        capabilities: [],
+        mode: 'profile',
+        schemaVersion: 1,
+        services: [],
+        summary: {
+          configuredCapabilities: 0,
+          configuredServices: 0,
+          driftedCapabilities: 0,
+          healthyCapabilities: 0,
+          healthyServices: 0,
+          unreachableCapabilities: 0,
+          unreachableServices: 0,
+          warnedCapabilities: 0,
+        },
+        drift: [],
+      },
+      profile: {kind: 'splice-localnet', name: 'splice-localnet'},
+      reconcile: {runbook: [], summary: {failed: 0, info: 0, manualRunbooks: 0, supportedActions: 0, warned: 0}, supportedActions: []},
+      rollout: {
+        mode: 'dry-run',
+        operation: 'readiness',
+        partial: false,
+        resume: {canResume: false, checkpoints: [], completedStepIds: [], nextStepId: undefined},
+        steps: [],
+        success,
+        summary: {blocked: 0, completed: 0, dryRun: 0, failed: 0, manual: 0, pending: 0, ready: 0, warned: 0},
+      },
+      success,
+      summary: {failed: 0, passed: 0, skipped: 0, warned: 0},
+    },
+    profile: {kind: 'splice-localnet', name: 'splice-localnet'},
+    reconcile: {runbook: [], summary: {failed: 0, info: 0, manualRunbooks: 0, supportedActions: 0, warned: 0}, supportedActions: []},
+    rollout: {
+      mode: 'dry-run',
+      operation: 'readiness',
+      partial: false,
+      resume: {canResume: false, checkpoints: [], completedStepIds: [], nextStepId: undefined},
+      steps: [],
+      success,
+      summary: {blocked: 0, completed: 0, dryRun: 0, failed: 0, manual: 0, pending: 0, ready: 0, warned: 0},
+    },
+    success,
+    summary: {failed: 0, passed: 0, skipped: 0, warned: 0},
+  } as const
+}
+
+function createLocalnetHarnesses() {
+  const localnet = {
+    down: vi.fn().mockResolvedValue(undefined),
+    status: vi.fn().mockResolvedValue({
+      containers: [],
+      health: {validatorReadyz: {body: 'ok', healthy: true, status: 200, url: 'http://validator.localhost:3003/readyz'}},
+      profiles: {
+        'app-provider': {
+          health: {validatorReadyz: 'http://validator.localhost:3003/readyz'},
+          name: 'app-provider' as const,
+          urls: {
+            ledger: 'http://ledger.localhost:3001',
+            scan: 'http://scan.localhost:3012',
+            validator: 'http://validator.localhost:3003',
+            wallet: 'http://wallet.localhost:3000',
+          },
+        },
+        'app-user': {
+          health: {validatorReadyz: 'http://validator.localhost:2003/readyz'},
+          name: 'app-user' as const,
+          urls: {
+            ledger: 'http://ledger.localhost:2001',
+            validator: 'http://validator.localhost:2003',
+            wallet: 'http://wallet.localhost:2000',
+          },
+        },
+        sv: {
+          health: {validatorReadyz: 'http://validator.localhost:5003/readyz'},
+          name: 'sv' as const,
+          urls: {
+            ledger: 'http://ledger.localhost:5001',
+            scan: 'http://scan.localhost:5012',
+            validator: 'http://validator.localhost:5003',
+            wallet: 'http://wallet.localhost:5000',
+          },
+        },
+      },
+      selectedProfile: 'sv' as const,
+      services: {
+        ledger: {url: 'http://ledger.localhost:5001'},
+        scan: {url: 'http://scan.localhost:5012'},
+        validator: {url: 'http://validator.localhost:5003'},
+        wallet: {url: 'http://wallet.localhost:5000'},
+      },
+      workspace: {
+        composeFilePath: '/workspace/compose.yaml',
+        configDir: '/workspace/docker/modules/localnet/conf',
+        env: {SPLICE_VERSION: '0.5.0'},
+        localnetDir: '/workspace/docker/modules/localnet',
+        makeTargets: {down: 'stop', status: 'status', up: 'start'},
+        profiles: {} as never,
+        root: '/workspace',
+      },
+    }),
+    up: vi.fn().mockResolvedValue({
+      containers: [],
+      health: {validatorReadyz: {body: 'ok', healthy: true, status: 200, url: 'http://validator.localhost:3003/readyz'}},
+      profiles: {} as never,
+      selectedProfile: 'app-provider' as const,
+      services: {
+        ledger: {url: 'http://ledger.localhost:3001'},
+        scan: {url: 'http://scan.localhost:3012'},
+        validator: {url: 'http://validator.localhost:3003'},
+        wallet: {url: 'http://wallet.localhost:3000'},
+      },
+      workspace: {
+        composeFilePath: '/workspace/compose.yaml',
+        configDir: '/workspace/docker/modules/localnet/conf',
+        env: {SPLICE_VERSION: '0.5.0'},
+        localnetDir: '/workspace/docker/modules/localnet',
+        makeTargets: {down: 'stop', status: 'status', up: 'start'},
+        profiles: {} as never,
+        root: '/workspace',
+      },
+    }),
+  } as const
+  const readiness = {run: vi.fn().mockResolvedValue(createLifecycleReadinessReport(true))}
+  const env = {CANTONCTL_JWT_SPLICE_LOCALNET: 'localnet-token'}
+
+  class LocalnetUpgradeHarness extends UpgradeCheck {
+    protected override createReadinessRunner() {
+      return readiness as never
+    }
+
+    protected override createLocalnet() {
+      return localnet as never
+    }
+
+    protected override createUpgradeRunner() {
+      return createUpgradeRunner({
+        createLocalnet: () => localnet as never,
+        createProfileRuntimeResolver: () => createProfileRuntimeResolver({
+          createBackendWithFallback: async () => ({backend: createInMemoryBackend(), isKeychain: false}),
+          env,
+        }),
+        createReadinessRunner: () => readiness as never,
+      })
+    }
+  }
+
+  class LocalnetResetHarness extends ResetChecklist {
+    protected override createReadinessRunner() {
+      return readiness as never
+    }
+
+    protected override createLocalnet() {
+      return localnet as never
+    }
+
+    protected override createResetRunner() {
+      return createResetRunner({
+        createLocalnet: () => localnet as never,
+        createProfileRuntimeResolver: () => createProfileRuntimeResolver({
+          createBackendWithFallback: async () => ({backend: createInMemoryBackend(), isKeychain: false}),
+          env,
+        }),
+        createReadinessRunner: () => readiness as never,
+      })
+    }
+  }
+
+  return {LocalnetResetHarness, LocalnetUpgradeHarness, localnet, readiness}
 }
 
 describe('lifecycle E2E', () => {
@@ -178,6 +378,19 @@ profiles:
       url: https://ledger.mainnet.example.com
     scan:
       url: ${scanServer.url}
+  splice-localnet:
+    kind: splice-localnet
+    auth:
+      kind: jwt
+      url: ${scanServer.url}
+    ledger:
+      url: http://ledger.localhost:3001
+    localnet:
+      version: "0.5.0"
+    scan:
+      url: http://scan.localhost:3012
+    validator:
+      url: http://validator.localhost:3003
   incomplete-mainnet:
     kind: remote-validator
     ledger:
@@ -314,5 +527,61 @@ profiles:
         expect.objectContaining({code: 'scan-missing', severity: 'fail'}),
       ]),
     }))
+  })
+
+  it('executes the supported LocalNet upgrade apply workflow', async () => {
+    const {LocalnetUpgradeHarness, localnet, readiness} = createLocalnetHarnesses()
+    const result = await runInProject(projectDir, LocalnetUpgradeHarness, [
+      '--profile',
+      'splice-localnet',
+      '--workspace',
+      '/workspace',
+      '--apply',
+      '--json',
+    ])
+    expect(result.error).toBeUndefined()
+
+    const json = parseJson(result.stdout)
+    expect(json.success).toBe(true)
+    expect(json.data).toEqual(expect.objectContaining({
+      automation: expect.objectContaining({kind: 'localnet-cycle'}),
+      rollout: expect.objectContaining({
+        mode: 'apply',
+        steps: expect.arrayContaining([
+          expect.objectContaining({status: 'completed', title: 'Cycle official LocalNet workspace'}),
+          expect.objectContaining({status: 'completed', title: 'Inspect post-upgrade readiness'}),
+        ]),
+      }),
+    }))
+    expect(localnet.down).toHaveBeenCalledWith({workspace: '/workspace'})
+    expect(readiness.run).toHaveBeenCalled()
+  })
+
+  it('executes the supported LocalNet reset apply workflow', async () => {
+    const {LocalnetResetHarness, localnet, readiness} = createLocalnetHarnesses()
+    const result = await runInProject(projectDir, LocalnetResetHarness, [
+      '--profile',
+      'splice-localnet',
+      '--workspace',
+      '/workspace',
+      '--apply',
+      '--json',
+    ])
+    expect(result.error).toBeUndefined()
+
+    const json = parseJson(result.stdout)
+    expect(json.success).toBe(true)
+    expect(json.data).toEqual(expect.objectContaining({
+      automation: expect.objectContaining({kind: 'localnet-cycle'}),
+      rollout: expect.objectContaining({
+        mode: 'apply',
+        steps: expect.arrayContaining([
+          expect.objectContaining({status: 'completed', title: 'Cycle official LocalNet workspace'}),
+          expect.objectContaining({status: 'completed', title: 'Inspect post-reset readiness'}),
+        ]),
+      }),
+    }))
+    expect(localnet.down).toHaveBeenCalledWith({workspace: '/workspace'})
+    expect(readiness.run).toHaveBeenCalled()
   })
 })
