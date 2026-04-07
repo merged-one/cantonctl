@@ -29,7 +29,14 @@ cantonctl build [flags]
 | `--codegen`, `-c` | Run SDK code generation after a successful build |
 | `--no-codegen` | Explicitly skip code generation |
 | `--force` | Ignore the DAR cache and rebuild |
+| `--watch`, `-w` | Watch `daml/` for changes and rebuild automatically until interrupted |
 | `--json` | Output structured JSON |
+
+## Watch Mode
+
+`cantonctl build --watch` performs an initial build, watches `.daml` sources under `daml/`, and rebuilds on change. In interactive mode it stays attached until `Ctrl+C` or `q`.
+
+Watch mode is build-only. If you also need generated bindings, rerun `cantonctl build --codegen` after the watched build finishes.
 
 ## Source
 

@@ -2,7 +2,7 @@
 
 `preflight` is the read-only rollout gate for a resolved profile.
 
-In `0.3.5`, the command still does not mutate anything. It validates profile coherence, app and operator auth material, stable/public service reachability, and network-specific reminders before deploy or promotion, and it emits the same step/blocker model used by the control-plane rollout surfaces.
+In `0.3.6`, the command still does not mutate anything. It validates profile coherence, app and operator auth material, stable/public service reachability, and network-specific reminders before deploy or promotion, and it emits the same step/blocker model used by the control-plane rollout surfaces.
 
 ## Intended Usage
 

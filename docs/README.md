@@ -2,7 +2,7 @@
 
 Start here for the canonical documentation system.
 
-This docs tree reflects `cantonctl@0.3.5` on `main`.
+This docs tree reflects `cantonctl@0.3.6` on `main`.
 
 The docs policy is simple:
 
@@ -23,13 +23,19 @@ The docs policy is simple:
 
 ## Core Workflows
 
+- [Init](reference/init.md)
+- [Dev](reference/dev.md)
+- [Build](reference/build.md)
+- [Test](reference/test.md)
 - [Configuration](reference/configuration.md)
+- [Profiles](reference/profiles.md)
 - [Topology](reference/topology.md)
 - [Auth](reference/auth.md)
 - [Compatibility](reference/compatibility.md)
 - [Operator surfaces](reference/operator.md)
 - [Deploy](reference/deploy.md)
 - [Status](reference/status.md)
+- [Doctor](reference/doctor.md)
 - [LocalNet wrapper](reference/localnet.md)
 - [Readiness gate](reference/readiness.md)
 - [Preflight](reference/preflight.md)

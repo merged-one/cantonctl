@@ -1,5 +1,7 @@
 ## Development Fund Proposal
 
+This file is archival proposal context. It is not canonical product or architecture guidance for the current repo surface; use `README.md`, `docs/CURRENT_STATE.md`, `docs/BEST_PRACTICES.md`, and `docs/adr/` for live guidance.
+
 **Author:** Merged One  
 **Status:** Submitted  
 **Created:** 2026-03-31  
@@ -12,7 +14,7 @@
 
 **npm packages:**
 
-- [`cantonctl@0.3.5`](https://www.npmjs.com/package/cantonctl)
+- [`cantonctl@0.3.6`](https://www.npmjs.com/package/cantonctl)
 - [`cantonjs@0.2.0`](https://www.npmjs.com/package/cantonjs)
 
 ---

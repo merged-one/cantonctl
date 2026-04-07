@@ -22,5 +22,5 @@ We chose YAML with Zod schema validation and hierarchical resolution: `cantonctl
 - Hierarchical resolution adds complexity to debugging which value wins
 
 ## References
-- [YAML configuration design](../DESIGN_DECISIONS.md#decision-3-yaml-configuration-with-json-schema-validation)
+- [ADR index](README.md) — canonical replacement for the retired monolithic design-decisions document
 - YAML matches Canton ecosystem: canton config, daml.yaml, Docker Compose

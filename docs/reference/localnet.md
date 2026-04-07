@@ -17,6 +17,8 @@ cantonctl localnet status --workspace <path>
 cantonctl profiles import-localnet --workspace <path> [--write]
 ```
 
+`localnet up`, `localnet down`, and `localnet status` all require `--workspace` and support `--json`. `localnet up` also accepts `--profile <name>` and passes it through upstream as `PROFILE=<name>`.
+
 ## Behavior
 
 - Detects an upstream-style LocalNet workspace
@@ -36,6 +38,23 @@ They also include:
 - `drift[]`: LocalNet workspace drift classification, including service reachability and boundary ownership
 - `reconcile.supportedActions[]`: companion-supported LocalNet recovery steps such as `cantonctl localnet up --workspace ...`
 - `reconcile.runbook[]`: explicit manual steps when the workspace exposes surfaces outside the current managed boundary
+
+## `profiles import-localnet`
+
+Use `profiles import-localnet` when you want to materialize an official LocalNet workspace as a reusable `splice-localnet` profile.
+
+Flags:
+
+| Flag | Description |
+|---|---|
+| `--workspace <path>` | Official LocalNet workspace root |
+| `--source-profile app-provider|app-user|sv` | Which upstream workspace profile to import |
+| `--name <profile>` | Override the generated profile name |
+| `--network-name <name>` | Override the generated `networks:` alias |
+| `--write` | Merge the generated profile and network mapping into `cantonctl.yaml` |
+| `--json` | Return the synthesized profile, warnings, and YAML as JSON |
+
+By default the command imports the upstream `sv` profile as `profiles.splice-localnet` and wires `networks.localnet.profile: splice-localnet`.
 
 ## Source
 

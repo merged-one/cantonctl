@@ -22,5 +22,5 @@ The developer survey's top pain point (41%) is that developers must become infra
 - Dependency on dpm sandbox availability and behavior
 
 ## References
-- [Sandbox-first design](../DESIGN_DECISIONS.md#decision-4-lightweight-local-dev-sandbox-first-docker-optional)
+- [ADR index](README.md) — canonical replacement for the retired monolithic design-decisions document
 - 41% survey pain point on setup; cn-quickstart 8GB Docker requirement; Anvil <1s benchmark
