@@ -106,13 +106,15 @@ E2E tests that start real runtimes must keep unique ports. Prefer extending the 
 
 ## Documentation Policy
 
-Update docs in this order:
+Update docs in this order whenever functionality is added or trimmed, or when command scope or boundary changes:
 
 1. command help and `docs/reference/*`
-2. `docs/CURRENT_STATE.md` if supported behavior changed
+2. `docs/CURRENT_STATE.md` if supported behavior, live command scope, or supported boundary changed
 3. ADRs if the architecture or product boundary changed
-4. release/migration notes if users must change terminology or behavior
+4. release/migration notes if users must change terminology or behavior, or if command scope/defaults/boundary ownership changed
 5. `README.md`, `CLAUDE.md`, and this file last
+
+Keep `docs/CURRENT_STATE.md` implementation-only. Planned work belongs in GitHub issues, not in the live snapshot.
 
 Do not add new roadmap, phase, status, funding, or worklog docs.
 

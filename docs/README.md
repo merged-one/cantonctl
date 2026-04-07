@@ -10,7 +10,7 @@ The docs policy is simple:
 - [BEST_PRACTICES.md](BEST_PRACTICES.md) explains how docs stay accurate
 - [adr/README.md](adr/README.md) indexes accepted architecture decisions
 - `docs/reference/*.md` is the source of truth for user-facing command behavior
-- release and migration notes capture change history
+- release and migration notes capture change history for command-scope, boundary, and terminology changes
 
 ## Start Here
 
@@ -52,17 +52,5 @@ The docs policy is simple:
 
 ## Release And Migration
 
-- [Stable/public Splice support notes](release-notes/stable-public-splice-support.md)
-- [Community-fit release notes](release-notes/community-fit.md)
-- [Net-mode release notes](release-notes/net-mode.md)
-- [Profile-first deploy release notes](release-notes/profile-first-deploy.md)
-- [Promotion-rollout release notes](release-notes/promotion-rollout.md)
-- [Upgrade-reset rollout release notes](release-notes/upgrade-reset-rollouts.md)
-- [Operator-auth release notes](release-notes/operator-auth.md)
-- [Stable/public Splice support migration](migration/stable-public-splice-support.md)
-- [Community-fit migration](migration/community-fit.md)
-- [Net-mode migration](migration/net-mode.md)
-- [Profile-first deploy migration](migration/profile-first-deploy.md)
-- [Promotion-rollout migration](migration/promotion-rollout.md)
-- [Upgrade-reset rollout migration](migration/upgrade-reset-rollouts.md)
-- [Operator-auth migration](migration/operator-auth.md)
+- [Release notes](release-notes/)
+- [Migration guides](migration/)

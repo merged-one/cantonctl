@@ -3,6 +3,7 @@
 This document is the canonical high-level snapshot of the repository's supported feature set.
 
 Do not use it for aspirational planning. Use it to describe what exists on the current branch and what users should rely on today.
+Do not use it for issue sequencing, roadmap sketches, or future-scope notes; keep that work in GitHub issues and accepted ADRs.
 
 On `main`, this snapshot matches the current package release: `cantonctl@0.3.5`.
 
