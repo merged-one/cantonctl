@@ -38,6 +38,7 @@ export default class DiagnosticsBundle extends Command {
       const snapshot = await this.createDiagnosticsCollector().collect({
         config,
         profileName: flags.profile,
+        projectDir: process.cwd(),
       })
       const outputDir = flags.output ?? path.join(process.cwd(), '.cantonctl', 'diagnostics', snapshot.profile.name)
       const bundle = await this.createDiagnosticsBundleWriter().write({
@@ -81,4 +82,3 @@ export default class DiagnosticsBundle extends Command {
     return loadConfig()
   }
 }
-

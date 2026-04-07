@@ -7,6 +7,12 @@ import {
   type ControlPlaneRunbookItem,
   type ControlPlaneWarning,
 } from '../control-plane-operation.js'
+import {
+  createDiagnosticsAuditStore,
+  createResetAuditRecord,
+  persistDiagnosticsAuditRecord,
+  type DiagnosticsAuditStore,
+} from '../diagnostics/audit.js'
 import {CantonctlError, ErrorCode} from '../errors.js'
 import type {Localnet} from '../localnet.js'
 import {resolveNetworkPolicy, type NetworkPolicy} from '../preflight/network-policy.js'
@@ -51,11 +57,13 @@ export interface ResetRunOptions {
   mode?: ControlPlaneOperationMode
   network?: 'devnet' | 'mainnet' | 'testnet'
   profileName?: string
+  projectDir?: string
   signal?: AbortSignal
   workspace?: string
 }
 
 export interface ResetRunnerDeps {
+  createAuditStore?: () => DiagnosticsAuditStore
   createLocalnet?: () => Localnet
   createProfileRuntimeResolver?: () => ProfileRuntimeResolver
   createReadinessRunner?: () => ReadinessRunner
@@ -87,6 +95,7 @@ interface ResetAutomationSupport {
 }
 
 export function createResetRunner(deps: ResetRunnerDeps = {}): ResetRunner {
+  const createAuditStore = deps.createAuditStore ?? (() => createDiagnosticsAuditStore())
   const resolveRuntime = deps.createProfileRuntimeResolver ?? (() => createProfileRuntimeResolver())
   const createReadiness = deps.createReadinessRunner ?? (() => createReadinessRunner())
 
@@ -215,7 +224,7 @@ export function createResetRunner(deps: ResetRunnerDeps = {}): ResetRunner {
           ? await runner.dryRun({input: options, signal: options.signal})
           : await runner.apply({input: options, signal: options.signal})
 
-      return {
+      const result = {
         automation: automation.summary,
         checklist: context.checklist,
         network: context.network,
@@ -226,6 +235,14 @@ export function createResetRunner(deps: ResetRunnerDeps = {}): ResetRunner {
         success: rollout.success,
         target: context.target,
       }
+
+      await persistDiagnosticsAuditRecord({
+        createAuditStore,
+        projectDir: options.projectDir,
+        record: createResetAuditRecord(result),
+      })
+
+      return result
     },
   }
 }

@@ -592,4 +592,36 @@ describe('reset workflow', () => {
       }),
     ]))
   })
+
+  it('persists the last reset summary for diagnostics bundles', async () => {
+    const resolve = vi.fn().mockResolvedValue(createRuntime())
+    const writeLastOperation = vi.fn().mockResolvedValue({file: '/project/.cantonctl/control-plane/last-operation.json'})
+    const runner = createResetRunner({
+      createAuditStore: () => ({
+        readLastOperation: vi.fn(),
+        writeLastOperation,
+      }),
+      createProfileRuntimeResolver: () => ({resolve}),
+    })
+
+    const report = await runner.run({
+      config: createConfig(),
+      mode: 'plan',
+      profileName: 'splice-localnet',
+      projectDir: '/project',
+    })
+
+    expect(report.success).toBe(true)
+    expect(writeLastOperation).toHaveBeenCalledWith({
+      projectDir: '/project',
+      record: expect.objectContaining({
+        command: 'reset checklist',
+        context: expect.objectContaining({
+          automation: expect.objectContaining({kind: 'localnet-cycle'}),
+          target: {kind: 'profile', name: 'splice-localnet'},
+        }),
+        mode: 'plan',
+      }),
+    })
+  })
 })

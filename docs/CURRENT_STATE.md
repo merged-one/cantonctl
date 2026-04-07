@@ -95,6 +95,7 @@ The current release implements these control-plane surfaces:
 - drift classification and reconcile planning over those read/check surfaces
 - discovery, profile import, and SDK config export
 - profile-first deploy rollout, promotion rollout planning/live gates, and upgrade/reset rollout workflows
+- diagnostics bundles include runtime inventory, drift summaries, and the last stored control-plane operation artifact with aggressive redaction
 
 These boundaries still hold today:
 

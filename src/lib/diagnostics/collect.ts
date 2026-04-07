@@ -1,25 +1,39 @@
 import {createScanAdapter, type ScanAdapter} from '../adapters/scan.js'
-import {CantonctlError} from '../errors.js'
 import type {CantonctlConfig} from '../config.js'
+import {createControlPlaneDriftReport, type ControlPlaneDriftReport} from '../control-plane-drift.js'
+import {CantonctlError} from '../errors.js'
 import {type ProfileRuntimeResolver, createProfileRuntimeResolver} from '../profile-runtime.js'
+import type {RuntimeInventory} from '../runtime-inventory.js'
+import {createDiagnosticsAuditStore, type DiagnosticsAuditRecord, type DiagnosticsAuditStore} from './audit.js'
 
 export interface DiagnosticsSnapshot {
   auth: {
-    envVarName: string
+    app: {
+      envVarName: string
+      required: boolean
+      source: string
+    }
     mode: string
-    source: string
+    operator: {
+      envVarName: string
+      required: boolean
+      source: string
+    }
   }
   compatibility: {
     failed: number
     passed: number
     warned: number
   }
+  drift: ControlPlaneDriftReport
   health: Array<{
     detail: string
     endpoint: string
     name: string
     status: 'auth-required' | 'healthy' | 'not-exposed' | 'unreachable'
   }>
+  inventory: RuntimeInventory
+  lastOperation?: DiagnosticsAuditRecord
   metrics: Array<{
     detail: string
     endpoint: string
@@ -27,10 +41,12 @@ export interface DiagnosticsSnapshot {
     status: 'auth-required' | 'available' | 'not-exposed' | 'unreachable'
   }>
   profile: {
+    definitionSource?: string
     experimental: boolean
     kind: string
     name: string
     network: string
+    services: Awaited<ReturnType<ProfileRuntimeResolver['resolve']>>['profile']['services']
   }
   services: Array<{
     endpoint?: string
@@ -45,16 +61,18 @@ export interface DiagnosticsSnapshot {
 }
 
 export interface DiagnosticsCollectorDeps {
+  createAuditStore?: () => DiagnosticsAuditStore
   createProfileRuntimeResolver?: () => ProfileRuntimeResolver
   createScanAdapter?: (options: Parameters<typeof createScanAdapter>[0]) => ScanAdapter
   fetch?: typeof globalThis.fetch
 }
 
 export interface DiagnosticsCollector {
-  collect(options: {config: CantonctlConfig; profileName?: string; signal?: AbortSignal}): Promise<DiagnosticsSnapshot>
+  collect(options: {config: CantonctlConfig; profileName?: string; projectDir?: string; signal?: AbortSignal}): Promise<DiagnosticsSnapshot>
 }
 
 export function createDiagnosticsCollector(deps: DiagnosticsCollectorDeps = {}): DiagnosticsCollector {
+  const createAuditStore = deps.createAuditStore ?? (() => createDiagnosticsAuditStore())
   const resolveRuntime = deps.createProfileRuntimeResolver ?? (() => createProfileRuntimeResolver())
   const createScan = deps.createScanAdapter ?? createScanAdapter
   const fetchFn = deps.fetch ?? globalThis.fetch
@@ -68,20 +86,36 @@ export function createDiagnosticsCollector(deps: DiagnosticsCollectorDeps = {}):
 
       return {
         auth: {
-          envVarName: runtime.auth.envVarName,
           mode: runtime.auth.mode,
-          source: runtime.credential.source,
+          app: {
+            envVarName: runtime.auth.app.envVarName,
+            required: runtime.auth.app.required,
+            source: runtime.credential.source,
+          },
+          operator: {
+            envVarName: runtime.auth.operator.envVarName,
+            required: runtime.auth.operator.required,
+            source: runtime.operatorCredential.source,
+          },
         },
         compatibility: {
           failed: runtime.compatibility.failed,
           passed: runtime.compatibility.passed,
           warned: runtime.compatibility.warned,
         },
+        drift: createControlPlaneDriftReport({
+          inventory: runtime.inventory,
+          runtime,
+        }),
         health: await collectHealth({
           fetch: fetchFn,
           profile: runtime.profile,
           signal: options.signal,
           token: runtime.credential.token,
+        }),
+        inventory: runtime.inventory,
+        lastOperation: await createAuditStore().readLastOperation({
+          projectDir: options.projectDir ?? process.cwd(),
         }),
         metrics: await collectMetrics({
           fetch: fetchFn,
@@ -90,10 +124,12 @@ export function createDiagnosticsCollector(deps: DiagnosticsCollectorDeps = {}):
           token: runtime.credential.token,
         }),
         profile: {
+          definitionSource: runtime.profile.definitionSource,
           experimental: runtime.profile.experimental,
           kind: runtime.profile.kind,
           name: runtime.profile.name,
           network: runtime.networkName,
+          services: runtime.profile.services,
         },
         services: runtime.compatibility.services.map(service => ({
           endpoint: service.endpoint,
@@ -261,4 +297,3 @@ function joinPath(baseUrl: string, suffix: string): string {
   url.pathname = url.pathname.replace(/\/+$/, '') + `/${suffix}`
   return url.toString()
 }
-

@@ -9,6 +9,12 @@ import {
   type ControlPlaneRunbookItem,
   type ControlPlaneWarning,
 } from '../control-plane-operation.js'
+import {
+  createDiagnosticsAuditStore,
+  createUpgradeAuditRecord,
+  persistDiagnosticsAuditRecord,
+  type DiagnosticsAuditStore,
+} from '../diagnostics/audit.js'
 import {CantonctlError} from '../errors.js'
 import type {Localnet} from '../localnet.js'
 import {resolveNetworkPolicy, type NetworkPolicy} from '../preflight/network-policy.js'
@@ -70,11 +76,13 @@ export interface UpgradeRunOptions {
   config: CantonctlConfig
   mode?: ControlPlaneOperationMode
   profileName?: string
+  projectDir?: string
   signal?: AbortSignal
   workspace?: string
 }
 
 export interface UpgradeRunnerDeps {
+  createAuditStore?: () => DiagnosticsAuditStore
   createLocalnet?: () => Localnet
   createProfileRuntimeResolver?: () => ProfileRuntimeResolver
   createReadinessRunner?: () => ReadinessRunner
@@ -111,6 +119,7 @@ interface UpgradeAutomationSupport {
 }
 
 export function createUpgradeRunner(deps: UpgradeRunnerDeps = {}): UpgradeRunner {
+  const createAuditStore = deps.createAuditStore ?? (() => createDiagnosticsAuditStore())
   const resolveRuntime = deps.createProfileRuntimeResolver ?? (() => createProfileRuntimeResolver())
   const createScan = deps.createScanAdapter ?? createScanAdapter
   const createReadiness = deps.createReadinessRunner ?? (() => createReadinessRunner())
@@ -259,13 +268,21 @@ export function createUpgradeRunner(deps: UpgradeRunnerDeps = {}): UpgradeRunner
           : await runner.apply({input: options, signal: options.signal})
       const assessment = stateRef!.assessment!
 
-      return {
+      const result = {
         ...assessment,
         automation: automation.summary,
         readiness: stateRef?.readiness,
         rollout,
         success: rollout.success,
       }
+
+      await persistDiagnosticsAuditRecord({
+        createAuditStore,
+        projectDir: options.projectDir,
+        record: createUpgradeAuditRecord(result),
+      })
+
+      return result
     },
   }
 }

@@ -54,6 +54,7 @@ export default class PromoteDiff extends Command {
         config: await this.loadProjectConfig(),
         fromProfile: flags.from,
         mode: resolvePromotionMode(flags),
+        projectDir: process.cwd(),
         toProfile: flags.to,
       })
 

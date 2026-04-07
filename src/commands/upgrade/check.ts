@@ -50,6 +50,7 @@ export default class UpgradeCheck extends Command {
         config: await this.loadProjectConfig(),
         mode: resolveUpgradeMode(flags),
         profileName: flags.profile,
+        projectDir: process.cwd(),
         workspace: flags.workspace,
       })
 

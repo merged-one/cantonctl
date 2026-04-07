@@ -508,4 +508,46 @@ describe('createPromotionRunner', () => {
       }),
     ]))
   })
+
+  it('persists the last promotion summary for diagnostics bundles', async () => {
+    const compare = vi.fn().mockResolvedValue({
+      advisories: [],
+      from: {experimental: false, kind: 'remote-validator', name: 'splice-devnet', network: 'splice-devnet', tier: 'devnet'},
+      services: [{change: 'changed', from: 'https://scan.devnet.example.com', name: 'scan', to: 'https://scan.testnet.example.com'}],
+      success: true,
+      summary: {failed: 0, info: 0, warned: 0},
+      to: {experimental: false, kind: 'remote-validator', name: 'splice-testnet', network: 'splice-testnet', tier: 'testnet'},
+    })
+    const writeLastOperation = vi.fn().mockResolvedValue({file: '/project/.cantonctl/control-plane/last-operation.json'})
+    const runner = createPromotionRunner({
+      createAuditStore: () => ({
+        readLastOperation: vi.fn(),
+        writeLastOperation,
+      }),
+      createLifecycleDiff: () => ({compare}),
+      createPreflightRunner: () => ({run: vi.fn()}),
+      createReadinessRunner: () => ({run: vi.fn()}),
+    })
+
+    const result = await runner.run({
+      config: createConfig(),
+      fromProfile: 'splice-devnet',
+      projectDir: '/project',
+      toProfile: 'splice-testnet',
+    })
+
+    expect(result.success).toBe(true)
+    expect(writeLastOperation).toHaveBeenCalledWith({
+      projectDir: '/project',
+      record: expect.objectContaining({
+        command: 'promote diff',
+        context: expect.objectContaining({
+          from: expect.objectContaining({name: 'splice-devnet'}),
+          serviceChanges: [{change: 'changed', from: 'https://scan.devnet.example.com', name: 'scan', to: 'https://scan.testnet.example.com'}],
+          to: expect.objectContaining({name: 'splice-testnet'}),
+        }),
+        mode: 'plan',
+      }),
+    })
+  })
 })

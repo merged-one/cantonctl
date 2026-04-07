@@ -752,6 +752,10 @@ describe('stable-public canary helpers', () => {
 describe('diagnostics helpers', () => {
   it('collects auth-required, unavailable, and unreachable health and metrics states', async () => {
     const collector = createDiagnosticsCollector({
+      createAuditStore: () => ({
+        readLastOperation: vi.fn().mockResolvedValue(undefined),
+        writeLastOperation: vi.fn(),
+      }),
       createProfileRuntimeResolver: createResolver(createRuntime({
         services: {
           auth: {issuer: 'https://auth.example.com'},
@@ -792,6 +796,10 @@ describe('diagnostics helpers', () => {
 
   it('handles metric probe failures and bundle snapshots without validator liveness', async () => {
     const collector = createDiagnosticsCollector({
+      createAuditStore: () => ({
+        readLastOperation: vi.fn().mockResolvedValue(undefined),
+        writeLastOperation: vi.fn(),
+      }),
       createProfileRuntimeResolver: createResolver(createRuntime({
         services: {
           auth: {issuer: 'https://auth.example.com'},
@@ -809,6 +817,7 @@ describe('diagnostics helpers', () => {
     await expect(createDiagnosticsBundleWriter().write({outputDir, snapshot})).resolves.toEqual(expect.objectContaining({
       outputDir,
     }))
+    expect(readFileSync(join(outputDir, 'last-operation.json'), 'utf8')).toContain('{}')
     expect(readFileSync(join(outputDir, 'validator-liveness.json'), 'utf8')).toContain('{}')
   })
 
@@ -839,6 +848,10 @@ describe('diagnostics helpers', () => {
 
   it('records metric HTTP failures and Error-based metric probe exceptions', async () => {
     const collector = createDiagnosticsCollector({
+      createAuditStore: () => ({
+        readLastOperation: vi.fn().mockResolvedValue(undefined),
+        writeLastOperation: vi.fn(),
+      }),
       createProfileRuntimeResolver: createResolver(createRuntime({
         services: {
           auth: {issuer: 'https://auth.example.com'},
@@ -873,6 +886,10 @@ describe('diagnostics helpers', () => {
 
   it('omits validator liveness when scan is missing and rethrows unexpected scan errors', async () => {
     const noScanCollector = createDiagnosticsCollector({
+      createAuditStore: () => ({
+        readLastOperation: vi.fn().mockResolvedValue(undefined),
+        writeLastOperation: vi.fn(),
+      }),
       createProfileRuntimeResolver: createResolver(createRuntime({
         services: {
           auth: {issuer: 'https://auth.example.com'},
@@ -885,6 +902,10 @@ describe('diagnostics helpers', () => {
       .resolves.toEqual(expect.objectContaining({validatorLiveness: undefined}))
 
     const failingCollector = createDiagnosticsCollector({
+      createAuditStore: () => ({
+        readLastOperation: vi.fn().mockResolvedValue(undefined),
+        writeLastOperation: vi.fn(),
+      }),
       createProfileRuntimeResolver: createResolver(createRuntime({
         services: {
           auth: {issuer: 'https://auth.example.com'},
@@ -908,17 +929,51 @@ describe('diagnostics helpers', () => {
     const result = await writer.write({
       outputDir,
       snapshot: {
-        auth: {envVarName: 'CANTONCTL_JWT_SPLICE_DEVNET', mode: 'env-or-keychain-jwt', source: 'stored'},
+        auth: {
+          app: {envVarName: 'CANTONCTL_JWT_SPLICE_DEVNET', required: true, source: 'stored'},
+          mode: 'env-or-keychain-jwt',
+          operator: {envVarName: 'CANTONCTL_OPERATOR_TOKEN_SPLICE_DEVNET', required: true, source: 'stored'},
+        },
         compatibility: {failed: 0, passed: 3, warned: 1},
+        drift: {
+          items: [],
+          reconcile: {runbook: [], summary: {failed: 0, info: 0, manualRunbooks: 0, supportedActions: 0, warned: 0}, supportedActions: []},
+          summary: {failed: 0, info: 0, manualRunbooks: 0, supportedActions: 0, warned: 0},
+        },
         health: [],
+        inventory: createInventory({experimental: false, kind: 'remote-validator', name: 'splice-devnet'}),
+        lastOperation: {
+          command: 'deploy',
+          context: {accessToken: 'secret-token', tokenStandard: {url: 'https://tokens.example.com'}},
+          mode: 'apply',
+          recordedAt: '2026-04-06T22:00:00.000Z',
+          rollout: {
+            operation: 'deploy',
+            partial: false,
+            steps: [],
+            success: true,
+            summary: {blocked: 0, completed: 1, dryRun: 0, failed: 0, manual: 0, pending: 0, ready: 0, warned: 0},
+          },
+          schemaVersion: 1,
+          success: true,
+        },
         metrics: [],
-        profile: {experimental: false, kind: 'remote-validator', name: 'splice-devnet', network: 'splice-devnet'},
+        profile: {
+          definitionSource: 'profile',
+          experimental: false,
+          kind: 'remote-validator',
+          name: 'splice-devnet',
+          network: 'splice-devnet',
+          services: {},
+        },
         services: [],
         validatorLiveness: {approvedValidatorCount: 1, endpoint: 'https://scan.example.com', sampleSize: 1},
       },
     })
 
-    expect(result.files).toHaveLength(7)
+    expect(result.files).toHaveLength(10)
+    expect(readFileSync(join(outputDir, 'last-operation.json'), 'utf8')).toContain('"accessToken": "[REDACTED]"')
+    expect(readFileSync(join(outputDir, 'last-operation.json'), 'utf8')).toContain('"tokenStandard"')
     expect(readFileSync(join(outputDir, 'validator-liveness.json'), 'utf8')).toContain('"approvedValidatorCount": 1')
   })
 })

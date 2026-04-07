@@ -2,6 +2,7 @@ import * as fs from 'node:fs'
 import * as path from 'node:path'
 
 import type {DiagnosticsSnapshot} from './collect.js'
+import {redactSupportArtifact} from './audit.js'
 
 export interface DiagnosticsBundleWriter {
   write(options: {
@@ -27,9 +28,12 @@ export function createDiagnosticsBundleWriter(
         writeJson(pathImpl.join(options.outputDir, 'auth.json'), options.snapshot.auth, fsImpl),
         writeJson(pathImpl.join(options.outputDir, 'compatibility.json'), options.snapshot.compatibility, fsImpl),
         writeJson(pathImpl.join(options.outputDir, 'services.json'), options.snapshot.services, fsImpl),
+        writeJson(pathImpl.join(options.outputDir, 'inventory.json'), options.snapshot.inventory, fsImpl),
+        writeJson(pathImpl.join(options.outputDir, 'drift.json'), options.snapshot.drift, fsImpl),
         writeJson(pathImpl.join(options.outputDir, 'health.json'), options.snapshot.health, fsImpl),
         writeJson(pathImpl.join(options.outputDir, 'metrics.json'), options.snapshot.metrics, fsImpl),
         writeJson(pathImpl.join(options.outputDir, 'validator-liveness.json'), options.snapshot.validatorLiveness ?? {}, fsImpl),
+        writeJson(pathImpl.join(options.outputDir, 'last-operation.json'), options.snapshot.lastOperation ?? {}, fsImpl),
       ]
 
       return {
@@ -41,7 +45,6 @@ export function createDiagnosticsBundleWriter(
 }
 
 function writeJson(filePath: string, value: unknown, fsImpl: typeof fs): string {
-  fsImpl.writeFileSync(filePath, `${JSON.stringify(value, null, 2)}\n`, 'utf8')
+  fsImpl.writeFileSync(filePath, `${JSON.stringify(redactSupportArtifact(value), null, 2)}\n`, 'utf8')
   return filePath
 }
-

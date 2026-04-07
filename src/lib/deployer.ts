@@ -18,6 +18,12 @@ import {
   type ControlPlaneStep,
   type ControlPlaneStepStatus,
 } from './control-plane-operation.js'
+import {
+  createDeployAuditRecord,
+  createDiagnosticsAuditStore,
+  persistDiagnosticsAuditRecord,
+  type DiagnosticsAuditStore,
+} from './diagnostics/audit.js'
 import {CantonctlError, ErrorCode} from './errors.js'
 import type {LedgerClient, LedgerClientOptions} from './ledger-client.js'
 import type {PluginHookManager} from './plugin-hooks.js'
@@ -51,6 +57,8 @@ export interface DeployerDeps {
   findDarFile?: typeof defaultFindDarFile
   /** Plugin hook manager for lifecycle events. */
   hooks?: PluginHookManager
+  /** Project-local support artifact persistence for last control-plane operation state. */
+  createAuditStore?: () => DiagnosticsAuditStore
 }
 
 export interface DeployOptions {
@@ -149,6 +157,7 @@ interface DeployState {
 }
 
 export function createDeployer(deps: DeployerDeps): Deployer {
+  const createAuditStore = deps.createAuditStore ?? (() => createDiagnosticsAuditStore())
   const detectTopology = deps.detectTopology ?? (async () => null)
   const findDarFile = deps.findDarFile ?? defaultFindDarFile
   const createRuntimeResolver = deps.createProfileRuntimeResolver ?? createProfileRuntimeResolver
@@ -209,7 +218,7 @@ export function createDeployer(deps: DeployerDeps): Deployer {
         ? applyPlanArtifactResolution(operation, planArtifactResolution!)
         : operation
 
-      return {
+      const result: DeployResult = {
         ...finalOperation,
         artifact: {
           darPath: deployState?.artifact?.darPath ?? null,
@@ -235,6 +244,14 @@ export function createDeployer(deps: DeployerDeps): Deployer {
         requestedTarget,
         targets: targets.map(target => summarizeTarget(finalOperation, deployState!, target)),
       }
+
+      await persistDiagnosticsAuditRecord({
+        createAuditStore,
+        projectDir,
+        record: createDeployAuditRecord(result),
+      })
+
+      return result
     },
   }
 }
