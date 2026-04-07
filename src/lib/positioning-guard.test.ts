@@ -29,6 +29,8 @@ const PRIMARY_SURFACES = [
   'docs/reference/promotion.md',
   'docs/reference/upgrade.md',
   'docs/reference/reset.md',
+  'docs/reference/diagnostics.md',
+  'docs/reference/operator.md',
   'docs/adr/0018-project-local-control-plane.md',
   'proposals/cantonctl.md',
 ]
@@ -75,7 +77,12 @@ describe('positioning guard', () => {
     expect(combined).toContain('DPM')
     expect(combined).toContain('Daml Studio')
     expect(combined).toContain('Quickstart')
+    expect(combined).toContain('dApp SDK')
+    expect(combined).toContain('Wallet Gateway')
+    expect(combined).toContain('Wallet SDK')
+    expect(combined).toContain('official LocalNet workspace')
     expect(combined).toContain('stable/public')
+    expect(combined).toContain('operator')
     expect(combined).toContain('experimental')
     expect(combined).toContain('cloud/Kubernetes/Terraform/Helm provisioning')
   })

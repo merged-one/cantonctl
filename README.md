@@ -205,15 +205,7 @@ Examples:
 
 ## Release And Migration Notes
 
-- [docs/release-notes/stable-public-splice-support.md](docs/release-notes/stable-public-splice-support.md)
-- [docs/release-notes/community-fit.md](docs/release-notes/community-fit.md)
-- [docs/release-notes/net-mode.md](docs/release-notes/net-mode.md)
-- [docs/release-notes/profile-first-deploy.md](docs/release-notes/profile-first-deploy.md)
-- [docs/release-notes/promotion-rollout.md](docs/release-notes/promotion-rollout.md)
-- [docs/release-notes/operator-auth.md](docs/release-notes/operator-auth.md)
-- [docs/migration/stable-public-splice-support.md](docs/migration/stable-public-splice-support.md)
-- [docs/migration/community-fit.md](docs/migration/community-fit.md)
-- [docs/migration/net-mode.md](docs/migration/net-mode.md)
-- [docs/migration/profile-first-deploy.md](docs/migration/profile-first-deploy.md)
-- [docs/migration/promotion-rollout.md](docs/migration/promotion-rollout.md)
-- [docs/migration/operator-auth.md](docs/migration/operator-auth.md)
+- [docs/release-notes/](docs/release-notes/)
+- [docs/migration/](docs/migration/)
+
+Command-scope, boundary, and terminology changes belong in those directories when they are user-visible.

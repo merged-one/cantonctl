@@ -14,14 +14,14 @@ Use these sources in this order:
 
 ## Documentation Update Order
 
-Whenever functionality is added or trimmed:
+Whenever functionality is added or trimmed, or when command scope or the official-tool boundary changes:
 
 1. Update the command or library implementation
 2. Update or add unit and E2E coverage
 3. Update command help and `docs/reference/*.md`
-4. Update [CURRENT_STATE.md](CURRENT_STATE.md) if the supported feature set changed
+4. Update [CURRENT_STATE.md](CURRENT_STATE.md) if the supported feature set, live command scope, or supported boundary changed
 5. Add or update an ADR if the architecture or product boundary changed
-6. Add release or migration notes when users need to change behavior or terminology
+6. Add release or migration notes when users need to change behavior or terminology, or when command scope, defaults, or boundary ownership moved
 7. Update [README.md](../README.md), [CLAUDE.md](../CLAUDE.md), and [AGENTS.md](../AGENTS.md) only after the underlying implementation and reference docs are correct
 
 ## What Not To Add
@@ -49,6 +49,8 @@ Active work tracking belongs in GitHub issues, PRs, and PR checklists.
 - Prefer fixing stale docs by deleting or replacing them, not by appending caveats to obsolete plans.
 - Avoid duplicating the same policy in multiple docs when one canonical source already exists.
 - If a doc drifts from the current command/help surface, update the reference doc and help text first, then update higher-level docs.
+- Keep [CURRENT_STATE.md](CURRENT_STATE.md) implementation-only. It should describe shipped surfaces on `main`, not pending issues, roadmap ideas, or future-scope sketches.
+- When command scope is widened or trimmed, update the matching reference doc and add release or migration notes in the same change.
 - Do not describe a command's current read-only or advisory behavior as a permanent product non-goal unless an accepted ADR makes that boundary explicit.
 - If a change affects local runtime behavior, verify it against both native tests and the Docker parity path when applicable.
 
@@ -61,3 +63,9 @@ Active work tracking belongs in GitHub issues, PRs, and PR checklists.
 - Use `--net`, not `--full`, for the local multi-node Canton runtime.
 - Keep stable/public and experimental boundaries explicit.
 - Do not use control-plane language to imply ownership of Quickstart, validator/wallet/scan implementations, or cloud/Kubernetes/Terraform/Helm provisioning.
+
+## Release And Migration Note Guidance
+
+- Prefer linking to the `docs/release-notes/` and `docs/migration/` directories from index docs instead of maintaining long per-file inventories in multiple places.
+- Add release notes when users need to understand a new or trimmed command scope, new guardrail, changed default path, or shifted official-stack boundary.
+- Add migration notes when a user may need to rename commands, adjust automation, change documentation links, or react to a trimmed surface.
