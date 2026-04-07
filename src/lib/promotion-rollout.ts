@@ -7,6 +7,12 @@ import {
   type ControlPlaneRunbookItem,
   type ControlPlaneWarning,
 } from './control-plane-operation.js'
+import {
+  createDiagnosticsAuditStore,
+  createPromotionAuditRecord,
+  persistDiagnosticsAuditRecord,
+  type DiagnosticsAuditStore,
+} from './diagnostics/audit.js'
 import {createLifecycleDiff, type LifecycleAdvisory, type LifecycleDiff, type PromoteDiffReport} from './lifecycle/diff.js'
 import {createPreflightChecks, type PreflightRunner} from './preflight/checks.js'
 import type {PreflightReport} from './preflight/output.js'
@@ -17,6 +23,7 @@ export interface PromotionRolloutOptions {
   config: CantonctlConfig
   fromProfile: string
   mode?: ControlPlaneOperationMode
+  projectDir?: string
   signal?: AbortSignal
   toProfile: string
 }
@@ -32,6 +39,7 @@ export interface PromotionRunner {
 }
 
 export interface PromotionRunnerDeps {
+  createAuditStore?: () => DiagnosticsAuditStore
   createLifecycleDiff?: () => LifecycleDiff
   createPreflightRunner?: () => PreflightRunner
   createReadinessRunner?: () => ReadinessRunner
@@ -46,6 +54,7 @@ interface PromotionState {
 export function createPromotionRunner(
   deps: PromotionRunnerDeps = {},
 ): PromotionRunner {
+  const createAuditStore = deps.createAuditStore ?? (() => createDiagnosticsAuditStore())
   const createDiff = deps.createLifecycleDiff ?? (() => createLifecycleDiff())
   const createPreflight = deps.createPreflightRunner ?? (() => createPreflightChecks())
   const createReadiness = deps.createReadinessRunner ?? (() => createReadinessRunner())
@@ -199,13 +208,21 @@ export function createPromotionRunner(
         toProfile: options.toProfile,
       })
 
-      return {
+      const result = {
         ...comparison,
         preflight: stateRef?.preflight,
         readiness: stateRef?.readiness,
         rollout,
         success: rollout.success,
       }
+
+      await persistDiagnosticsAuditRecord({
+        createAuditStore,
+        projectDir: options.projectDir,
+        record: createPromotionAuditRecord(result),
+      })
+
+      return result
     },
   }
 }

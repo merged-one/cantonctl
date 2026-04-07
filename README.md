@@ -98,7 +98,7 @@ The default progression is:
 
 The profile model is the product backbone. It is what lets `cantonctl` own the project-local control plane around official runtimes without re-owning the official runtime stack itself.
 
-Today that control-plane boundary is implemented as profile resolution, LocalNet wrapping, readiness/diagnostics/discovery, the profile-first deploy rollout command, promotion rollout planning/live gates, and the current upgrade/reset rollout workflows. It still does not replace upstream runtime implementations or cloud provisioning.
+Today that control-plane boundary is implemented as profile resolution, LocalNet wrapping, readiness/diagnostics/discovery, the profile-first deploy rollout command, promotion rollout planning/live gates, and the current upgrade/reset rollout workflows. Diagnostics bundles now carry runtime inventory, drift, and last-operation support artifacts, but `cantonctl` still does not replace upstream runtime implementations or cloud provisioning.
 
 ## Commands
 
@@ -112,7 +112,7 @@ Today that control-plane boundary is implemented as profile resolution, LocalNet
 | `cantonctl test` | Run Daml Script tests with structured output | Delegates to DPM/daml |
 | `cantonctl deploy [target] [--profile <name>]` | Roll out a built DAR to the resolved profile or legacy target | Profile-first DAR rollout over official runtime endpoints |
 | `cantonctl status` | Show profile-aware service health and ledger status | Support and diagnostics surface |
-| `cantonctl diagnostics bundle` | Export a support-friendly diagnostics bundle | Support and diagnostics surface |
+| `cantonctl diagnostics bundle` | Export a support-friendly diagnostics bundle with inventory, drift, and last-operation artifacts | Support and diagnostics surface |
 | `cantonctl profiles list/show/validate` | Inspect and validate resolved runtime profiles | Current control-plane foundation |
 | `cantonctl profiles import-scan` | Synthesize profile blocks from stable/public scan discovery | Stable/public discovery helper |
 | `cantonctl profiles import-localnet` | Materialize a `splice-localnet` profile from an official LocalNet workspace | LocalNet-to-profile bootstrap |

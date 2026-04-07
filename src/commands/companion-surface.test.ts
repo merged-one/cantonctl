@@ -160,11 +160,43 @@ function createCanaryReport(success: boolean) {
 
 function createDiagnosticsSnapshot() {
   return {
-    auth: {envVarName: 'CANTONCTL_JWT_SPLICE_DEVNET', mode: 'env-or-keychain-jwt', source: 'stored'},
+    auth: {
+      app: {envVarName: 'CANTONCTL_JWT_SPLICE_DEVNET', required: true, source: 'stored'},
+      mode: 'env-or-keychain-jwt',
+      operator: {envVarName: 'CANTONCTL_OPERATOR_TOKEN_SPLICE_DEVNET', required: true, source: 'stored'},
+    },
     compatibility: {failed: 0, passed: 3, warned: 1},
+    drift: {
+      items: [],
+      reconcile: {runbook: [], summary: {failed: 0, info: 0, manualRunbooks: 0, supportedActions: 0, warned: 0}, supportedActions: []},
+      summary: {failed: 0, info: 0, manualRunbooks: 0, supportedActions: 0, warned: 0},
+    },
     health: [{detail: 'Healthy.', endpoint: 'https://scan.example.com/readyz', name: 'scan-readyz', status: 'healthy'}],
+    inventory: createInventory({experimental: false, kind: 'remote-validator', name: 'splice-devnet'}),
+    lastOperation: {
+      command: 'deploy',
+      context: {profile: {name: 'splice-devnet'}},
+      mode: 'apply',
+      recordedAt: '2026-04-06T22:00:00.000Z',
+      rollout: {
+        operation: 'deploy',
+        partial: false,
+        steps: [],
+        success: true,
+        summary: {blocked: 0, completed: 1, dryRun: 0, failed: 0, manual: 0, pending: 0, ready: 0, warned: 0},
+      },
+      schemaVersion: 1,
+      success: true,
+    },
     metrics: [{detail: 'Metrics endpoint reachable.', endpoint: 'https://scan.example.com/metrics', service: 'scan', status: 'available'}],
-    profile: {experimental: false, kind: 'remote-validator', name: 'splice-devnet', network: 'splice-devnet'},
+    profile: {
+      definitionSource: 'profile',
+      experimental: false,
+      kind: 'remote-validator',
+      name: 'splice-devnet',
+      network: 'splice-devnet',
+      services: {},
+    },
     services: [{endpoint: 'https://scan.example.com', name: 'scan', stability: 'stable-public'}],
     validatorLiveness: {approvedValidatorCount: 1, endpoint: 'https://scan.example.com', sampleSize: 1},
   }

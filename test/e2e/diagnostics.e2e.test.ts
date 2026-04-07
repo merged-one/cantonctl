@@ -175,8 +175,28 @@ describe('diagnostics E2E', () => {
     }))
   })
 
-  it('writes a diagnostics bundle with profile, compatibility, health, metrics, and validator liveness snapshots', async () => {
+  it('writes a diagnostics bundle with inventory, drift, and redacted last-operation snapshots', async () => {
     const outputDir = path.join(projectDir, '.cantonctl', 'diagnostics', 'splice-devnet')
+    const auditDir = path.join(projectDir, '.cantonctl', 'control-plane')
+    fs.mkdirSync(auditDir, {recursive: true})
+    fs.writeFileSync(path.join(auditDir, 'last-operation.json'), JSON.stringify({
+      command: 'deploy',
+      context: {
+        accessToken: 'top-secret',
+        profile: {name: 'splice-devnet'},
+      },
+      mode: 'apply',
+      recordedAt: '2026-04-06T22:00:00.000Z',
+      rollout: {
+        operation: 'deploy',
+        partial: false,
+        steps: [],
+        success: true,
+        summary: {blocked: 0, completed: 1, dryRun: 0, failed: 0, manual: 0, pending: 0, ready: 0, warned: 0},
+      },
+      schemaVersion: 1,
+      success: true,
+    }, null, 2))
 
     class TestDiagnosticsBundle extends DiagnosticsBundle {
       protected override createDiagnosticsCollector() {
@@ -209,6 +229,16 @@ describe('diagnostics E2E', () => {
         outputDir,
       }),
       snapshot: expect.objectContaining({
+        drift: expect.objectContaining({
+          summary: expect.objectContaining({manualRunbooks: expect.any(Number)}),
+        }),
+        inventory: expect.objectContaining({
+          mode: 'profile',
+          profile: expect.objectContaining({name: 'splice-devnet'}),
+        }),
+        lastOperation: expect.objectContaining({
+          command: 'deploy',
+        }),
         metrics: expect.arrayContaining([
           expect.objectContaining({service: 'scan', status: 'available'}),
         ]),
@@ -220,12 +250,16 @@ describe('diagnostics E2E', () => {
       'auth.json',
       'compatibility.json',
       'services.json',
+      'inventory.json',
+      'drift.json',
       'health.json',
       'metrics.json',
       'validator-liveness.json',
+      'last-operation.json',
     ]) {
       expect(fs.existsSync(path.join(outputDir, file))).toBe(true)
     }
+
+    expect(fs.readFileSync(path.join(outputDir, 'last-operation.json'), 'utf8')).toContain('"accessToken": "[REDACTED]"')
   })
 })
-

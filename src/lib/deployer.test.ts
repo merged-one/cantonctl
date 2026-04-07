@@ -1037,6 +1037,35 @@ describe('Deployer', () => {
     ]))
   })
 
+  it('persists the last deploy summary for diagnostics bundles', async () => {
+    const writeLastOperation = vi.fn().mockResolvedValue({file: '/project/.cantonctl/control-plane/last-operation.json'})
+    const {deps} = createDeps({
+      createAuditStore: () => ({
+        readLastOperation: vi.fn(),
+        writeLastOperation,
+      }),
+    })
+    const deployer = createDeployer(deps)
+
+    const result = await deployer.deploy({
+      mode: 'plan',
+      profileName: 'sandbox',
+      projectDir: '/project',
+    })
+
+    expect(result.success).toBe(true)
+    expect(writeLastOperation).toHaveBeenCalledWith({
+      projectDir: '/project',
+      record: expect.objectContaining({
+        command: 'deploy',
+        context: expect.objectContaining({
+          profile: {kind: 'sandbox', name: 'sandbox', network: 'local'},
+        }),
+        mode: 'plan',
+      }),
+    })
+  })
+
   it('defaults the ledger JSON API port to 7575 when the profile omits it', async () => {
     const runtime = createRuntime({
       authEnvVarName: 'CANTONCTL_JWT_SANDBOX',

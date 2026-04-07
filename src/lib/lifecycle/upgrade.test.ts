@@ -749,4 +749,40 @@ describe('upgrade workflow', () => {
       }),
     ]))
   })
+
+  it('persists the last upgrade summary for diagnostics bundles', async () => {
+    const resolve = vi.fn().mockResolvedValue(createRuntime())
+    const writeLastOperation = vi.fn().mockResolvedValue({file: '/project/.cantonctl/control-plane/last-operation.json'})
+    const runner = createUpgradeRunner({
+      createAuditStore: () => ({
+        readLastOperation: vi.fn(),
+        writeLastOperation,
+      }),
+      createProfileRuntimeResolver: () => ({resolve}),
+      createScanAdapter: vi.fn().mockReturnValue({
+        getDsoInfo: vi.fn().mockResolvedValue({migration: {migration_id: 7}}),
+        metadata: {baseUrl: 'https://scan.example.com', warnings: []},
+      }),
+    })
+
+    const report = await runner.run({
+      config: createConfig(),
+      mode: 'plan',
+      profileName: 'splice-devnet',
+      projectDir: '/project',
+    })
+
+    expect(report.success).toBe(true)
+    expect(writeLastOperation).toHaveBeenCalledWith({
+      projectDir: '/project',
+      record: expect.objectContaining({
+        command: 'upgrade check',
+        context: expect.objectContaining({
+          automation: expect.objectContaining({kind: 'manual-only'}),
+          profile: expect.objectContaining({name: 'splice-devnet'}),
+        }),
+        mode: 'plan',
+      }),
+    })
+  })
 })

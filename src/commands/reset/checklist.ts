@@ -56,6 +56,7 @@ export default class ResetChecklist extends Command {
         mode: resolveResetMode(flags),
         network: flags.network as 'devnet' | 'mainnet' | 'testnet' | undefined,
         profileName: flags.profile,
+        projectDir: process.cwd(),
         workspace: flags.workspace,
       })
 
