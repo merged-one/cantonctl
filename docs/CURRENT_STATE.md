@@ -5,7 +5,7 @@ This document is the canonical high-level snapshot of the repository's supported
 Do not use it for aspirational planning. Use it to describe what exists on the current branch and what users should rely on today.
 Do not use it for issue sequencing, roadmap sketches, or future-scope notes; keep that work in GitHub issues and accepted ADRs.
 
-On `main`, this snapshot matches the current package release: `cantonctl@0.3.5`.
+On `main`, this snapshot matches the current package release: `cantonctl@0.3.6`.
 
 ## Product Position
 
@@ -20,7 +20,7 @@ It complements:
 
 It wraps, not replaces, those tools.
 
-The accepted product boundary is the project-local control plane over official runtimes. In `0.3.5`, the implemented surface now includes the first day-2 rollout workflows, but it still does not attempt full ownership of upstream runtime internals or infrastructure provisioning.
+The accepted product boundary is the project-local control plane over official runtimes. In `0.3.6`, the implemented surface now includes the first day-2 rollout workflows, but it still does not attempt full ownership of upstream runtime internals or infrastructure provisioning.
 
 ## Supported Local Runtime Modes
 

@@ -14,7 +14,7 @@ This file is archival proposal context. It is not canonical product or architect
 
 **npm packages:**
 
-- [`cantonctl@0.3.5`](https://www.npmjs.com/package/cantonctl)
+- [`cantonctl@0.3.6`](https://www.npmjs.com/package/cantonctl)
 - [`cantonjs@0.2.0`](https://www.npmjs.com/package/cantonjs)
 
 ---

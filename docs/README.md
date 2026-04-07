@@ -2,7 +2,7 @@
 
 Start here for the canonical documentation system.
 
-This docs tree reflects `cantonctl@0.3.5` on `main`.
+This docs tree reflects `cantonctl@0.3.6` on `main`.
 
 The docs policy is simple:
 

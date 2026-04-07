@@ -8,7 +8,7 @@
 
 It exists because the official tools are authoritative inside their own lanes, but no single official tool owns the project-local orchestration and day-2 operations layer across local and remote environments. It wraps, not replaces, DPM, Daml Studio, Quickstart, and the official SDKs.
 
-The current `main` branch packages as [`cantonctl@0.3.5`](https://www.npmjs.com/package/cantonctl), and this README describes that released surface.
+The current `main` branch packages as [`cantonctl@0.3.6`](https://www.npmjs.com/package/cantonctl), and this README describes that released surface.
 
 ## What It Is Not
 
