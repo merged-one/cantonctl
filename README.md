@@ -98,7 +98,7 @@ The default progression is:
 
 The profile model is the product backbone. It is what lets `cantonctl` own the project-local control plane around official runtimes without re-owning the official runtime stack itself.
 
-Today that control-plane boundary is implemented as profile resolution, LocalNet wrapping, readiness/diagnostics/discovery, the profile-first deploy rollout command, promotion rollout planning/live gates, and the current lifecycle helper flows. It still does not replace upstream runtime implementations or cloud provisioning.
+Today that control-plane boundary is implemented as profile resolution, LocalNet wrapping, readiness/diagnostics/discovery, the profile-first deploy rollout command, promotion rollout planning/live gates, and the current upgrade/reset rollout workflows. It still does not replace upstream runtime implementations or cloud provisioning.
 
 ## Commands
 
@@ -121,8 +121,8 @@ Today that control-plane boundary is implemented as profile resolution, LocalNet
 | `cantonctl preflight --profile <name>` | Run the read-only profile rollout gate | Current inspection step in rollout flows |
 | `cantonctl readiness --profile <name>` | Run the composed readiness gate for a resolved profile | JSON-first gate reused by promotion workflows |
 | `cantonctl promote diff --from <a> --to <b>` | Plan or execute a profile-to-profile promotion rollout | Promotion plan, dry-run, and apply surface |
-| `cantonctl upgrade check --profile <name>` | Run the current read-only upgrade checks | Current lifecycle inspection step |
-| `cantonctl reset checklist --network <tier>` | Show reset-sensitive runbook reminders | Current manual reset helper |
+| `cantonctl upgrade check --profile <name>` | Plan or execute an upgrade workflow for a resolved profile | Manual-only for remote targets; supported apply for LocalNet workspace cycling |
+| `cantonctl reset checklist --network <tier>` | Plan or execute a reset workflow for a network tier or resolved profile | Advisory for network tiers; supported apply for LocalNet workspace cycling |
 | `cantonctl auth login/logout/status` | Manage profile-oriented app and operator credentials | Remote environment helper |
 | `cantonctl discover network --scan-url <url>` | Discover network metadata from stable/public scan surfaces | Stable/public discovery helper |
 | `cantonctl canary stable-public` | Run stable/public remote canaries | CI and promotion gate |

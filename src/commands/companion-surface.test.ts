@@ -234,11 +234,120 @@ function createPromoteReport(success: boolean): PromotionRolloutResult {
 function createUpgradeReport(success: boolean) {
   return {
     advisories: success ? [{code: 'sponsor-reminder', message: 'confirm secrets', severity: 'warn'}] : [{code: 'auth-material', message: 'missing auth', severity: 'fail'}],
+    automation: {
+      available: false,
+      detail: 'manual only',
+      kind: 'manual-only',
+      requiresWorkspace: false,
+    },
     auth: {envVarName: 'CANTONCTL_JWT_SPLICE_DEVNET', mode: 'env-or-keychain-jwt', source: success ? 'stored' : 'missing'},
     compatibility: {failed: success ? 0 : 1, warned: 1},
     migration: {previousMigrationId: 4, source: 'https://scan.example.com'},
+    network: {
+      checklist: ['Confirm sponsor inputs.'],
+      displayName: 'DevNet',
+      name: 'splice-devnet',
+      reminders: ['DevNet resets happen.'],
+      resetExpectation: 'resets-expected',
+      tier: 'devnet',
+    },
     profile: {kind: 'remote-validator', name: 'splice-devnet', network: 'splice-devnet', tier: 'devnet'},
+    rollout: createOperationResult({
+      operation: 'upgrade',
+      steps: [{
+        blockers: success ? [] : [{code: 'auth-material', detail: 'missing auth'}],
+        dependencies: [],
+        detail: success ? 'Upgrade workflow stays manual-only for this target.' : undefined,
+        effect: 'read',
+        id: 'validate-upgrade-plan',
+        owner: 'cantonctl',
+        postconditions: [],
+        preconditions: [],
+        runbook: [],
+        status: success ? 'completed' : 'blocked',
+        title: 'Validate upgrade workflow',
+        warnings: [],
+      }],
+      success,
+      warned: success ? 1 : 0,
+    }),
     success,
+  } as const
+}
+
+function createResetReport(networkName: 'devnet' | 'mainnet') {
+  return {
+    automation: {
+      available: false,
+      detail: 'manual only',
+      kind: 'manual-only',
+      requiresWorkspace: false,
+    },
+    checklist: [{
+      severity: networkName === 'mainnet' ? 'info' as const : 'warn' as const,
+      text: networkName === 'mainnet' ? 'No reset expected.' : 'Confirm reset schedule.',
+    }],
+    network: {
+      checklist: [],
+      displayName: networkName === 'mainnet' ? 'MainNet' : 'DevNet',
+      name: networkName,
+      reminders: [],
+      resetExpectation: networkName === 'mainnet' ? 'no-resets-expected' as const : 'resets-expected' as const,
+      tier: networkName,
+    },
+    resetExpectation: networkName === 'mainnet' ? 'no-resets-expected' as const : 'resets-expected' as const,
+    rollout: createOperationResult({
+      operation: 'reset',
+      steps: [{
+        blockers: [],
+        dependencies: [],
+        detail: 'Reset workflow stays manual-only for this target.',
+        effect: 'read',
+        id: 'validate-reset-workflow',
+        owner: 'cantonctl',
+        postconditions: [],
+        preconditions: [],
+        runbook: [],
+        status: 'completed',
+        title: 'Validate reset workflow',
+        warnings: [],
+      }],
+      success: true,
+      warned: 0,
+    }),
+    success: true,
+    target: {kind: 'network' as const, name: networkName},
+  } as const
+}
+
+function createOperationResult(options: {
+  operation: string
+  steps: Array<Record<string, unknown>>
+  success: boolean
+  warned: number
+}) {
+  return {
+    mode: 'plan',
+    operation: options.operation,
+    partial: false,
+    resume: {
+      canResume: false,
+      checkpoints: [],
+      completedStepIds: [],
+      nextStepId: undefined,
+    },
+    steps: options.steps,
+    success: options.success,
+    summary: {
+      blocked: options.steps.filter(step => step.status === 'blocked').length,
+      completed: options.steps.filter(step => step.status === 'completed').length,
+      dryRun: 0,
+      failed: 0,
+      manual: 0,
+      pending: 0,
+      ready: options.steps.filter(step => step.status === 'ready').length,
+      warned: options.warned,
+    },
   } as const
 }
 
@@ -1192,17 +1301,12 @@ describe('companion command surface', () => {
 
   it('renders reset checklists in human and json modes', async () => {
     const createChecklist = vi.fn()
-      .mockReturnValueOnce({
-        checklist: [{severity: 'warn', text: 'Confirm reset schedule.'}],
-        network: 'devnet',
-        resetExpectation: 'resets-expected',
-      })
-      .mockReturnValueOnce({
-        checklist: [{severity: 'info', text: 'No reset expected.'}],
-        network: 'mainnet',
-        resetExpectation: 'no-resets-expected',
-      })
-    vi.spyOn(lifecycleResetModule, 'createResetHelper').mockReturnValue({createChecklist})
+      .mockResolvedValueOnce(createResetReport('devnet'))
+      .mockResolvedValueOnce(createResetReport('mainnet'))
+    vi.spyOn(lifecycleResetModule, 'createResetRunner').mockReturnValue({
+      createChecklist,
+      run: createChecklist,
+    })
 
     const human = await captureOutput(() => ResetChecklist.run(['--network', 'devnet'], {root: CLI_ROOT}))
     expect(human.error).toBeUndefined()
@@ -1211,17 +1315,22 @@ describe('companion command surface', () => {
     const json = await captureOutput(() => ResetChecklist.run(['--network', 'mainnet', '--json'], {root: CLI_ROOT}))
     expect(json.error).toBeUndefined()
     expect(parseJson(json.stdout)).toEqual(expect.objectContaining({
-      data: expect.objectContaining({network: 'mainnet'}),
+      data: expect.objectContaining({
+        network: expect.objectContaining({name: 'mainnet'}),
+      }),
       success: true,
     }))
   })
 
   it('renders upgrade checks in human mode and serializes failures in json mode', async () => {
     vi.spyOn(configModule, 'loadConfig').mockResolvedValue(createConfig())
-    const check = vi.fn()
+    const run = vi.fn()
       .mockResolvedValueOnce(createUpgradeReport(true))
       .mockResolvedValueOnce(createUpgradeReport(false))
-    vi.spyOn(lifecycleUpgradeModule, 'createUpgradeChecker').mockReturnValue({check})
+    vi.spyOn(lifecycleUpgradeModule, 'createUpgradeRunner').mockReturnValue({
+      check: run,
+      run,
+    })
 
     const human = await captureOutput(() => UpgradeCheck.run([], {root: CLI_ROOT}))
     expect(human.error).toBeUndefined()
@@ -1237,9 +1346,10 @@ describe('companion command surface', () => {
 
   it('serializes upgrade command failures and rethrows unexpected ones', async () => {
     vi.spyOn(configModule, 'loadConfig').mockResolvedValue(createConfig())
-    const createCheckerSpy = vi.spyOn(lifecycleUpgradeModule, 'createUpgradeChecker')
+    const createCheckerSpy = vi.spyOn(lifecycleUpgradeModule, 'createUpgradeRunner')
 
     createCheckerSpy.mockReturnValueOnce({
+      run: vi.fn().mockRejectedValue(new CantonctlError(ErrorCode.CONFIG_NOT_FOUND, {suggestion: 'set auth'})),
       check: vi.fn().mockRejectedValue(new CantonctlError(ErrorCode.CONFIG_NOT_FOUND, {suggestion: 'set auth'})),
     })
     const handled = await captureOutput(() => UpgradeCheck.run(['--json'], {root: CLI_ROOT}))
@@ -1250,6 +1360,7 @@ describe('companion command surface', () => {
     }))
 
     createCheckerSpy.mockReturnValueOnce({
+      run: vi.fn().mockRejectedValue(new Error('upgrade boom')),
       check: vi.fn().mockRejectedValue(new Error('upgrade boom')),
     })
     await expect(UpgradeCheck.run(['--json'], {root: CLI_ROOT})).rejects.toThrow('upgrade boom')
