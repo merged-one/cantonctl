@@ -39,8 +39,7 @@ Use [`scripts/ci/manifest.js`](scripts/ci/manifest.js) as the source of truth fo
 - `cantonctl dev`: sandbox-first local iteration
 - `cantonctl dev --net`: local Canton-only multi-node Docker runtime
 - `cantonctl localnet ...`: wrapper over the official Splice LocalNet workspace
-- `cantonctl serve`: profile-aware backend for local workbenches and editor integrations
-- `cantonctl playground`: browser workbench on top of `serve`
+- `status`, `preflight`, `readiness`, `deploy`, `promote`, `upgrade`, `reset`, `diagnostics`, and `operator ...` form the current day-2 control-plane layer around those runtimes
 
 Named local Canton topologies are defined under `topologies:` in `cantonctl.yaml`.
 
@@ -50,11 +49,12 @@ Named local Canton topologies are defined under `topologies:` in `cantonctl.yaml
 |--------|---------|
 | `src/lib/config.ts` | YAML config loading, merge, validation, topologies |
 | `src/lib/config-profile.ts` | Profile normalization and compatibility-ready service model |
+| `src/lib/profile-runtime.ts` | Resolved profile runtime, auth, inventory, and compatibility synthesis |
 | `src/lib/topology.ts` | Local Canton topology resolution, rendering, and manifest detection |
 | `src/lib/dev-server.ts` | Sandbox lifecycle and hot reload |
 | `src/lib/dev-server-full.ts` | `dev --net` Docker runtime orchestration |
 | `src/lib/docker.ts` | Docker Compose lifecycle |
-| `src/lib/serve.ts` | REST + WebSocket workbench backend |
+| `src/lib/deployer.ts` | Profile-first DAR rollout orchestration over official runtime endpoints |
 | `src/lib/splice-public.ts` | Stable/public Splice surface orchestration |
 | `src/lib/operator-surface.ts` | Explicit operator-surface registry and boundary enforcement |
 | `src/lib/operator/*.ts` | Approved operator-mode actions over official upstream endpoints |
@@ -65,9 +65,11 @@ Named local Canton topologies are defined under `topologies:` in `cantonctl.yaml
 | `src/lib/promotion-rollout.ts` | Profile-to-profile promotion planning and live gate orchestration |
 | `src/lib/lifecycle/*.ts` | Upgrade and reset rollout workflows plus LocalNet cycle support |
 | `src/lib/diagnostics/*.ts` | Status and diagnostics bundle collection |
+| `src/lib/runtime-inventory.ts` | Authoritative runtime inventory and provenance contract |
 | `src/lib/discovery/*.ts` | Stable/public Scan discovery and profile synthesis |
 | `src/lib/canary/*.ts` | Stable/public CI and canary execution |
 | `src/lib/export/*.ts` | Official SDK config export |
+| `src/lib/doctor.ts` | Environment and prerequisite diagnostics |
 
 ## CI And Verification
 

@@ -23,7 +23,12 @@ The docs policy is simple:
 
 ## Core Workflows
 
+- [Init](reference/init.md)
+- [Dev](reference/dev.md)
+- [Build](reference/build.md)
+- [Test](reference/test.md)
 - [Configuration](reference/configuration.md)
+- [Profiles](reference/profiles.md)
 - [Topology](reference/topology.md)
 - [Auth](reference/auth.md)
 - [Compatibility](reference/compatibility.md)

@@ -29,8 +29,16 @@ cantonctl dev [flags]
 | `--port`, `-p` | Canton participant port |
 | `--json-api-port` | JSON Ledger API port |
 | `--net` | Start the Canton-only multi-node topology |
-| `--topology <name>` | Select a named topology from `topologies:` |
+| `--topology <name>` | Select a named topology from `topologies:` (`--net` only) |
+| `--base-port <port>` | Override the base port used by the generated `--net` topology |
+| `--canton-image <ref>` | Override the Canton Docker image used by `--net` |
 | `--json` | Output structured JSON |
+
+## Net Mode Notes
+
+- `--topology`, `--base-port`, and `--canton-image` only apply with `--net`
+- the default `--net` topology uses the implicit `parties:` layout unless a named topology is selected
+- when `--base-port` is omitted, `dev --net` uses the named topology `base-port:` value if present, otherwise the built-in default base port
 
 ## Source
 

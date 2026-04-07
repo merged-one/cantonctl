@@ -188,6 +188,7 @@ Examples:
 - [docs/concepts/target-users.md](docs/concepts/target-users.md)
 - [docs/concepts/non-goals.md](docs/concepts/non-goals.md)
 - [docs/reference/configuration.md](docs/reference/configuration.md)
+- [docs/reference/profiles.md](docs/reference/profiles.md)
 - [docs/reference/topology.md](docs/reference/topology.md)
 - [docs/reference/localnet.md](docs/reference/localnet.md)
 - [docs/reference/compatibility.md](docs/reference/compatibility.md)

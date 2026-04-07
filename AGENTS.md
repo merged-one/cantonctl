@@ -19,7 +19,7 @@ Do not revive roadmap, phase, funding, or worklog docs as active repo guidance. 
 - `cantonctl dev` for sandbox-first local iteration
 - `cantonctl dev --net` for the Canton-only local multi-node Docker runtime
 - `cantonctl localnet ...` for the official Splice LocalNet wrapper
-- `cantonctl serve` and `cantonctl playground` as adjunct workbench surfaces
+- `status`, `preflight`, `readiness`, `deploy`, `promote`, `upgrade`, `reset`, `diagnostics`, and `operator ...` for the project-local day-2 control plane around those runtimes
 
 Named local Canton topologies live in the top-level `topologies:` section of `cantonctl.yaml`.
 
@@ -42,16 +42,17 @@ src/lib/
   dev-server.ts       ← Sandbox lifecycle + hot-reload
   dev-server-full.ts  ← `dev --net` local multi-node Docker runtime
   docker.ts           ← Docker Compose lifecycle management
-  serve.ts            ← Profile-aware REST/WebSocket workbench backend
+  profile-runtime.ts  ← Profile resolution, auth binding, inventory, and compatibility-ready runtime state
   builder.ts          ← Build orchestration + DAR caching + watch
   test-runner.ts      ← Test execution
-  deployer.ts         ← Advisory DAR deploy wrapper
+  deployer.ts         ← Profile-first DAR rollout orchestration over official runtime endpoints
+  control-plane-operation.ts ← Shared plan/dry-run/apply engine for rollout workflows
   doctor.ts           ← Environment diagnostics
 
 src/commands/
-  dev.ts, playground.ts, serve.ts, status.ts, deploy.ts
+  init.ts, build.ts, test.ts, dev.ts, status.ts, deploy.ts, doctor.ts
   topology/show.ts, topology/export.ts
-  auth/*, localnet/*, profiles/*, compat/*
+  auth/*, localnet/*, profiles/*, compat/*, diagnostics/*, promote/*, operator/*
 
 docs/
   CURRENT_STATE.md    ← Canonical product snapshot

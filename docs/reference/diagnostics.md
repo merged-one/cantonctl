@@ -9,6 +9,16 @@ cantonctl diagnostics bundle --profile splice-devnet
 cantonctl diagnostics bundle --profile splice-devnet --output .cantonctl/diagnostics/devnet --json
 ```
 
+## Flags
+
+| Flag | Description |
+|---|---|
+| `--profile <name>` | Resolve diagnostics against the selected profile instead of `default-profile` |
+| `--output <dir>` | Write the bundle to a specific directory |
+| `--json` | Wrap the written bundle summary and collected snapshot in `cantonctl` JSON output |
+
+When `--output` is omitted, bundles are written to `.cantonctl/diagnostics/<profile-name>`.
+
 ## Bundle contents
 
 The bundle now writes these support artifacts:

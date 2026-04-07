@@ -106,7 +106,7 @@ networks:
 
 ## Related
 
-- [`profiles list/show/validate`](../../src/commands/profiles)
+- [Profiles](profiles.md)
 - [LocalNet](localnet.md)
 - [Auth](auth.md)
 - [Compatibility](compatibility.md)
