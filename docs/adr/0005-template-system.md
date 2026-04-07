@@ -22,5 +22,5 @@ We bundle 5 templates (basic, token, defi-amm, api-service, zenith-evm) covering
 - Template quality varies across community contributions
 
 ## References
-- [Template system design](../DESIGN_DECISIONS.md#decision-5-template-system-with-community-registry)
+- [ADR index](README.md) — canonical replacement for the retired monolithic design-decisions document
 - Scaffolding spectrum analysis across Ignite, Anchor, Foundry, Pop CLI, and Aptos

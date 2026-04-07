@@ -30,6 +30,7 @@ The docs policy is simple:
 - [Operator surfaces](reference/operator.md)
 - [Deploy](reference/deploy.md)
 - [Status](reference/status.md)
+- [Doctor](reference/doctor.md)
 - [LocalNet wrapper](reference/localnet.md)
 - [Readiness gate](reference/readiness.md)
 - [Preflight](reference/preflight.md)

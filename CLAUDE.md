@@ -81,6 +81,7 @@ Named local Canton topologies are defined under `topologies:` in `cantonctl.yaml
 - Keep `docs/reference/*.md` aligned with command help
 - Use ADRs for accepted architecture decisions
 - Use release and migration notes for change history
-- Do not add roadmap, phase, funding, or worklog docs
+- Do not add roadmap, phase, funding, or worklog docs as active repo guidance
+- Historical proposal material may remain under `proposals/` as archival context only
 
 When in doubt, delete stale guidance and replace it with a smaller canonical source instead of layering caveats on top of obsolete docs.

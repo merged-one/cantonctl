@@ -1,5 +1,7 @@
 ## Development Fund Proposal
 
+This file is archival proposal context. It is not canonical product or architecture guidance for the current repo surface; use `README.md`, `docs/CURRENT_STATE.md`, `docs/BEST_PRACTICES.md`, and `docs/adr/` for live guidance.
+
 **Author:** Merged One  
 **Status:** Submitted  
 **Created:** 2026-03-31  

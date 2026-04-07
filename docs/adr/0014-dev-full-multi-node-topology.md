@@ -231,4 +231,4 @@ The E2E Docker tests (`test/e2e/dev-full.e2e.test.ts`) follow these principles:
 - [ADR-0004: Sandbox-first local development](0004-sandbox-first-local-dev.md) — establishes the sandbox/Docker split
 - [ADR-0010: Hybrid architecture](0010-hybrid-architecture.md) — TypeScript orchestrates native subprocesses
 - [canton-upgrade-conformance-kit-demo](https://github.com/merged-one/canton-upgrade-conformance-kit-demo) — single-container multi-node pattern, health checking, HOCON config structure
-- [DESIGN_DECISIONS.md Decision 4](../DESIGN_DECISIONS.md#decision-4-lightweight-local-dev-sandbox-first-docker-optional) — startup time comparison table
+- [ADR index](README.md) — canonical replacement for the retired monolithic design-decisions document

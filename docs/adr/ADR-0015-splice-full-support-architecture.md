@@ -223,6 +223,7 @@ If this cannot be added without ambiguous behavior, cantonctl should introduce a
 - [ADR-0004: Sandbox-first local development](0004-sandbox-first-local-dev.md)
 - [ADR-0010: Hybrid architecture](0010-hybrid-architecture.md)
 - [ADR-0014: Multi-node dev topology via Docker](0014-dev-full-multi-node-topology.md)
-- [docs/ROADMAP.md](../ROADMAP.md)
+- [ADR-0016: Splice-aware companion positioning](0016-splice-aware-companion-positioning.md)
+- [ADR-0018: Project-local control plane](0018-project-local-control-plane.md)
 - [docs/research/CANTON_ECOSYSTEM_RESEARCH.md](../research/CANTON_ECOSYSTEM_RESEARCH.md)
 - [docs/DAPP_SCAFFOLDING_RESEARCH.md](../DAPP_SCAFFOLDING_RESEARCH.md)

@@ -22,5 +22,5 @@ cantonctl uses TypeScript for the user-facing shell (command parsing, config res
 - IPC overhead between TypeScript shell and native subprocesses for frequent operations
 
 ## References
-- [Hybrid architecture design](../DESIGN_DECISIONS.md#decision-10-hybrid-architecture-for-performance)
+- [ADR index](README.md) — canonical replacement for the retired monolithic design-decisions document
 - Hardhat 3 EDR pattern; principle of never rewriting what dpm does well

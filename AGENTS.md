@@ -12,7 +12,7 @@ Use these docs as the canonical repo guidance:
 - [docs/BEST_PRACTICES.md](docs/BEST_PRACTICES.md)
 - [docs/adr/README.md](docs/adr/README.md)
 
-Do not revive roadmap, phase, funding, or worklog docs. Active work belongs in GitHub issues and PR checklists.
+Do not revive roadmap, phase, funding, or worklog docs as active repo guidance. Historical proposal material may remain under `proposals/` as archival context only. Active work belongs in GitHub issues and PR checklists.
 
 ## Current Dev Runtime Model
 
@@ -116,7 +116,7 @@ Update docs in this order whenever functionality is added or trimmed, or when co
 
 Keep `docs/CURRENT_STATE.md` implementation-only. Planned work belongs in GitHub issues, not in the live snapshot.
 
-Do not add new roadmap, phase, status, funding, or worklog docs.
+Do not add new roadmap, phase, status, funding, or worklog docs as active repo guidance. Historical proposal material may remain under `proposals/` as archival context only.
 
 ## Verification Checklist
 

@@ -22,5 +22,5 @@ We provide `cantonctl console` as a TypeScript-based interactive REPL with table
 - Must keep command grammar in sync across both modes
 
 ## References
-- [Dual-interface design](../DESIGN_DECISIONS.md#decision-7-dual-interface-console-repl--scripting)
+- [ADR index](README.md) — canonical replacement for the retired monolithic design-decisions document
 - Foundry Chisel + Cast split; Canton console requires Scala/JVM knowledge

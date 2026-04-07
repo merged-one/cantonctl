@@ -22,5 +22,5 @@ We distribute via three channels: npm as the primary channel (`npm install -g ca
 - Homebrew tap requires separate maintenance and formula updates
 
 ## References
-- [Distribution design](../DESIGN_DECISIONS.md#decision-9-multi-channel-distribution)
+- [ADR index](README.md) — canonical replacement for the retired monolithic design-decisions document
 - foundryup single-command install pattern; npm for 71% EVM audience

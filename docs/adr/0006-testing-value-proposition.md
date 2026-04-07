@@ -22,5 +22,5 @@ Testing is a first-class feature with structured output, Canton-specific cheatco
 - Coverage instrumentation adds complexity to the Daml compilation pipeline
 
 ## References
-- [Testing design](../DESIGN_DECISIONS.md#decision-6-testing-as-core-value-proposition)
+- [ADR index](README.md) — canonical replacement for the retired monolithic design-decisions document
 - Foundry fuzz testing, Hardhat stack traces, Anchor IDL clients, Aptos Move Prover

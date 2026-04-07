@@ -36,6 +36,7 @@ Do not add or revive:
 - hard-coded test counts or stale CI snapshots in active docs
 
 Active work tracking belongs in GitHub issues, PRs, and PR checklists.
+Historical proposal material may remain under `proposals/` as archival context, but it must not be treated as canonical product or architecture guidance.
 
 ## ADR Policy
 

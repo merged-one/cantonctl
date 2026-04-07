@@ -22,5 +22,5 @@ We chose TypeScript with oclif as the CLI framework. oclif provides npm-based la
 - Performance-critical paths may eventually need native subprocesses or addons
 
 ## References
-- [Hardhat vs Foundry plugin ecosystem analysis](../DESIGN_DECISIONS.md#decision-1-typescript-cli-with-oclif-framework)
+- [ADR index](README.md) — canonical replacement for the retired monolithic design-decisions document
 - Truffle (no plugin flex) lost to Hardhat (excellent plugins); Foundry (no plugins) cannot match Hardhat ecosystem breadth

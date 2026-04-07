@@ -22,5 +22,5 @@ We adopted a Hardhat-inspired runtime environment (CRE) built on oclif's npm plu
 - Additional complexity in config resolution and hook ordering
 
 ## References
-- [Plugin architecture design](../DESIGN_DECISIONS.md#decision-2-hardhat-style-plugin-architecture-not-monolithic)
+- [ADR index](README.md) — canonical replacement for the retired monolithic design-decisions document
 - Only 3/16 toolchains have plugins; Hardhat's plugin ecosystem is its primary competitive advantage

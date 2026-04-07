@@ -22,5 +22,5 @@ Canton has 5 environment tiers (LocalNet, ScratchNet, DevNet, TestNet, MainNet) 
 - DevNet's 2-7 day IP whitelisting delay cannot be automated away
 
 ## References
-- [Deploy pipeline design](../DESIGN_DECISIONS.md#decision-8-environment-aware-deploy-pipeline)
+- [ADR index](README.md) — canonical replacement for the retired monolithic design-decisions document
 - 5 environment tiers; JWT pain point; DevNet 2-7 day whitelist
